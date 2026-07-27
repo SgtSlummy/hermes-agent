@@ -9,9 +9,19 @@ Occult components. It establishes data ownership and validation rules without
 activating model routing, provider enrollment, credentials, tools, memory, or
 Council workflows.
 
-The runtime models live in `agent/occult/contracts.py`. Portable fixtures live
-in `agent/occult/spec/v1/fixtures/`. Consumers can call
-`contract_json_schema()` to export the complete JSON Schema bundle.
+The runtime models live in `agent/occult/contracts.py`. The language-neutral
+schema is checked in at `agent/occult/spec/v1/contract.schema.json`, and
+portable fixtures live in `agent/occult/spec/v1/fixtures/`.
+
+Regenerate or verify the schema with:
+
+```text
+python scripts/occult_contract_schema.py
+python scripts/occult_contract_schema.py --check
+```
+
+Consumers can also call `contract_json_schema()` or
+`load_contract_schema()` from Python.
 
 ## Feature gate
 

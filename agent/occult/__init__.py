@@ -14,6 +14,7 @@ from agent.occult.contracts import (
     contract_json_schema,
     is_occult_enabled,
     load_contract_fixture,
+    load_contract_schema,
     validate_event_stream,
     validate_invocation,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "contract_json_schema",
     "is_occult_enabled",
     "load_contract_fixture",
+    "load_contract_schema",
     "validate_event_stream",
     "validate_invocation",
 ]

@@ -355,6 +355,15 @@ def contract_json_schema() -> dict[str, Any]:
     }
 
 
+def load_contract_schema() -> dict[str, Any]:
+    """Load the packaged, language-neutral v1 JSON Schema bundle."""
+
+    resource = files("agent.occult").joinpath(
+        "spec", "v1", "contract.schema.json"
+    )
+    return json.loads(resource.read_text(encoding="utf-8"))
+
+
 def load_contract_fixture(name: str) -> Any:
     """Load a packaged v1 fixture without accepting filesystem paths."""
 

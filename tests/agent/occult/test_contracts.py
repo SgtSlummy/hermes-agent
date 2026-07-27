@@ -10,6 +10,7 @@ from agent.occult.contracts import (
     contract_json_schema,
     is_occult_enabled,
     load_contract_fixture,
+    load_contract_schema,
     validate_event_stream,
     validate_invocation,
 )
@@ -119,6 +120,10 @@ def test_contract_schema_exports_all_public_models():
         "RouteSummary",
         "SpreadDescriptor",
     } == set(schema["models"])
+
+
+def test_checked_in_contract_schema_matches_runtime_export():
+    assert load_contract_schema() == contract_json_schema()
 
 
 def test_fixture_loader_does_not_accept_paths():
