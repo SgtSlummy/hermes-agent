@@ -1,0 +1,26 @@
+{
+  "contract_version": "1.0.0",
+  "invocation_id": "inv_occult_example_001",
+  "idempotency_key": "example-project:001",
+  "agent_id": "occult.major.magician",
+  "orientation": "upright",
+  "input": {
+    "message": "Design a provider-independent execution plan."
+  },
+  "required_capabilities": [
+    "text",
+    "structured_output"
+  ],
+  "routing": {
+    "mode": "local_first",
+    "free_only": true,
+    "local_only": false,
+    "maximum_fallbacks": 2,
+    "maximum_cost_usd": 0.0
+  },
+  "deck_id": "occult.deck.development",
+  "spread_id": null,
+  "metadata": {
+    "project": "occult-system"
+  }
+}

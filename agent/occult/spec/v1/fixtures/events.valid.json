@@ -1,0 +1,26 @@
+[
+  {
+    "contract_version": "1.0.0",
+    "event_id": "evt_example_001",
+    "reading_id": "reading_example_001",
+    "sequence": 0,
+    "event_type": "reading.started",
+    "occurred_at": "2026-07-27T12:00:00Z",
+    "data": {
+      "spread_id": "occult.spread.production-build"
+    },
+    "error": null
+  },
+  {
+    "contract_version": "1.0.0",
+    "event_id": "evt_example_002",
+    "reading_id": "reading_example_001",
+    "sequence": 1,
+    "event_type": "reading.completed",
+    "occurred_at": "2026-07-27T12:00:01Z",
+    "data": {
+      "artifact_count": 1
+    },
+    "error": null
+  }
+]
