@@ -13,6 +13,9 @@ The runtime models live in `agent/occult/contracts.py`. The language-neutral
 schema is checked in at `agent/occult/spec/v1/contract.schema.json`, and
 portable fixtures live in `agent/occult/spec/v1/fixtures/`.
 
+The inert Hermes-owned routing implementation is documented in
+[`mythos-routing.md`](mythos-routing.md).
+
 Regenerate or verify the schema with:
 
 ```text

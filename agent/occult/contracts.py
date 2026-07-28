@@ -74,6 +74,7 @@ class Orientation(StrEnum):
 
 
 class RouteMode(StrEnum):
+    FREE_FIRST = "free_first"
     FREE_ONLY = "free_only"
     LOCAL_FIRST = "local_first"
     LOCAL_ONLY = "local_only"
