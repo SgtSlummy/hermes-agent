@@ -5,10 +5,13 @@ authenticated Hermes surface. It remains disabled by default.
 
 ## Assembly
 
-Create the package manager, Mythos router, runtime policy, virtual-token
-authority, and reading store in the trusted Hermes composition root. Then:
+Create the package manager, Mythos router, runtime policy, persistent
+virtual-token authority, and reading store in the trusted Hermes composition
+root. Then:
 
 ```python
+token_store = SQLiteVirtualTokenStore()
+token_authority = VirtualTokenAuthority(store=token_store)
 occult_service = OccultService(
     package_manager=package_manager,
     router=mythos_router,
@@ -19,12 +22,15 @@ occult_http = OccultHTTPAdapter(
     service=occult_service,
     readings=reading_store,
     reading_executor=council_executor,
+    # Load this plaintext from an approved secret source. Keep only the digest.
+    admin_key_digest=OccultHTTPAdapter.digest_admin_key(admin_key),
 )
 api_server.attach_occult_http(occult_http)
 ```
 
 Attachment must happen before `APIServerAdapter.connect()`. No Occult route is
-registered when no adapter is attached.
+registered when no adapter is attached. The token-administration routes are
+also absent unless an administrator-key digest is supplied.
 
 ## Authentication and authorization
 
@@ -39,7 +45,10 @@ An Occult virtual token can restrict:
 - expiration.
 
 Only a SHA-256 digest is retained. The plaintext token is returned once when
-issued. Provider credentials never cross this boundary.
+issued. Provider credentials never cross this boundary. Persistent token
+metadata is stored at `${HERMES_HOME}/occult/virtual_tokens.db`; rate windows
+and in-flight reservations deliberately reset on restart, while committed
+cost and revocation survive.
 
 ## Native endpoints
 
@@ -56,6 +65,23 @@ POST /v1/occult/readings/{reading_id}/cancel
 ```
 
 The standard Hermes transcript/composer remains unchanged.
+
+### Token administration
+
+These routes exist only when `admin_key_digest` is configured:
+
+```text
+GET  /v1/occult/admin/tokens
+POST /v1/occult/admin/tokens
+POST /v1/occult/admin/tokens/{token_id}/revoke
+```
+
+They require `X-Occult-Admin-Key`; an ordinary Occult bearer token is never
+administrator authority. Issuance requires at least one allowed Major Arcana
+agent and one allowed Minor Arcana route. The new plaintext token appears in
+the successful issuance response once and never appears in list or status
+responses. Bind the API locally or behind the approved private access layer;
+do not expose these routes through an unauthenticated public proxy.
 
 ### Reading event stream
 
@@ -155,6 +181,31 @@ hermes occult reading-cancel <reading-id>
 
 CLI output is JSON for scripting and recovery.
 
+For administrator operations, inject a separate key from the approved secret
+backend:
+
+```text
+OCCULT_ADMIN_KEY=<at-least-32-character-administrator-secret>
+```
+
+Then issue, list, or revoke a persistent client token:
+
+```text
+hermes occult token-issue --token-id council-production --allow-agent occult.major.world --allow-route minor.pentacles.ace.ollama.local --requests-per-minute 30 --maximum-budget 0
+hermes occult token-list
+hermes occult token-revoke council-production
+```
+
+Capture the issuance JSON through a trusted secret-import path because the
+`token` field cannot be recovered later. Do not paste either administrator or
+client tokens into prompts, logs, issue bodies, or repository files.
+
+For recovery, stop Occult writes before copying `virtual_tokens.db` and its
+SQLite WAL/SHM companions; restore the set together while Hermes is stopped.
+Startup validates the schema, identifiers, scopes, digests, budgets, and
+revocation values and fails closed on corrupt or unsupported state. Rotating
+the separate administrator key does not change already issued client tokens.
+
 ## TUI controls
 
 The existing Hermes TUI remains the primary transcript and composer. Its
@@ -203,7 +254,10 @@ Before enabling this adapter in a release composition root:
 
 1. provision trusted package signers;
 2. register reviewed Mythos routes and legitimate credentials;
-3. issue least-privilege virtual tokens;
-4. provide an idempotent Council executor;
-5. back up `occult/readings.db`; and
-6. run the cross-repository contract fixtures and restart-resume scenario.
+3. load a strong administrator key from an approved secret backend;
+4. issue least-privilege persistent virtual tokens;
+5. provide an idempotent Council executor;
+6. make consistent SQLite backups of `occult/readings.db` and
+   `occult/virtual_tokens.db`;
+7. verify token revocation and committed budget survive restart; and
+8. run the cross-repository contract fixtures and restart-resume scenario.

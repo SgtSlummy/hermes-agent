@@ -1,6 +1,9 @@
+import sqlite3
+
 import pytest
 
 from agent.occult.virtual_tokens import (
+    SQLiteVirtualTokenStore,
     VirtualTokenAuthority,
     VirtualTokenError,
     VirtualTokenPolicy,
@@ -108,3 +111,96 @@ def test_budget_reservations_commit_or_release():
             agent_id="occult.major.magician",
             maximum_cost_usd=0.5,
         )
+
+    with pytest.raises(VirtualTokenError, match="finite"):
+        authority.reserve(
+            plaintext,
+            agent_id="occult.major.magician",
+            maximum_cost_usd=float("nan"),
+        )
+
+    invalid_commit = authority.reserve(
+        plaintext,
+        agent_id="occult.major.magician",
+        maximum_cost_usd=0.1,
+    )
+    with pytest.raises(VirtualTokenError, match="finite"):
+        invalid_commit.commit(float("nan"))
+    invalid_commit.release()
+    assert authority.status("client-1")["reserved_cost_usd"] == 0
+
+
+def test_persistent_tokens_survive_restart_without_plaintext(tmp_path):
+    path = tmp_path / "virtual_tokens.db"
+    first_store = SQLiteVirtualTokenStore(path)
+    first = VirtualTokenAuthority(clock=lambda: 100.0, store=first_store)
+    plaintext = first.issue(_policy(requests_per_minute=10))
+    first.reserve(
+        plaintext,
+        agent_id="occult.major.magician",
+        maximum_cost_usd=0.5,
+    ).commit(0.4)
+    first.reserve(
+        plaintext,
+        agent_id="occult.major.magician",
+        maximum_cost_usd=0.2,
+    )
+    first_store.close()
+
+    assert all(
+        plaintext.encode() not in candidate.read_bytes()
+        for candidate in path.parent.glob("virtual_tokens.db*")
+    )
+
+    second_store = SQLiteVirtualTokenStore(path)
+    second = VirtualTokenAuthority(clock=lambda: 100.0, store=second_store)
+    assert second.policy(plaintext).token_id == "client-1"
+    status = second.status("client-1")
+    assert status["committed_cost_usd"] == 0.4
+    assert status["reserved_cost_usd"] == 0
+    assert status["allowed_agent_ids"] == ["occult.major.magician"]
+    second.revoke("client-1")
+    second_store.close()
+
+    third_store = SQLiteVirtualTokenStore(path)
+    third = VirtualTokenAuthority(clock=lambda: 100.0, store=third_store)
+    with pytest.raises(VirtualTokenError, match="revoked"):
+        third.policy(plaintext)
+    assert third.statuses()[0]["revoked"] is True
+    third_store.close()
+
+
+def test_persistent_token_store_rejects_unknown_schema(tmp_path):
+    path = tmp_path / "virtual_tokens.db"
+    connection = sqlite3.connect(path)
+    connection.execute("PRAGMA user_version=99")
+    connection.close()
+
+    with pytest.raises(VirtualTokenError, match="unsupported"):
+        SQLiteVirtualTokenStore(path)
+
+
+def test_persistent_token_store_rejects_malformed_policy(tmp_path):
+    path = tmp_path / "virtual_tokens.db"
+    with SQLiteVirtualTokenStore(path) as store:
+        VirtualTokenAuthority(store=store).issue(_policy())
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "UPDATE virtual_tokens SET policy_json = ? WHERE token_id = ?",
+        ("{}", "client-1"),
+    )
+    connection.commit()
+    connection.close()
+
+    with SQLiteVirtualTokenStore(path) as store:
+        with pytest.raises(VirtualTokenError, match="policy is invalid"):
+            VirtualTokenAuthority(store=store)
+
+
+def test_virtual_token_policy_rejects_unsafe_persistent_values():
+    with pytest.raises(ValueError, match="token_id"):
+        _policy(token_id="../escape")
+    with pytest.raises(ValueError, match="allowed_tools"):
+        _policy(allowed_tools=frozenset({"../../secret"}))
+    with pytest.raises(ValueError, match="maximum_budget"):
+        _policy(maximum_budget_usd=float("nan"))

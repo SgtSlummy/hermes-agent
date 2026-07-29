@@ -373,6 +373,94 @@ async def test_http_event_stream_finishes_after_authenticated_cancellation(
 
 
 @pytest.mark.asyncio
+async def test_http_token_admin_is_separate_gated_and_secret_once(tmp_path: Path):
+    service, user_token, _seen = _service()
+    readings = ReadingStore(tmp_path / "readings.db")
+    admin_key = "admin-" + ("a" * 40)
+    app = Application()
+    OccultHTTPAdapter(
+        service,
+        readings,
+        admin_key_digest=OccultHTTPAdapter.digest_admin_key(admin_key),
+    ).register(app)
+    payload = {
+        "token_id": "council-client",
+        "allowed_agent_ids": ["occult.major.magician"],
+        "allowed_card_ids": ["minor.pentacles.ace.local.test"],
+        "allowed_tools": [],
+        "allowed_memory_namespaces": [],
+        "requests_per_minute": 5,
+        "maximum_budget_usd": 0,
+        "expires_at": None,
+    }
+
+    async with TestClient(TestServer(app)) as client:
+        bearer_only = await client.post(
+            "/v1/occult/admin/tokens",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json=payload,
+        )
+        assert bearer_only.status == 401
+
+        admin_headers = {"X-Occult-Admin-Key": admin_key}
+        unscoped = await client.post(
+            "/v1/occult/admin/tokens",
+            headers=admin_headers,
+            json={**payload, "allowed_agent_ids": []},
+        )
+        assert unscoped.status == 400
+
+        issued = await client.post(
+            "/v1/occult/admin/tokens", headers=admin_headers, json=payload
+        )
+        assert issued.status == 201
+        issued_payload = await issued.json()
+        plaintext = issued_payload["token"]
+        assert plaintext.startswith("occult_")
+        assert issued_payload["secret_once"] is True
+
+        listed = await client.get("/v1/occult/admin/tokens", headers=admin_headers)
+        listing = await listed.json()
+        assert listed.status == 200
+        assert plaintext not in repr(listing)
+        assert any(token["token_id"] == "council-client" for token in listing["data"])
+
+        permitted = await client.get(
+            "/v1/occult/major-arcana",
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
+        assert permitted.status == 200
+
+        revoked = await client.post(
+            "/v1/occult/admin/tokens/council-client/revoke",
+            headers=admin_headers,
+        )
+        assert revoked.status == 200
+        assert (await revoked.json())["revoked"] is True
+        denied = await client.get(
+            "/v1/occult/major-arcana",
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
+        assert denied.status == 403
+
+
+@pytest.mark.asyncio
+async def test_http_token_admin_routes_are_absent_without_admin_digest(tmp_path: Path):
+    service, _token, _seen = _service()
+    app = Application()
+    OccultHTTPAdapter(
+        service,
+        ReadingStore(tmp_path / "readings.db"),
+    ).register(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get("/v1/occult/admin/tokens")
+    assert response.status == 404
+    with pytest.raises(ValueError, match="at least 32"):
+        OccultHTTPAdapter.digest_admin_key("short")
+
+
+@pytest.mark.asyncio
 async def test_http_bridge_returns_strict_redacted_failure_profile(tmp_path: Path):
     service, token, seen = _service()
     app = Application()

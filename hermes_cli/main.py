@@ -10294,6 +10294,26 @@ def main():
     occult_subparsers.add_parser("status", help="Show active agents and routes")
     occult_subparsers.add_parser("agents", help="List permitted Major Arcana")
     occult_subparsers.add_parser("routes", help="List permitted Minor Arcana")
+    occult_subparsers.add_parser(
+        "token-list", help="List secret-free persistent virtual-token metadata"
+    )
+    occult_token_issue = occult_subparsers.add_parser(
+        "token-issue", help="Issue a persistent scoped virtual token"
+    )
+    occult_token_issue.add_argument("--token-id", required=True)
+    occult_token_issue.add_argument("--allow-agent", action="append", required=True)
+    occult_token_issue.add_argument("--allow-route", action="append", required=True)
+    occult_token_issue.add_argument("--allow-tool", action="append", default=[])
+    occult_token_issue.add_argument("--allow-memory", action="append", default=[])
+    occult_token_issue.add_argument(
+        "--requests-per-minute", type=int, default=60
+    )
+    occult_token_issue.add_argument("--maximum-budget", type=float, default=0.0)
+    occult_token_issue.add_argument("--expires-at", type=float)
+    occult_token_revoke = occult_subparsers.add_parser(
+        "token-revoke", help="Revoke a persistent virtual token"
+    )
+    occult_token_revoke.add_argument("token_id")
     occult_invoke = occult_subparsers.add_parser(
         "invoke", help="Run a validated Occult invocation"
     )
