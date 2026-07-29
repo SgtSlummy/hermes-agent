@@ -533,6 +533,54 @@ def test_command_dispatch_queue_requires_arg(server):
     assert resp["error"]["code"] == 4004
 
 
+def test_commands_catalog_includes_occult_tui_control(server):
+    response = server.handle_request(
+        {"id": "occult-catalog", "method": "commands.catalog"}
+    )
+    pairs = response["result"]["pairs"]
+    assert any(name == "/occult" for name, _description in pairs)
+
+
+def test_command_dispatch_runs_occult_tui_control(server):
+    request = {
+        "id": "occult-dispatch",
+        "method": "command.dispatch",
+        "params": {
+            "name": "occult",
+            "arg": "reading-cancel reading_test",
+            "session_id": "",
+        },
+    }
+    with patch(
+        "hermes_cli.occult.run_tui_occult_command",
+        return_value='{"state": "cancelled"}',
+    ) as run:
+        response = server.handle_request(request)
+
+    assert response["result"] == {
+        "type": "exec",
+        "output": '{"state": "cancelled"}',
+    }
+    run.assert_called_once_with("reading-cancel reading_test")
+
+
+def test_slash_exec_routes_occult_to_command_dispatch(server):
+    sid = "occult-session"
+    server._sessions[sid] = {"session_key": sid}
+    response = server.handle_request(
+        {
+            "id": "occult-slash",
+            "method": "slash.exec",
+            "params": {
+                "command": "/occult status",
+                "session_id": sid,
+            },
+        }
+    )
+    assert response["error"]["code"] == 4018
+    assert "command.dispatch" in response["error"]["message"]
+
+
 def test_skills_manage_search_uses_tools_hub_sources(server):
     result = type("Result", (), {
         "description": "Build better terminal demos",

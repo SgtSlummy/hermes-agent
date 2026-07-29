@@ -393,12 +393,23 @@ class ReadingStore:
             "nodes": [dict(node) for node in nodes],
         }
 
-    def events(self, reading_id: str) -> tuple[dict[str, Any], ...]:
+    def events(
+        self, reading_id: str, *, after_sequence: int | None = None
+    ) -> tuple[dict[str, Any], ...]:
         self._reading(reading_id)
-        rows = self._conn.execute(
-            "SELECT * FROM reading_events WHERE reading_id = ? ORDER BY sequence",
-            (reading_id,),
-        ).fetchall()
+        if after_sequence is not None and after_sequence < 0:
+            raise ReadingError("event sequence cannot be negative")
+        if after_sequence is None:
+            rows = self._conn.execute(
+                "SELECT * FROM reading_events WHERE reading_id = ? ORDER BY sequence",
+                (reading_id,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM reading_events "
+                "WHERE reading_id = ? AND sequence > ? ORDER BY sequence",
+                (reading_id, after_sequence),
+            ).fetchall()
         return tuple(
             {
                 "contract_version": OCCULT_CONTRACT_VERSION,

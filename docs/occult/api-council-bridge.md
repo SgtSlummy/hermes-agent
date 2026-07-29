@@ -49,12 +49,32 @@ GET  /v1/occult/minor-arcana
 POST /v1/occult/invoke
 POST /v1/occult/readings
 GET  /v1/occult/readings/{reading_id}
-GET  /v1/occult/readings/{reading_id}/events
+GET  /v1/occult/readings/{reading_id}/events          # JSON snapshot
+GET  /v1/occult/readings/{reading_id}/events?stream=1 # SSE
 POST /v1/occult/readings/{reading_id}/resume
 POST /v1/occult/readings/{reading_id}/cancel
 ```
 
 The standard Hermes transcript/composer remains unchanged.
+
+### Reading event stream
+
+Request the events endpoint with `Accept: text/event-stream` or `?stream=1`.
+The authenticated stream emits the stored event contract as standard SSE:
+
+```text
+id: 3
+event: reading.completed
+data: {"contract_version":"1.0.0",...}
+```
+
+The numeric SSE `id` is the durable reading sequence. Reconnect with
+`Last-Event-ID: <sequence>` to receive only later events. The stream closes
+after the single `reading.completed`, `reading.failed`, or
+`reading.cancelled` terminal event. Authorization is checked before headers
+and on every poll, so expiry or revocation closes an established stream.
+Event payloads pass through the same opaque-reference and secret-redaction
+boundary as JSON snapshots.
 
 ## Council boundary
 
@@ -127,11 +147,48 @@ hermes occult agents
 hermes occult routes
 hermes occult invoke --agent occult.major.magician --message "Build it"
 hermes occult reading-status <reading-id>
+hermes occult reading-events <reading-id>
+hermes occult reading-events <reading-id> --follow
 hermes occult reading-resume <reading-id>
 hermes occult reading-cancel <reading-id>
 ```
 
 CLI output is JSON for scripting and recovery.
+
+## TUI controls
+
+The existing Hermes TUI remains the primary transcript and composer. Its
+command catalog exposes one additional real control surface:
+
+```text
+/occult status
+/occult agents
+/occult routes
+/occult reading-status <reading-id>
+/occult reading-events <reading-id>
+/occult reading-resume <reading-id>
+/occult reading-cancel <reading-id>
+```
+
+These commands call the authenticated Occult API and render the returned JSON
+in the existing output pager. No separate chat panel or hidden placeholder
+control is added, so existing keyboard navigation, narrow-terminal layout,
+and reduced-motion behavior apply unchanged. The TUI process must inherit
+`OCCULT_API_URL` and `OCCULT_API_KEY`.
+
+## Stream recovery
+
+If an operator loses the stream:
+
+1. retain the last numeric SSE `id`;
+2. reconnect with that value in `Last-Event-ID`;
+3. call `reading-status` if the reconnect immediately closes;
+4. use `reading-events` without `--follow` to inspect the durable snapshot;
+5. resume only a non-terminal reading; and
+6. cancel through the authenticated endpoint when work must stop.
+
+Completed nodes are not executed twice. A terminal reading cannot be resumed,
+and repeated cancellation does not emit another terminal event.
 
 ## Agents Council compatibility
 

@@ -106,6 +106,9 @@ def test_three_node_reading_resumes_without_reexecuting_completed_node(
 
     events = restarted.events(reading_id)
     validate_event_stream(events)
+    assert restarted.events(reading_id, after_sequence=events[-2]["sequence"]) == (
+        events[-1],
+    )
     terminal = [
         event
         for event in events
@@ -123,6 +126,18 @@ def test_three_node_reading_resumes_without_reexecuting_completed_node(
     restarted.resume(reading_id, execute)
     assert calls == ["build", "review", "synthesis"]
     assert len(restarted.events(reading_id)) == len(events)
+
+
+def test_event_cursor_rejects_negative_sequence(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        _plan(),
+        idempotency_key="event-cursor",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+
+    with pytest.raises(ReadingError, match="cannot be negative"):
+        store.events(reading_id, after_sequence=-1)
 
 
 def test_cancellation_emits_one_terminal_event(tmp_path: Path):
