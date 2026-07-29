@@ -1,0 +1,173 @@
+from pathlib import Path
+
+import pytest
+
+from agent.occult.contracts import (
+    OCCULT_CONTRACT_VERSION,
+    validate_event_stream,
+)
+from agent.occult.readings import (
+    CouncilNodeResult,
+    ReadingError,
+    ReadingNode,
+    ReadingPlan,
+    ReadingStore,
+)
+
+
+def _plan() -> ReadingPlan:
+    return ReadingPlan(
+        spread_id="occult.spread.build-review-synthesis",
+        nodes=(
+            ReadingNode("build", "occult.major.magician", "Build the artifact."),
+            ReadingNode(
+                "review",
+                "occult.major.justice",
+                "Review the build.",
+                ("build",),
+            ),
+            ReadingNode(
+                "synthesis",
+                "occult.major.temperance",
+                "Synthesize the result.",
+                ("build", "review"),
+            ),
+        ),
+    )
+
+
+def test_idempotent_create_and_contract_mismatch_precede_execution(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    first = store.create(
+        _plan(),
+        idempotency_key="same-request",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    second = store.create(
+        _plan(),
+        idempotency_key="same-request",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    assert first == second
+
+    with pytest.raises(ReadingError, match="version mismatch"):
+        store.create(
+            _plan(),
+            idempotency_key="wrong-version",
+            contract_version="999.0.0",
+        )
+
+
+def test_three_node_reading_resumes_without_reexecuting_completed_node(
+    tmp_path: Path,
+):
+    path = tmp_path / "readings.db"
+    calls: list[str] = []
+
+    def execute(request):
+        calls.append(request.node_id)
+        assert request.contract_version == OCCULT_CONTRACT_VERSION
+        assert request.idempotency_key.endswith(f":{request.node_id}")
+        if request.node_id == "build":
+            assert request.input_artifact_references == ()
+        elif request.node_id == "review":
+            assert len(request.input_artifact_references) == 1
+        else:
+            assert len(request.input_artifact_references) == 2
+        return CouncilNodeResult(
+            artifact={"result": request.node_id},
+            route_summary={
+                "card_id": "minor.swords.king.test",
+                "provider_id": "test-provider",
+                "model_id": "test-model",
+            },
+        )
+
+    first_store = ReadingStore(path)
+    reading_id = first_store.create(
+        _plan(),
+        idempotency_key="restart-safe",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    partial = first_store.run(reading_id, execute, maximum_nodes=1)
+    assert partial["state"] == "running"
+    assert calls == ["build"]
+    first_store.close()
+
+    restarted = ReadingStore(path)
+    completed = restarted.resume(reading_id, execute)
+    assert completed["state"] == "completed"
+    assert calls == ["build", "review", "synthesis"]
+    assert [node["state"] for node in completed["nodes"]] == [
+        "completed",
+        "completed",
+        "completed",
+    ]
+
+    events = restarted.events(reading_id)
+    validate_event_stream(events)
+    terminal = [
+        event
+        for event in events
+        if event["event_type"].startswith("reading.")
+        and event["event_type"]
+        in {
+            "reading.cancelled",
+            "reading.completed",
+            "reading.failed",
+        }
+    ]
+    assert len(terminal) == 1
+    assert terminal[0]["event_type"] == "reading.completed"
+
+    restarted.resume(reading_id, execute)
+    assert calls == ["build", "review", "synthesis"]
+    assert len(restarted.events(reading_id)) == len(events)
+
+
+def test_cancellation_emits_one_terminal_event(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        _plan(),
+        idempotency_key="cancel-once",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    store.cancel(reading_id)
+    store.cancel(reading_id)
+
+    events = store.events(reading_id)
+    validate_event_stream(events)
+    assert events[-1]["event_type"] == "reading.cancelled"
+
+
+def test_council_boundary_rejects_secret_shaped_results(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        _plan(),
+        idempotency_key="secret-rejected",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+
+    def unsafe(_request):
+        return CouncilNodeResult(
+            artifact={"api_key": "must-not-cross"},
+            route_summary={"provider_id": "test-provider"},
+        )
+
+    with pytest.raises(ReadingError, match="execution failed"):
+        store.run(reading_id, unsafe)
+    events = store.events(reading_id)
+    validate_event_stream(events)
+    assert events[-1]["event_type"] == "reading.failed"
+    assert "must-not-cross" not in repr(events)
+
+
+def test_plan_rejects_cycles():
+    with pytest.raises(ValueError, match="cycle"):
+        ReadingPlan(
+            spread_id="occult.spread.invalid",
+            nodes=(
+                ReadingNode("a", "occult.major.magician", "A", ("b",)),
+                ReadingNode("b", "occult.major.justice", "B", ("a",)),
+            ),
+        )
