@@ -31,6 +31,7 @@ from agent.occult.tarot_packages import (
 )
 from agent.occult.virtual_tokens import (
     VirtualTokenAuthority,
+    VirtualTokenError,
     VirtualTokenPolicy,
 )
 
@@ -178,6 +179,25 @@ def test_contract_mismatch_fails_before_provider_call():
     assert seen == []
 
 
+def test_token_route_allowlist_filters_before_provider_call():
+    service, _token, seen = _service()
+    restricted_token = service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="restricted-client",
+            allowed_agent_ids=frozenset({"occult.major.magician"}),
+            allowed_card_ids=frozenset({"minor.swords.king.unavailable"}),
+            maximum_budget_usd=0,
+        )
+    )
+
+    with pytest.raises(
+        VirtualTokenError,
+        match="no eligible permitted route",
+    ):
+        service.invoke(restricted_token, _invocation())
+    assert seen == []
+
+
 @pytest.mark.asyncio
 async def test_http_surface_requires_virtual_token_and_runs_real_operations(
     tmp_path: Path,
@@ -206,7 +226,24 @@ async def test_http_surface_requires_virtual_token_and_runs_real_operations(
             "/v1/occult/invoke", headers=headers, json=_invocation()
         )
         assert invoke_response.status == 200
-        assert (await invoke_response.json())["output"] == "completed"
+        bridge_result = await invoke_response.json()
+        assert set(bridge_result) == {
+            "contract_version",
+            "invocation_id",
+            "status",
+            "summary",
+            "route_summary",
+            "artifacts",
+            "error",
+        }
+        assert bridge_result["status"] == "completed"
+        assert bridge_result["summary"] == "completed"
+        assert (
+            bridge_result["route_summary"]["invocation_id"]
+            == (bridge_result["invocation_id"])
+        )
+        assert bridge_result["artifacts"] == []
+        assert bridge_result["error"] is None
 
         reading_payload = {
             "contract_version": "1.0.0",
@@ -235,3 +272,38 @@ async def test_http_surface_requires_virtual_token_and_runs_real_operations(
         )
         assert (await events.json())["data"][-1]["event_type"] == ("reading.completed")
     assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_http_bridge_returns_strict_redacted_failure_profile(tmp_path: Path):
+    service, token, seen = _service()
+    app = Application()
+    OccultHTTPAdapter(
+        service,
+        ReadingStore(tmp_path / "readings.db"),
+    ).register(app)
+
+    payload = _invocation()
+    payload["contract_version"] = "2.0.0"
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/v1/occult/invoke",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        result = await response.json()
+
+    assert response.status == 400
+    assert result["invocation_id"] == payload["invocation_id"]
+    assert result["status"] == "failed"
+    assert result["route_summary"] is None
+    assert result["error"] == {
+        "contract_version": "1.0.0",
+        "code": "OCCULT_INVALID_REQUEST",
+        "message": (
+            "Occult contract version mismatch: expected '1.0.0', received '2.0.0'"
+        ),
+        "retryable": False,
+        "redacted": True,
+    }
+    assert seen == []

@@ -12,9 +12,14 @@ from typing import Any, Mapping, Sequence
 
 from agent.occult.contracts import OccultInvocation, validate_invocation
 from agent.occult.mythos import MythosRouter
-from agent.occult.pairing import MemoryRecord, PairingSession, RuntimePolicy
+from agent.occult.pairing import (
+    MemoryRecord,
+    PairingSession,
+    RuntimePolicy,
+    ToolAuthorization,
+)
 from agent.occult.tarot_packages import TarotPackageManager
-from agent.occult.virtual_tokens import VirtualTokenAuthority
+from agent.occult.virtual_tokens import VirtualTokenAuthority, VirtualTokenError
 
 
 @dataclass(slots=True)
@@ -73,14 +78,37 @@ class OccultService:
             if isinstance(payload, OccultInvocation)
             else validate_invocation(payload)
         )
-        candidates = self.router.candidates(request, manual_card_id=manual_card_id)
+        token_policy = self.token_authority.policy(plaintext_token)
+        candidates = tuple(
+            route
+            for route in self.router.candidates(request, manual_card_id=manual_card_id)
+            if not token_policy.allowed_card_ids
+            or route.card_id in token_policy.allowed_card_ids
+        )
         if not candidates:
-            # Preserve the router's canonical controlled failure.
-            self.router.execute(request, manual_card_id=manual_card_id)
-            raise AssertionError("unreachable")
+            raise VirtualTokenError("virtual token has no eligible permitted route")
         route = candidates[0]
         memory_namespaces = frozenset(record.namespace for record in memories)
         maximum_cost = route.estimated_request_cost_usd
+        session = PairingSession.start(
+            self.package_manager,
+            request.agent_id,
+            self.runtime_policy,
+        )
+        context = session.pair(
+            route,
+            orientation=request.orientation.value,
+            memories=memories,
+        )
+        for tool_name in sorted(requested_tools):
+            decision = session.authorize_tool(tool_name)
+            if decision.authorization is ToolAuthorization.DENIED:
+                raise VirtualTokenError(decision.reason)
+            if decision.authorization is ToolAuthorization.APPROVAL_REQUIRED:
+                raise VirtualTokenError(
+                    f"tool requires independent approval: {tool_name}"
+                )
+
         lease = self.token_authority.reserve(
             plaintext_token,
             agent_id=request.agent_id,
@@ -90,16 +118,6 @@ class OccultService:
             maximum_cost_usd=maximum_cost,
         )
         try:
-            session = PairingSession.start(
-                self.package_manager,
-                request.agent_id,
-                self.runtime_policy,
-            )
-            context = session.pair(
-                route,
-                orientation=request.orientation.value,
-                memories=memories,
-            )
             composed_message = (
                 context.render_system_prompt() + "\n\n# Task\n" + request.input.message
             )

@@ -8,7 +8,10 @@ from typing import Any, Callable, Mapping
 
 from aiohttp import web
 
-from agent.occult.contracts import OccultContractError
+from agent.occult.contracts import (
+    OCCULT_CONTRACT_VERSION,
+    OccultContractError,
+)
 from agent.occult.readings import (
     CouncilNodeRequest,
     CouncilNodeResult,
@@ -54,23 +57,73 @@ class OccultHTTPAdapter:
         )
 
     async def _invoke(self, request: web.Request) -> web.Response:
-        def invoke(token: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        token = self._bearer(request)
+        if token is None:
+            return self._error("Occult virtual token is required", 401)
+        try:
+            parsed = await request.json()
+        except Exception:
+            return self._bridge_error(
+                "unknown",
+                "OCCULT_INVALID_REQUEST",
+                "request body must be valid JSON",
+                400,
+            )
+        if not isinstance(parsed, Mapping):
+            return self._bridge_error(
+                "unknown",
+                "OCCULT_INVALID_REQUEST",
+                "request body must contain an object",
+                400,
+            )
+        payload = dict(parsed)
+        invocation_id = str(payload.get("invocation_id", "unknown"))
+
+        def invoke() -> Mapping[str, Any]:
             invocation = dict(payload)
             manual_card_id = invocation.pop("minor_arcana", None)
-            return self.service.invoke(
+            result = self.service.invoke(
                 token,
                 invocation,
                 manual_card_id=(
                     str(manual_card_id) if manual_card_id is not None else None
                 ),
             )
+            return {
+                "contract_version": result["contract_version"],
+                "invocation_id": result["invocation_id"],
+                "status": "completed",
+                "summary": result["output"],
+                "route_summary": result["route"],
+                "artifacts": [],
+                "error": None,
+            }
 
-        return await self._call(
-            request,
-            invoke,
-            require_json=True,
-            worker_thread=True,
-        )
+        try:
+            result = await asyncio.to_thread(invoke)
+            return web.json_response(result)
+        except VirtualTokenError as exc:
+            return self._bridge_error(
+                invocation_id,
+                "OCCULT_FORBIDDEN",
+                str(exc),
+                403,
+            )
+        except (OccultContractError, ValueError) as exc:
+            return self._bridge_error(
+                invocation_id,
+                "OCCULT_INVALID_REQUEST",
+                str(exc),
+                400,
+            )
+        except Exception:
+            return self._bridge_error(
+                invocation_id,
+                "OCCULT_INVOCATION_FAILED",
+                "Occult invocation failed",
+                500,
+                retryable=True,
+            )
 
     async def _create_reading(self, request: web.Request) -> web.Response:
         def create(token: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -208,6 +261,34 @@ class OccultHTTPAdapter:
                     "type": "occult_error",
                     "redacted": True,
                 }
+            },
+            status=status,
+        )
+
+    @staticmethod
+    def _bridge_error(
+        invocation_id: str,
+        code: str,
+        message: str,
+        status: int,
+        *,
+        retryable: bool = False,
+    ) -> web.Response:
+        return web.json_response(
+            {
+                "contract_version": OCCULT_CONTRACT_VERSION,
+                "invocation_id": invocation_id,
+                "status": "failed",
+                "summary": "",
+                "route_summary": None,
+                "artifacts": [],
+                "error": {
+                    "contract_version": OCCULT_CONTRACT_VERSION,
+                    "code": code,
+                    "message": message,
+                    "retryable": retryable,
+                    "redacted": True,
+                },
             },
             status=status,
         )
