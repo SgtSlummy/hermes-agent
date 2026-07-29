@@ -12,11 +12,13 @@ root. Then:
 ```python
 token_store = SQLiteVirtualTokenStore()
 token_authority = VirtualTokenAuthority(store=token_store)
+deck_registry = DeckRegistry()
 occult_service = OccultService(
     package_manager=package_manager,
     router=mythos_router,
     token_authority=token_authority,
     runtime_policy=runtime_policy,
+    deck_registry=deck_registry,
 )
 occult_http = OccultHTTPAdapter(
     service=occult_service,
@@ -55,6 +57,9 @@ cost and revocation survive.
 ```text
 GET  /v1/occult/major-arcana
 GET  /v1/occult/minor-arcana
+GET  /v1/occult/decks
+GET  /v1/occult/decks/{deck_id}/validate
+GET  /v1/occult/pairings?agent_id=<optional-agent-id>
 POST /v1/occult/invoke
 POST /v1/occult/readings
 GET  /v1/occult/readings/{reading_id}
@@ -74,6 +79,7 @@ These routes exist only when `admin_key_digest` is configured:
 GET  /v1/occult/admin/tokens
 POST /v1/occult/admin/tokens
 POST /v1/occult/admin/tokens/{token_id}/revoke
+POST /v1/occult/admin/decks
 ```
 
 They require `X-Occult-Admin-Key`; an ordinary Occult bearer token is never
@@ -171,6 +177,10 @@ Then use:
 hermes occult status
 hermes occult agents
 hermes occult routes
+hermes occult decks
+hermes occult pairings
+hermes occult pairings --agent occult.major.magician
+hermes occult deck-validate occult.deck.development
 hermes occult invoke --agent occult.major.magician --message "Build it"
 hermes occult reading-status <reading-id>
 hermes occult reading-events <reading-id>
@@ -215,6 +225,10 @@ command catalog exposes one additional real control surface:
 /occult status
 /occult agents
 /occult routes
+/occult decks
+/occult pairings
+/occult pairings occult.major.magician
+/occult deck-validate occult.deck.development
 /occult reading-status <reading-id>
 /occult reading-events <reading-id>
 /occult reading-resume <reading-id>
@@ -259,5 +273,6 @@ Before enabling this adapter in a release composition root:
 5. provide an idempotent Council executor;
 6. make consistent SQLite backups of `occult/readings.db` and
    `occult/virtual_tokens.db`;
-7. verify token revocation and committed budget survive restart; and
-8. run the cross-repository contract fixtures and restart-resume scenario.
+7. back up the atomically written `occult/decks.json`;
+8. verify token revocation and committed budget survive restart; and
+9. run the cross-repository contract fixtures and restart-resume scenario.

@@ -10294,6 +10294,15 @@ def main():
     occult_subparsers.add_parser("status", help="Show active agents and routes")
     occult_subparsers.add_parser("agents", help="List permitted Major Arcana")
     occult_subparsers.add_parser("routes", help="List permitted Minor Arcana")
+    occult_subparsers.add_parser("decks", help="List permitted Occult decks")
+    occult_pairings = occult_subparsers.add_parser(
+        "pairings", help="List compatible Major and Minor Arcana pairings"
+    )
+    occult_pairings.add_argument("--agent")
+    occult_deck_validate = occult_subparsers.add_parser(
+        "deck-validate", help="Validate a permitted deck against current registries"
+    )
+    occult_deck_validate.add_argument("deck_id")
     occult_subparsers.add_parser(
         "token-list", help="List secret-free persistent virtual-token metadata"
     )

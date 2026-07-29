@@ -18,38 +18,36 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 OCCULT_CONTRACT_VERSION = "1.0.0"
 
-SUPPORTED_CAPABILITIES = frozenset(
-    {
-        "audio_input",
-        "audio_output",
-        "citations",
-        "embeddings",
-        "reasoning",
-        "streaming",
-        "structured_output",
-        "text",
-        "tool_calling",
-        "vision",
-    }
-)
+SUPPORTED_CAPABILITIES = frozenset({
+    "audio_input",
+    "audio_output",
+    "citations",
+    "embeddings",
+    "reasoning",
+    "streaming",
+    "structured_output",
+    "text",
+    "tool_calling",
+    "vision",
+})
 
-_TERMINAL_EVENT_TYPES = frozenset(
-    {"reading.cancelled", "reading.completed", "reading.failed"}
-)
-_SECRET_FIELD_NAMES = frozenset(
-    {
-        "accesstoken",
-        "apikey",
-        "authorization",
-        "authorizationheader",
-        "credential",
-        "credentials",
-        "password",
-        "refreshtoken",
-        "secret",
-        "token",
-    }
-)
+_TERMINAL_EVENT_TYPES = frozenset({
+    "reading.cancelled",
+    "reading.completed",
+    "reading.failed",
+})
+_SECRET_FIELD_NAMES = frozenset({
+    "accesstoken",
+    "apikey",
+    "authorization",
+    "authorizationheader",
+    "credential",
+    "credentials",
+    "password",
+    "refreshtoken",
+    "secret",
+    "token",
+})
 
 
 class OccultContractError(ValueError):
@@ -255,9 +253,7 @@ def _reject_secret_fields(value: Any, path: str = "$") -> None:
                     f"forbidden secret-shaped field at {path}.{key}"
                 )
             _reject_secret_fields(child, f"{path}.{key}")
-    elif isinstance(value, Sequence) and not isinstance(
-        value, (str, bytes, bytearray)
-    ):
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         for index, child in enumerate(value):
             _reject_secret_fields(child, f"{path}[{index}]")
 
@@ -271,20 +267,15 @@ def _require_contract_version(payload: Mapping[str, Any]) -> None:
         )
 
 
-def _validate_model(
-    model: type[_ModelT], payload: Mapping[str, Any]
-) -> _ModelT:
+def _validate_model(model: type[_ModelT], payload: Mapping[str, Any]) -> _ModelT:
     _reject_secret_fields(payload)
     _require_contract_version(payload)
     try:
         return model.model_validate(payload)
     except ValidationError as exc:
-        fields = sorted(
-            {
-                ".".join(str(part) for part in error["loc"])
-                for error in exc.errors()
-            }
-        )
+        fields = sorted({
+            ".".join(str(part) for part in error["loc"]) for error in exc.errors()
+        })
         location = ", ".join(fields) or "payload"
         raise InvalidContractPayload(
             f"invalid {model.__name__} fields: {location}"
@@ -305,6 +296,12 @@ def validate_invocation(payload: Mapping[str, Any]) -> OccultInvocation:
     invocation = _validate_model(OccultInvocation, payload)
     _validate_capabilities(invocation.required_capabilities)
     return invocation
+
+
+def validate_deck(payload: Mapping[str, Any]) -> DeckDescriptor:
+    """Validate one versioned, secret-free deck descriptor."""
+
+    return _validate_model(DeckDescriptor, payload)
 
 
 def validate_event_stream(
@@ -344,10 +341,7 @@ def contract_json_schema() -> dict[str, Any]:
 
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": (
-            "https://github.com/SgtSlummy/hermes-agent/"
-            "occult/contracts/1.0.0"
-        ),
+        "$id": ("https://github.com/SgtSlummy/hermes-agent/occult/contracts/1.0.0"),
         "title": "Occult System Contract",
         "contract_version": OCCULT_CONTRACT_VERSION,
         "models": {
@@ -359,9 +353,7 @@ def contract_json_schema() -> dict[str, Any]:
 def load_contract_schema() -> dict[str, Any]:
     """Load the packaged, language-neutral v1 JSON Schema bundle."""
 
-    resource = files("agent.occult").joinpath(
-        "spec", "v1", "contract.schema.json"
-    )
+    resource = files("agent.occult").joinpath("spec", "v1", "contract.schema.json")
     return json.loads(resource.read_text(encoding="utf-8"))
 
 

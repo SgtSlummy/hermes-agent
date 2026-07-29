@@ -10,7 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from agent.occult.contracts import OccultInvocation, validate_invocation
+from agent.occult.contracts import OccultInvocation, RoutingPolicy, validate_invocation
+from agent.occult.decks import DeckError, DeckRegistry
 from agent.occult.mythos import MythosRouter
 from agent.occult.pairing import (
     MemoryRecord,
@@ -28,6 +29,7 @@ class OccultService:
     router: MythosRouter
     token_authority: VirtualTokenAuthority
     runtime_policy: RuntimePolicy
+    deck_registry: DeckRegistry | None = None
 
     def agents(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
         policy = self.token_authority.policy(plaintext_token)
@@ -62,6 +64,93 @@ class OccultService:
             if not policy.allowed_card_ids or route.card_id in policy.allowed_card_ids
         )
 
+    def decks(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
+        policy = self.token_authority.policy(plaintext_token)
+        if self.deck_registry is None:
+            return ()
+        result = []
+        for descriptor in self.deck_registry.list():
+            if policy.allowed_agent_ids and not set(
+                descriptor.allowed_agent_ids
+            ).issubset(policy.allowed_agent_ids):
+                continue
+            if policy.allowed_card_ids and not set(
+                descriptor.allowed_card_ids
+            ).issubset(policy.allowed_card_ids):
+                continue
+            payload = descriptor.model_dump(mode="json")
+            payload["active"] = True
+            result.append(payload)
+        return tuple(result)
+
+    def pairings(
+        self, plaintext_token: str, *, agent_id: str | None = None
+    ) -> tuple[dict[str, Any], ...]:
+        policy = self.token_authority.policy(plaintext_token)
+        pairs = []
+        for installed in self.package_manager.active_packages():
+            current_agent = installed.package.manifest.agent.id
+            if agent_id is not None and current_agent != agent_id:
+                continue
+            if (
+                policy.allowed_agent_ids
+                and current_agent not in policy.allowed_agent_ids
+            ):
+                continue
+            session = PairingSession.start(
+                self.package_manager, current_agent, self.runtime_policy
+            )
+            for route in self.router.routes():
+                if (
+                    policy.allowed_card_ids
+                    and route.card_id not in policy.allowed_card_ids
+                ):
+                    continue
+                try:
+                    session.pair(route)
+                except ValueError:
+                    continue
+                pairs.append({
+                    "agent_id": current_agent,
+                    "agent_version": session.agent_version,
+                    "card_id": route.card_id,
+                    "provider_id": route.provider_id,
+                    "model_id": route.model_id,
+                })
+        return tuple(pairs)
+
+    def validate_deck(self, plaintext_token: str, deck_id: str) -> dict[str, Any]:
+        policy = self.token_authority.policy(plaintext_token)
+        if self.deck_registry is None:
+            raise DeckError("deck runtime is not configured")
+        deck = self.deck_registry.get(deck_id)
+        if (
+            policy.allowed_agent_ids
+            and not set(deck.allowed_agent_ids).issubset(policy.allowed_agent_ids)
+        ) or (
+            policy.allowed_card_ids
+            and not set(deck.allowed_card_ids).issubset(policy.allowed_card_ids)
+        ):
+            raise VirtualTokenError("virtual token does not allow requested deck")
+        status = self.deck_registry.validate_current(
+            deck.deck_id,
+            available_agent_ids=(
+                installed.package.manifest.agent.id
+                for installed in self.package_manager.active_packages()
+            ),
+            available_card_ids=(route.card_id for route in self.router.routes()),
+        )
+        pairings = self.pairings(plaintext_token)
+        compatible = sum(
+            1
+            for pairing in pairings
+            if pairing["agent_id"] in deck.allowed_agent_ids
+            and pairing["card_id"] in deck.allowed_card_ids
+        )
+        status["compatible_pairings"] = compatible
+        status["valid"] = bool(status["valid"] and compatible)
+        return status
+
     def invoke(
         self,
         plaintext_token: str,
@@ -79,11 +168,44 @@ class OccultService:
             else validate_invocation(payload)
         )
         token_policy = self.token_authority.policy(plaintext_token)
+        if (
+            token_policy.allowed_agent_ids
+            and request.agent_id not in token_policy.allowed_agent_ids
+        ):
+            raise VirtualTokenError("virtual token does not allow requested agent")
+        allowed_deck_cards: frozenset[str] | None = None
+        if request.deck_id is not None:
+            if self.deck_registry is None:
+                raise DeckError("deck runtime is not configured")
+            deck = self.deck_registry.get(request.deck_id)
+            if request.agent_id not in deck.allowed_agent_ids:
+                raise DeckError("deck does not allow requested agent")
+            allowed_deck_cards = frozenset(deck.allowed_card_ids)
+            request = request.model_copy(
+                update={
+                    "routing": RoutingPolicy(
+                        mode=deck.routing.mode,
+                        free_only=(request.routing.free_only or deck.routing.free_only),
+                        local_only=(
+                            request.routing.local_only or deck.routing.local_only
+                        ),
+                        maximum_fallbacks=min(
+                            request.routing.maximum_fallbacks,
+                            deck.routing.maximum_fallbacks,
+                        ),
+                        maximum_cost_usd=min(
+                            request.routing.maximum_cost_usd,
+                            deck.routing.maximum_cost_usd,
+                        ),
+                    )
+                }
+            )
         candidates = tuple(
             route
             for route in self.router.candidates(request, manual_card_id=manual_card_id)
             if not token_policy.allowed_card_ids
             or route.card_id in token_policy.allowed_card_ids
+            if allowed_deck_cards is None or route.card_id in allowed_deck_cards
         )
         if not candidates:
             raise VirtualTokenError("virtual token has no eligible permitted route")

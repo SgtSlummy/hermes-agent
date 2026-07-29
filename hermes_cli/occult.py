@@ -6,6 +6,7 @@ import json
 import os
 import shlex
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Iterator
@@ -155,6 +156,24 @@ def run_tui_occult_command(argument: str) -> str:
         if len(parts) != 1:
             raise OccultCLIError("usage: /occult routes")
         result = _request("GET", "/v1/occult/minor-arcana")
+    elif action == "decks":
+        if len(parts) != 1:
+            raise OccultCLIError("usage: /occult decks")
+        result = _request("GET", "/v1/occult/decks")
+    elif action == "pairings":
+        if len(parts) > 2:
+            raise OccultCLIError("usage: /occult pairings [agent-id]")
+        suffix = (
+            "?agent_id=" + urllib.parse.quote(parts[1], safe="")
+            if len(parts) == 2
+            else ""
+        )
+        result = _request("GET", "/v1/occult/pairings" + suffix)
+    elif action == "deck-validate":
+        if len(parts) != 2:
+            raise OccultCLIError("usage: /occult deck-validate <deck-id>")
+        deck_id = urllib.parse.quote(parts[1], safe="")
+        result = _request("GET", f"/v1/occult/decks/{deck_id}/validate")
     elif action in {
         "reading-status",
         "reading-events",
@@ -167,8 +186,8 @@ def run_tui_occult_command(argument: str) -> str:
     else:
         raise OccultCLIError(
             "usage: /occult "
-            "[status|agents|routes|reading-status|reading-events|"
-            "reading-resume|reading-cancel]"
+            "[status|agents|routes|decks|pairings|deck-validate|reading-status|"
+            "reading-events|reading-resume|reading-cancel]"
         )
     return json.dumps(result, indent=2, sort_keys=True)
 
@@ -202,6 +221,16 @@ def cmd_occult(args) -> None:
         result = _request("GET", "/v1/occult/major-arcana")
     elif action == "routes":
         result = _request("GET", "/v1/occult/minor-arcana")
+    elif action == "decks":
+        result = _request("GET", "/v1/occult/decks")
+    elif action == "pairings":
+        suffix = (
+            "?agent_id=" + urllib.parse.quote(args.agent, safe="") if args.agent else ""
+        )
+        result = _request("GET", "/v1/occult/pairings" + suffix)
+    elif action == "deck-validate":
+        deck_id = urllib.parse.quote(args.deck_id, safe="")
+        result = _request("GET", f"/v1/occult/decks/{deck_id}/validate")
     elif action == "invoke":
         invocation_id = "inv_" + uuid.uuid4().hex
         payload = {
