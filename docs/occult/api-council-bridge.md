@@ -58,8 +58,40 @@ The standard Hermes transcript/composer remains unchanged.
 
 ## Council boundary
 
-`ReadingStore` persists readings, nodes, artifacts, and ordered events in the
-profile-scoped `occult/readings.db`. A Council executor receives:
+`POST /v1/occult/invoke` is the cross-repository, per-node Council bridge.
+It returns the strict profile expected by Agents Council:
+
+```json
+{
+  "contract_version": "1.0.0",
+  "invocation_id": "invocation-id",
+  "status": "completed",
+  "summary": "Node output.",
+  "route_summary": {
+    "contract_version": "1.0.0",
+    "invocation_id": "invocation-id",
+    "selected_card_id": "minor.pentacles.ace.local",
+    "provider_id": "local",
+    "model_id": "model",
+    "fallback_count": 0,
+    "explanation": "selected by validated Mythos policy"
+  },
+  "artifacts": [],
+  "error": null
+}
+```
+
+Failed validated requests use the same envelope with `status: "failed"`, a
+null route summary, and a redacted contract error. Contract mismatch is
+rejected before a provider call.
+
+Agents Council remains the authority for a remote Council reading graph and
+its durable scheduler state. Hermes owns Major Arcana composition, Mythos,
+provider credentials, memory/tool policy, and invocation audit data.
+
+`ReadingStore` is an optional Hermes-native/offline workflow harness. It
+persists readings, nodes, artifacts, and ordered events in the profile-scoped
+`occult/readings.db`. When used, its executor receives:
 
 - the pinned contract version;
 - reading, node, and agent identifiers;
@@ -73,8 +105,10 @@ secret-checked route summaries.
 
 A completed node is never executed again after restart. A node that was
 running at process loss returns to pending with the same idempotency key, so
-the remote Council side must also honor that key. Cancellation, failure, and
-completion are protected by a unique terminal-event index.
+the downstream executor must also honor that key. Cancellation, failure, and
+completion are protected by a unique terminal-event index. Do not run both
+the Council scheduler and this optional local scheduler as authorities for the
+same reading.
 
 ## CLI
 
