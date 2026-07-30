@@ -56,7 +56,11 @@ async def test_runner_requests_clean_exit_for_nonretryable_startup_conflict(monk
     )
     runner = GatewayRunner(config)
 
-    monkeypatch.setattr(runner, "_create_adapter", lambda platform, platform_config: _FatalAdapter())
+    monkeypatch.setattr(
+        runner,
+        "_create_adapter",
+        AsyncMock(side_effect=lambda _platform, _config: _FatalAdapter()),
+    )
 
     ok = await runner.start()
 
