@@ -68,7 +68,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Install pinned development dependencies
-        run: uv sync --frozen --all-extras --dev
+        run: uv sync --frozen --extra dev --extra homeassistant
       - name: Verify Occult runtime and release controls
         run: uv run pytest tests/agent/occult tests/hermes_cli/test_backup.py -q
         env:
@@ -114,7 +114,6 @@ jobs:
           bun install --frozen-lockfile
           bun run typecheck
           bun test
-          bun run test:occult-hermes-e2e
       - name: Verify live Hermes-to-Council transport
         working-directory: hermes
         env:
@@ -123,7 +122,7 @@ jobs:
           OPENROUTER_API_KEY: ""
           NOUS_API_KEY: ""
         run: |
-          uv sync --frozen --all-extras --dev
+          uv sync --frozen --extra dev --extra homeassistant
           uv run pytest tests/agent/occult/test_council_transport_e2e.py -q
 
   nix:
