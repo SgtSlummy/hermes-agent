@@ -44,67 +44,86 @@ from agent.occult.virtual_tokens import (
 
 
 class _PackageManager:
-    def __init__(self):
-        manifest = TarotManifest(
-            format_version="1.0",
-            agent=AgentDefinition(
-                id="occult.major.magician",
-                name="The Magician",
-                arcana_number=1,
-                version="1.0.0",
-                description="Builds systems.",
-            ),
-            orientation=OrientationDefinition(upright=True, reversed=True),
-            capabilities=("text",),
-            temperament={
-                "precision": TemperamentAxis(default=0.8, minimum=0.5, maximum=1.0)
-            },
-            permissions=PermissionDefinition(maximum_risk_level=0),
-            entrypoints=EntrypointDefinition(
-                system_prompt="system_prompt.md",
-                behavior="behavior.yaml",
-                routing="routing.yaml",
-                memory="memory.yaml",
-                tools="tools.yaml",
-            ),
-        )
-        package = ValidatedTarotPackage(
-            manifest=manifest,
-            behavior=BehaviorDefinition(
-                upright="Build carefully.", reversed="Check feasibility."
-            ),
-            routing=RoutingDefinition(
-                required_capabilities=("text",),
-                allow_paid=False,
-                allow_external=False,
-            ),
-            memory=MemoryDefinition(
-                namespaces=("project",),
-                maximum_sensitivity="internal",
-                external_maximum_sensitivity="public",
-            ),
-            tools=ToolDefinition(),
-            system_prompt="Preserve user intent.",
-            signer_id="test",
-            files={},
-        )
-        self.installed = SimpleNamespace(package=package, path=Path("test-package"))
+    def __init__(
+        self,
+        agent_ids: tuple[str, ...] = ("occult.major.magician",),
+    ):
+        card_profiles = {
+            "occult.major.magician": ("The Magician", 1),
+            "occult.major.justice": ("Justice", 11),
+            "occult.major.temperance": ("Temperance", 14),
+        }
+        installed = []
+        for agent_id in agent_ids:
+            name, number = card_profiles[agent_id]
+            manifest = TarotManifest(
+                format_version="1.0",
+                agent=AgentDefinition(
+                    id=agent_id,
+                    name=name,
+                    arcana_number=number,
+                    version="1.0.0",
+                    description="Executes a bounded Council role.",
+                ),
+                orientation=OrientationDefinition(upright=True, reversed=True),
+                capabilities=("text",),
+                temperament={
+                    "precision": TemperamentAxis(
+                        default=0.8,
+                        minimum=0.5,
+                        maximum=1.0,
+                    )
+                },
+                permissions=PermissionDefinition(maximum_risk_level=0),
+                entrypoints=EntrypointDefinition(
+                    system_prompt="system_prompt.md",
+                    behavior="behavior.yaml",
+                    routing="routing.yaml",
+                    memory="memory.yaml",
+                    tools="tools.yaml",
+                ),
+            )
+            package = ValidatedTarotPackage(
+                manifest=manifest,
+                behavior=BehaviorDefinition(
+                    upright="Execute carefully.",
+                    reversed="Check feasibility.",
+                ),
+                routing=RoutingDefinition(
+                    required_capabilities=("text",),
+                    allow_paid=False,
+                    allow_external=False,
+                ),
+                memory=MemoryDefinition(
+                    namespaces=("project",),
+                    maximum_sensitivity="internal",
+                    external_maximum_sensitivity="public",
+                ),
+                tools=ToolDefinition(),
+                system_prompt="Preserve user intent.",
+                signer_id="test",
+                files={},
+            )
+            installed.append(
+                SimpleNamespace(package=package, path=Path("test-package"))
+            )
+        self._installed_by_id = {
+            item.package.manifest.agent.id: item for item in installed
+        }
 
     def active(self, agent_id):
-        return (
-            self.installed
-            if agent_id == self.installed.package.manifest.agent.id
-            else None
-        )
+        return self._installed_by_id.get(agent_id)
 
     def active_packages(self):
-        return (self.installed,)
+        return tuple(self._installed_by_id.values())
 
     def generation(self):
         return 1
 
 
-def _service():
+def _service(
+    agent_ids: tuple[str, ...] = ("occult.major.magician",),
+):
     seen_messages: list[str] = []
 
     def invoke(request, _route, _credential):
@@ -129,14 +148,14 @@ def _service():
     plaintext = authority.issue(
         VirtualTokenPolicy(
             token_id="client",
-            allowed_agent_ids=frozenset({"occult.major.magician"}),
+            allowed_agent_ids=frozenset(agent_ids),
             allowed_card_ids=frozenset({route.card_id}),
             requests_per_minute=10,
             maximum_budget_usd=0,
         )
     )
     service = OccultService(
-        package_manager=_PackageManager(),
+        package_manager=_PackageManager(agent_ids),
         router=router,
         token_authority=authority,
         runtime_policy=RuntimePolicy(),
