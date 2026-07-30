@@ -187,10 +187,25 @@ class ReadingStore:
             for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
         }
         if "owner_token_id" not in columns:
-            self._conn.execute(
-                "ALTER TABLE readings ADD COLUMN "
-                f"owner_token_id TEXT NOT NULL DEFAULT '{_LEGACY_OWNER}'"
-            )
+            with self._conn:
+                self._conn.execute(
+                    "ALTER TABLE readings ADD COLUMN "
+                    f"owner_token_id TEXT NOT NULL DEFAULT '{_LEGACY_OWNER}'"
+                )
+                legacy_rows = self._conn.execute(
+                    "SELECT reading_id, idempotency_key FROM readings"
+                ).fetchall()
+                for row in legacy_rows:
+                    scoped_key = hashlib.sha256(
+                        _LEGACY_OWNER.encode("utf-8")
+                        + b"\0"
+                        + str(row["idempotency_key"]).encode("utf-8")
+                    ).hexdigest()
+                    self._conn.execute(
+                        "UPDATE readings SET idempotency_key = ? "
+                        "WHERE reading_id = ?",
+                        (scoped_key, row["reading_id"]),
+                    )
 
     def close(self) -> None:
         self._conn.close()
@@ -214,6 +229,11 @@ class ReadingStore:
             + b"\0"
             + idempotency_key.encode("utf-8")
         ).hexdigest()
+        legacy_idempotency_key = hashlib.sha256(
+            _LEGACY_OWNER.encode("utf-8")
+            + b"\0"
+            + idempotency_key.encode("utf-8")
+        ).hexdigest()
         now = time.time()
         reading_id = "reading_" + uuid.uuid4().hex
         with self._transaction():
@@ -223,6 +243,31 @@ class ReadingStore:
             ).fetchone()
             if existing is not None:
                 return str(existing["reading_id"])
+            legacy = self._conn.execute(
+                """
+                SELECT reading_id, owner_token_id FROM readings
+                WHERE idempotency_key = ?
+                """,
+                (legacy_idempotency_key,),
+            ).fetchone()
+            if legacy is not None and legacy["owner_token_id"] in {
+                _LEGACY_OWNER,
+                owner_token_id,
+            }:
+                if legacy["owner_token_id"] == _LEGACY_OWNER:
+                    self._conn.execute(
+                        """
+                        UPDATE readings SET owner_token_id = ?, updated_at = ?
+                        WHERE reading_id = ? AND owner_token_id = ?
+                        """,
+                        (
+                            owner_token_id,
+                            time.time(),
+                            legacy["reading_id"],
+                            _LEGACY_OWNER,
+                        ),
+                    )
+                return str(legacy["reading_id"])
             self._conn.execute(
                 """
                 INSERT INTO readings (

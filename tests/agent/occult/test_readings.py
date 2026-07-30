@@ -338,5 +338,18 @@ def test_legacy_reading_can_be_claimed_by_first_authorized_token(tmp_path: Path)
     store = ReadingStore(path)
 
     assert store.owner_token_id("reading_legacy") == "legacy-unclaimed"
-    assert store.claim_legacy_owner("reading_legacy", "client-a") == "client-a"
+    retried = store.create(
+        _plan(),
+        idempotency_key="legacy-key",
+        contract_version=OCCULT_CONTRACT_VERSION,
+        owner_token_id="client-a",
+    )
+    assert retried == "reading_legacy"
     assert store.claim_legacy_owner("reading_legacy", "client-b") == "client-a"
+    other_owner = store.create(
+        _plan(),
+        idempotency_key="legacy-key",
+        contract_version=OCCULT_CONTRACT_VERSION,
+        owner_token_id="client-b",
+    )
+    assert other_owner != "reading_legacy"
