@@ -98,7 +98,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: SgtSlummy/agents-council
-          ref: ${{ inputs.council_ref || 'agent/occult-cross-repo-e2e' }}
+          ref: ${{ inputs.council_ref || 'main' }}
           persist-credentials: false
           path: council
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -176,16 +176,16 @@ jobs:
       - name: Build dashboard, TUI, and documentation
         run: |
           npm ci --prefix web
-          npm audit --prefix web --omit=dev --audit-level=critical
+          (cd web && npm audit --omit=dev --audit-level=critical)
           npm run build --prefix web
           npm ci --prefix ui-tui
-          npm audit --prefix ui-tui --omit=dev --audit-level=critical
+          (cd ui-tui && npm audit --omit=dev --audit-level=critical)
           npm run build --prefix ui-tui/packages/hermes-ink
           npm run type-check --prefix ui-tui
           npm test --prefix ui-tui
           npm run build --prefix ui-tui
           npm ci --prefix website
-          npm audit --prefix website --omit=dev --audit-level=critical
+          (cd website && npm audit --omit=dev --audit-level=critical)
           npm run prebuild --prefix website
           npm run typecheck --prefix website
           npm run build --prefix website
