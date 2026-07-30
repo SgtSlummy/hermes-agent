@@ -143,3 +143,44 @@ def test_tui_occult_command_defaults_to_status(monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", urlopen)
     assert json.loads(run_tui_occult_command("")) == {"agents": [], "routes": []}
+
+
+def test_occult_token_issue_uses_separate_admin_credential(monkeypatch, capsys):
+    monkeypatch.setenv("OCCULT_ADMIN_KEY", "admin-private")
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    captured = {}
+
+    def urlopen(request, timeout):
+        captured["headers"] = request.headers
+        captured["payload"] = json.loads(request.data.decode())
+        return _Response({
+            "token_id": "council",
+            "token": "occult_returned_once",
+            "secret_once": True,
+        })
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    cmd_occult(
+        SimpleNamespace(
+            occult_action="token-issue",
+            token_id="council",
+            allow_agent=["occult.major.magician"],
+            allow_route=["minor.pentacles.ace.local.test"],
+            allow_tool=[],
+            allow_memory=["project"],
+            requests_per_minute=10,
+            maximum_budget=0.0,
+            expires_at=None,
+        )
+    )
+
+    assert captured["headers"]["X-occult-admin-key"] == "admin-private"
+    assert captured["payload"]["allowed_memory_namespaces"] == ["project"]
+    assert json.loads(capsys.readouterr().out)["secret_once"] is True
+
+
+def test_occult_token_admin_requires_dedicated_key(monkeypatch):
+    monkeypatch.delenv("OCCULT_ADMIN_KEY", raising=False)
+    monkeypatch.setenv("OCCULT_API_KEY", "user-token-is-not-admin")
+    with pytest.raises(OccultCLIError, match="OCCULT_ADMIN_KEY"):
+        cmd_occult(SimpleNamespace(occult_action="token-list"))

@@ -73,6 +73,7 @@ from agent.occult.tarot_packages import (
 )
 from agent.occult.service import OccultService
 from agent.occult.virtual_tokens import (
+    SQLiteVirtualTokenStore,
     VirtualTokenAuthority,
     VirtualTokenError,
     VirtualTokenLease,
@@ -119,6 +120,7 @@ __all__ = [
     "RouteResult",
     "RuntimePolicy",
     "SecretValue",
+    "SQLiteVirtualTokenStore",
     "SystemPackagePolicy",
     "TarotManifest",
     "TarotPackageError",

@@ -51,6 +51,41 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
         raise OccultCLIError(f"Occult API unavailable: {exc}") from None
 
 
+def _admin_request(
+    method: str, path: str, payload: dict[str, Any] | None = None
+) -> Any:
+    base_url = os.getenv("OCCULT_API_URL", "http://127.0.0.1:8642").rstrip("/")
+    admin_key = os.getenv("OCCULT_ADMIN_KEY", "").strip()
+    if not admin_key:
+        raise OccultCLIError("OCCULT_ADMIN_KEY is required")
+    body = (
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        if payload is not None
+        else None
+    )
+    request = urllib.request.Request(
+        base_url + path,
+        data=body,
+        method=method,
+        headers={
+            "X-Occult-Admin-Key": admin_key,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            error = json.loads(exc.read().decode("utf-8"))
+            message = error.get("error", {}).get("message", "request failed")
+        except Exception:
+            message = "request failed"
+        raise OccultCLIError(f"Occult API error {exc.code}: {message}") from None
+    except (OSError, ValueError) as exc:
+        raise OccultCLIError(f"Occult API unavailable: {exc}") from None
+
+
 def _stream_events(reading_id: str) -> Iterator[dict[str, Any]]:
     base_url = os.getenv("OCCULT_API_URL", "http://127.0.0.1:8642").rstrip("/")
     token = os.getenv("OCCULT_API_KEY", "").strip()
@@ -140,7 +175,25 @@ def run_tui_occult_command(argument: str) -> str:
 
 def cmd_occult(args) -> None:
     action = args.occult_action
-    if action == "status":
+    if action == "token-list":
+        result = _admin_request("GET", "/v1/occult/admin/tokens")
+    elif action == "token-issue":
+        payload = {
+            "token_id": args.token_id,
+            "allowed_agent_ids": args.allow_agent,
+            "allowed_card_ids": args.allow_route,
+            "allowed_tools": args.allow_tool,
+            "allowed_memory_namespaces": args.allow_memory,
+            "requests_per_minute": args.requests_per_minute,
+            "maximum_budget_usd": args.maximum_budget,
+            "expires_at": args.expires_at,
+        }
+        result = _admin_request("POST", "/v1/occult/admin/tokens", payload)
+    elif action == "token-revoke":
+        result = _admin_request(
+            "POST", f"/v1/occult/admin/tokens/{args.token_id}/revoke"
+        )
+    elif action == "status":
         result = {
             "agents": _request("GET", "/v1/occult/major-arcana")["data"],
             "routes": _request("GET", "/v1/occult/minor-arcana")["data"],
