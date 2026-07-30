@@ -54,6 +54,15 @@ from agent.occult.pairing import (
     ToolAuthorization,
     ToolAuthorizationDecision,
 )
+from agent.occult.http import OccultHTTPAdapter
+from agent.occult.readings import (
+    CouncilNodeRequest,
+    CouncilNodeResult,
+    ReadingError,
+    ReadingNode,
+    ReadingPlan,
+    ReadingStore,
+)
 from agent.occult.tarot_packages import (
     InstalledTarotPackage,
     SystemPackagePolicy,
@@ -61,6 +70,13 @@ from agent.occult.tarot_packages import (
     TarotPackageError,
     TarotPackageManager,
     ValidatedTarotPackage,
+)
+from agent.occult.service import OccultService
+from agent.occult.virtual_tokens import (
+    VirtualTokenAuthority,
+    VirtualTokenError,
+    VirtualTokenLease,
+    VirtualTokenPolicy,
 )
 
 __all__ = [
@@ -70,6 +86,8 @@ __all__ = [
     "AdapterRequest",
     "AdapterResponse",
     "ContractVersionMismatch",
+    "CouncilNodeRequest",
+    "CouncilNodeResult",
     "CredentialBoundaryError",
     "CredentialReference",
     "CredentialStatus",
@@ -84,6 +102,8 @@ __all__ = [
     "MythosStateStore",
     "NoEligibleRoute",
     "OccultContractError",
+    "OccultHTTPAdapter",
+    "OccultService",
     "PairingContext",
     "PairingError",
     "PairingSession",
@@ -91,6 +111,10 @@ __all__ = [
     "ProviderFailure",
     "ProviderTrustState",
     "QuotaPoolState",
+    "ReadingError",
+    "ReadingNode",
+    "ReadingPlan",
+    "ReadingStore",
     "RouteRegistrationError",
     "RouteResult",
     "RuntimePolicy",
@@ -111,5 +135,9 @@ __all__ = [
     "validate_event_stream",
     "validate_invocation",
     "ValidatedTarotPackage",
+    "VirtualTokenAuthority",
+    "VirtualTokenError",
+    "VirtualTokenLease",
+    "VirtualTokenPolicy",
     "InstalledTarotPackage",
 ]

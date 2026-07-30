@@ -467,6 +467,14 @@ class TarotPackageManager:
     def generation(self) -> int:
         return int(self._registry().get("generation", 0))
 
+    def active_packages(self) -> tuple[InstalledTarotPackage, ...]:
+        """Return all active packages in stable agent-id order."""
+
+        active = self._registry().get("active", {})
+        return tuple(
+            self.load(agent_id, version) for agent_id, version in sorted(active.items())
+        )
+
     def _validate_files(self, files: Mapping[str, bytes]) -> ValidatedTarotPackage:
         with tempfile.TemporaryDirectory(prefix="tarot-load-") as temp:
             archive_path = Path(temp) / "package.tarot"

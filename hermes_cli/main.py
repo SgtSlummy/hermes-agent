@@ -9610,7 +9610,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "computer-use",
         "config", "cron", "curator", "dashboard", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
-        "kanban", "login", "logout", "logs", "lsp", "mcp", "memory",
+        "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "occult",
         "model", "pairing", "plugins", "postinstall", "profile", "proxy", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
         "version", "webhook", "whatsapp", "chat",
@@ -10282,6 +10282,48 @@ def main():
         "--deep", action="store_true", help="Run deep checks (may take longer)"
     )
     status_parser.set_defaults(func=cmd_status)
+
+    # =========================================================================
+    # occult command
+    # =========================================================================
+    occult_parser = subparsers.add_parser(
+        "occult",
+        help="Inspect and invoke an explicitly enabled Occult runtime",
+    )
+    occult_subparsers = occult_parser.add_subparsers(dest="occult_action")
+    occult_subparsers.add_parser("status", help="Show active agents and routes")
+    occult_subparsers.add_parser("agents", help="List permitted Major Arcana")
+    occult_subparsers.add_parser("routes", help="List permitted Minor Arcana")
+    occult_invoke = occult_subparsers.add_parser(
+        "invoke", help="Run a validated Occult invocation"
+    )
+    occult_invoke.add_argument("--agent", required=True)
+    occult_invoke.add_argument("--message", required=True)
+    occult_invoke.add_argument("--card")
+    occult_invoke.add_argument(
+        "--orientation", choices=["upright", "reversed"], default="upright"
+    )
+    occult_invoke.add_argument(
+        "--mode",
+        choices=["local_only", "local_first", "free_only", "free_first"],
+        default="local_first",
+    )
+    occult_invoke.add_argument("--allow-paid", action="store_true")
+    occult_invoke.add_argument("--maximum-cost", type=float, default=0.0)
+    occult_invoke.add_argument("--maximum-fallbacks", type=int, default=2)
+    occult_invoke.add_argument("--idempotency-key")
+    for action in ("reading-status", "reading-resume", "reading-cancel"):
+        command = occult_subparsers.add_parser(
+            action, help=f"{action.replace('-', ' ').title()}"
+        )
+        command.add_argument("reading_id")
+
+    def _cmd_occult(args):
+        from hermes_cli.occult import cmd_occult
+
+        return cmd_occult(args)
+
+    occult_parser.set_defaults(func=_cmd_occult)
 
     # =========================================================================
     # cron command

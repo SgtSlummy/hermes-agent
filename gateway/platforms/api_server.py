@@ -635,6 +635,14 @@ class APIServerAdapter(BasePlatformAdapter):
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
+        self._occult_http: Optional[Any] = None
+
+    def attach_occult_http(self, adapter: Any) -> None:
+        """Attach an explicitly assembled Occult route binder before connect."""
+
+        if self._app is not None:
+            raise RuntimeError("Occult HTTP adapter must be attached before connect")
+        self._occult_http = adapter
 
     @staticmethod
     def _parse_cors_origins(value: Any) -> tuple[str, ...]:
@@ -3384,6 +3392,8 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/runs/{run_id}/events", self._handle_run_events)
             self._app.router.add_post("/v1/runs/{run_id}/approval", self._handle_run_approval)
             self._app.router.add_post("/v1/runs/{run_id}/stop", self._handle_stop_run)
+            if self._occult_http is not None:
+                self._occult_http.register(self._app)
             # Start background sweep to clean up orphaned (unconsumed) run streams
             sweep_task = asyncio.create_task(self._sweep_orphaned_runs())
             try:

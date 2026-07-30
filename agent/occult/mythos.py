@@ -690,6 +690,11 @@ class MythosRouter:
         _assert_secret_free(payload)
         return payload
 
+    def routes(self) -> tuple[MinorArcanaDescriptor, ...]:
+        """Return immutable route descriptors without credentials or secrets."""
+
+        return tuple(sorted(self._routes.values(), key=lambda route: route.card_id))
+
     def _credential_available(self, route: MinorArcanaDescriptor) -> bool:
         if route.credential_reference_id is None:
             return route.local
