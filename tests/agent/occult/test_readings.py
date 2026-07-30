@@ -424,3 +424,54 @@ def test_legacy_reading_can_be_claimed_by_first_authorized_token(tmp_path: Path)
         owner_token_id="client-b",
     )
     assert other_owner != "reading_legacy"
+
+
+def test_legacy_owner_migration_rolls_back_as_one_transaction(tmp_path: Path):
+    path = tmp_path / "readings.db"
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        """
+        CREATE TABLE readings (
+            reading_id TEXT PRIMARY KEY,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            contract_version TEXT NOT NULL,
+            spread_id TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        INSERT INTO readings VALUES (
+            'reading_a', 'legacy-a', '1.0.0',
+            'occult.spread.legacy', 'pending', 1, 1
+        );
+        INSERT INTO readings VALUES (
+            'reading_b', 'legacy-b', '1.0.0',
+            'occult.spread.legacy', 'pending', 1, 1
+        );
+        CREATE TRIGGER reject_second_legacy_rewrite
+        BEFORE UPDATE OF idempotency_key ON readings
+        WHEN OLD.reading_id = 'reading_b'
+        BEGIN
+            SELECT RAISE(ABORT, 'migration interrupted');
+        END;
+        """
+    )
+    connection.close()
+
+    with pytest.raises(sqlite3.IntegrityError, match="migration interrupted"):
+        ReadingStore(path)
+
+    connection = sqlite3.connect(path)
+    columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(readings)").fetchall()
+    }
+    keys = [
+        row[0]
+        for row in connection.execute(
+            "SELECT idempotency_key FROM readings ORDER BY reading_id"
+        ).fetchall()
+    ]
+    connection.close()
+
+    assert "owner_token_id" not in columns
+    assert keys == ["legacy-a", "legacy-b"]

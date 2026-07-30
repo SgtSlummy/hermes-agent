@@ -43,7 +43,7 @@ def initialize_occult(
         get_config_path,
         get_env_path,
         is_managed,
-        read_raw_config,
+        read_raw_config_strict,
         save_config,
         save_env_values,
     )
@@ -54,6 +54,28 @@ def initialize_occult(
             "ask the system administrator to configure the profile"
         )
     try:
+        config = dict(read_raw_config_strict())
+    except ValueError as exc:
+        raise OccultCLIError(
+            f"Occult initialization refused to overwrite existing configuration: {exc}"
+        ) from None
+    configured_occult = config.get("occult")
+    if configured_occult is not None and not isinstance(configured_occult, dict):
+        raise OccultCLIError("existing occult configuration must be an object")
+    occult = dict(configured_occult or {})
+    try:
+        provider_timeout_seconds = int(
+            occult.get("provider_timeout_seconds", 120)
+        )
+    except (TypeError, ValueError):
+        raise OccultCLIError(
+            "occult.provider_timeout_seconds must be a whole number from 1 to 600"
+        ) from None
+    if not 1 <= provider_timeout_seconds <= 600:
+        raise OccultCLIError(
+            "occult.provider_timeout_seconds must be a whole number from 1 to 600"
+        )
+    try:
         canonical_url = normalize_loopback_openai_url(base_url)
         models = discover_ollama_models(canonical_url)
     except OccultRuntimeError as exc:
@@ -62,18 +84,20 @@ def initialize_occult(
     if selected_model not in models:
         raise OccultCLIError(f"model is not installed in Ollama: {selected_model}")
     try:
-        validate_ollama_chat_model(canonical_url, selected_model)
+        validate_ollama_chat_model(
+            canonical_url,
+            selected_model,
+            timeout_seconds=provider_timeout_seconds,
+        )
     except OccultRuntimeError as exc:
         raise OccultCLIError(str(exc)) from None
 
-    config = dict(read_raw_config() or {})
-    occult = dict(config.get("occult") or {})
     occult.update({
         "enabled": True,
         "contract_version": OCCULT_CONTRACT_VERSION,
         "local_base_url": canonical_url,
         "local_model": selected_model,
-        "provider_timeout_seconds": int(occult.get("provider_timeout_seconds", 120)),
+        "provider_timeout_seconds": provider_timeout_seconds,
         "maximum_concurrent_requests": int(
             occult.get("maximum_concurrent_requests", 4)
         ),

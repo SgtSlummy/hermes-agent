@@ -20,8 +20,20 @@ class InvocationIdempotencyError(ValueError):
 class SQLiteInvocationResultStore:
     """Serialize identical requests and replay their durable results."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        retention_seconds: float = 7 * 24 * 60 * 60,
+        maximum_entries: int = 10_000,
+    ) -> None:
+        if retention_seconds <= 0:
+            raise ValueError("retention_seconds must be positive")
+        if maximum_entries <= 0:
+            raise ValueError("maximum_entries must be positive")
         self.path = path
+        self.retention_seconds = float(retention_seconds)
+        self.maximum_entries = int(maximum_entries)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
             str(path),
@@ -77,23 +89,50 @@ class SQLiteInvocationResultStore:
 
             result = dict(callback())
             encoded = json.dumps(result, sort_keys=True, separators=(",", ":"))
-            with self._db_lock, self._conn:
-                self._conn.execute(
-                    """
-                    INSERT INTO invocation_results (
-                        owner_token_id, idempotency_key,
-                        request_fingerprint, result_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        owner_token_id,
-                        idempotency_key,
-                        request_fingerprint,
-                        encoded,
-                        time.time(),
-                    ),
-                )
+            with self._db_lock:
+                self._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    now = time.time()
+                    self._conn.execute(
+                        """
+                        INSERT INTO invocation_results (
+                            owner_token_id, idempotency_key,
+                            request_fingerprint, result_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            owner_token_id,
+                            idempotency_key,
+                            request_fingerprint,
+                            encoded,
+                            now,
+                        ),
+                    )
+                    self._prune(now)
+                    self._conn.execute("COMMIT")
+                except BaseException:
+                    self._conn.execute("ROLLBACK")
+                    raise
             return result
+
+    def _prune(self, now: float) -> None:
+        """Bound completed result retention; in-flight calls live in key locks."""
+
+        self._conn.execute(
+            "DELETE FROM invocation_results WHERE created_at < ?",
+            (now - self.retention_seconds,),
+        )
+        self._conn.execute(
+            """
+            DELETE FROM invocation_results
+            WHERE rowid IN (
+                SELECT rowid FROM invocation_results
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT -1 OFFSET ?
+            )
+            """,
+            (self.maximum_entries,),
+        )
 
     def close(self) -> None:
         with self._db_lock:

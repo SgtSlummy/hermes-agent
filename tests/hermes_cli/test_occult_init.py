@@ -22,7 +22,7 @@ def test_occult_init_creates_local_profile_without_returning_secrets(
     )
     monkeypatch.setattr(
         "hermes_cli.occult.validate_ollama_chat_model",
-        lambda _url, _model: None,
+        lambda _url, _model, **_kwargs: None,
     )
 
     result = initialize_occult(model="qwen2.5:3b")
@@ -55,7 +55,7 @@ def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):
     )
     monkeypatch.setattr(
         "hermes_cli.occult.validate_ollama_chat_model",
-        lambda _url, _model: None,
+        lambda _url, _model, **_kwargs: None,
     )
 
     first = initialize_occult(model="qwen2.5:3b")
@@ -79,7 +79,7 @@ def test_occult_init_replaces_token_without_full_starter_scope(
     )
     monkeypatch.setattr(
         "hermes_cli.occult.validate_ollama_chat_model",
-        lambda _url, _model: None,
+        lambda _url, _model, **_kwargs: None,
     )
     issued = []
 
@@ -132,7 +132,7 @@ def test_occult_init_does_not_enable_config_when_credentials_fail(
     )
     monkeypatch.setattr(
         "hermes_cli.occult.validate_ollama_chat_model",
-        lambda _url, _model: None,
+        lambda _url, _model, **_kwargs: None,
     )
     discarded = []
     closed = []
@@ -185,7 +185,7 @@ def test_occult_init_rejects_short_admin_key(tmp_path: Path, monkeypatch):
     )
     monkeypatch.setattr(
         "hermes_cli.occult.validate_ollama_chat_model",
-        lambda _url, _model: None,
+        lambda _url, _model, **_kwargs: None,
     )
 
     with pytest.raises(OccultCLIError, match="at least 32 characters"):
@@ -204,7 +204,7 @@ def test_occult_init_rejects_non_ascii_admin_key(tmp_path: Path, monkeypatch):
     )
     monkeypatch.setattr(
         "hermes_cli.occult.validate_ollama_chat_model",
-        lambda _url, _model: None,
+        lambda _url, _model, **_kwargs: None,
     )
 
     with pytest.raises(OccultCLIError, match="ASCII"):
@@ -224,7 +224,7 @@ def test_occult_init_rejects_non_chat_model_before_writing(
         lambda _url: ("embedding-only",),
     )
 
-    def reject_chat(_url, _model):
+    def reject_chat(_url, _model, **_kwargs):
         raise OccultRuntimeError(
             "Ollama model does not support chat completions: embedding-only"
         )
@@ -238,3 +238,73 @@ def test_occult_init_rejects_non_chat_model_before_writing(
         initialize_occult(model="embedding-only")
 
     assert not (home / "config.yaml").exists()
+
+
+def test_occult_init_uses_configured_timeout_for_model_probe(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    (home / "config.yaml").write_text(
+        "occult:\n  provider_timeout_seconds: 420\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("slow-model",),
+    )
+    seen = {}
+
+    def stop_after_probe(_url, _model, *, timeout_seconds):
+        seen["timeout_seconds"] = timeout_seconds
+        raise OccultRuntimeError("probe complete")
+
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        stop_after_probe,
+    )
+
+    with pytest.raises(OccultCLIError, match="probe complete"):
+        initialize_occult(model="slow-model")
+
+    assert seen == {"timeout_seconds": 420}
+
+
+def test_occult_init_preserves_malformed_existing_config(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    config_path = home / "config.yaml"
+    malformed = b"platforms: [\n"
+    config_path.write_bytes(malformed)
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: pytest.fail("provider discovery must not run"),
+    )
+
+    with pytest.raises(OccultCLIError, match="refused to overwrite"):
+        initialize_occult(model="qwen2.5:3b")
+
+    assert config_path.read_bytes() == malformed
+
+
+def test_occult_init_preserves_non_mapping_existing_config(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    config_path = home / "config.yaml"
+    original = b"[]\n"
+    config_path.write_bytes(original)
+
+    with pytest.raises(OccultCLIError, match="must contain a YAML object"):
+        initialize_occult(model="qwen2.5:3b")
+
+    assert config_path.read_bytes() == original

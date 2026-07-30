@@ -205,12 +205,12 @@ class ReadingStore:
                 )
                 """
             )
-        columns = {
-            str(row["name"])
-            for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
-        }
-        if "owner_token_id" not in columns:
-            with self._conn:
+        with self._transaction():
+            columns = {
+                str(row["name"])
+                for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
+            }
+            if "owner_token_id" not in columns:
                 self._conn.execute(
                     "ALTER TABLE readings ADD COLUMN "
                     f"owner_token_id TEXT NOT NULL DEFAULT '{_LEGACY_OWNER}'"

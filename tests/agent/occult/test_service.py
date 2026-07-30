@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -248,6 +249,37 @@ def test_idempotency_replays_consume_rate_limit(tmp_path: Path):
     with pytest.raises(VirtualTokenError, match="rate limit"):
         service.invoke(token, _invocation())
     store.close()
+
+
+def test_durable_invocation_results_have_bounded_retention(tmp_path: Path):
+    path = tmp_path / "invocations.db"
+    store = SQLiteInvocationResultStore(path, maximum_entries=2)
+    calls = []
+
+    for index in range(3):
+        store.run(
+            "client",
+            f"key-{index}",
+            f"fingerprint-{index}",
+            lambda index=index: calls.append(index) or {"index": index},
+        )
+
+    with sqlite3.connect(path) as connection:
+        retained = connection.execute(
+            "SELECT idempotency_key FROM invocation_results "
+            "ORDER BY created_at, rowid"
+        ).fetchall()
+    replay = store.run(
+        "client",
+        "key-2",
+        "fingerprint-2",
+        lambda: pytest.fail("retained result must replay"),
+    )
+    store.close()
+
+    assert retained == [("key-1",), ("key-2",)]
+    assert replay == {"index": 2}
+    assert calls == [0, 1, 2]
 
 
 @pytest.mark.asyncio

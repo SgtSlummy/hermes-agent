@@ -4247,6 +4247,25 @@ def read_raw_config() -> Dict[str, Any]:
         return data
 
 
+def read_raw_config_strict() -> Dict[str, Any]:
+    """Read raw configuration, surfacing malformed existing files to callers."""
+
+    with _CONFIG_LOCK:
+        config_path = get_config_path()
+        try:
+            with open(config_path, encoding="utf-8") as config_file:
+                data = yaml.safe_load(config_file)
+        except FileNotFoundError:
+            return {}
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"could not parse {config_path}: {exc}") from exc
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ValueError(f"{config_path} must contain a YAML object")
+        return data
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from ~/.hermes/config.yaml.
 
