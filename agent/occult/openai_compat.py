@@ -27,10 +27,10 @@ class OccultOpenAIAdapter:
     service: OccultService
 
     def register(self, app: web.Application) -> None:
-        app.router.add_get("/v1/models", self._models)
-        app.router.add_post("/v1/chat/completions", self._chat_completions)
+        app.router.add_get("/v1/models", self.models)
+        app.router.add_post("/v1/chat/completions", self.chat_completions)
 
-    async def _models(self, request: web.Request) -> web.Response:
+    async def models(self, request: web.Request) -> web.Response:
         token = self._bearer(request)
         if token is None:
             return self._error(
@@ -70,7 +70,7 @@ class OccultOpenAIAdapter:
                 code="occult_models_failed",
             )
 
-    async def _chat_completions(self, request: web.Request) -> web.StreamResponse:
+    async def chat_completions(self, request: web.Request) -> web.StreamResponse:
         token = self._bearer(request)
         if token is None:
             return self._error(

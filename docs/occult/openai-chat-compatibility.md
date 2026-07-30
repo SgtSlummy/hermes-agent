@@ -81,6 +81,13 @@ OPENAI_API_KEY=<occult-virtual-token>
 The Occult adapter remains inert until the existing Occult feature gate is
 enabled and the adapter is registered by the host application.
 
+When attached to Hermes' existing API server, Occult does not register a
+second copy of `/v1/models` or `/v1/chat/completions`. The existing gateway
+handlers dispatch only `Bearer occult_...` requests to the Occult adapter;
+the configured Hermes API key and all non-Occult traffic continue through the
+original gateway path. A standalone Occult-only application may use the
+adapter's default route registration directly.
+
 ## Rollback
 
 Remove the `OccultOpenAIAdapter` registration from `agent/occult/http.py`.

@@ -149,3 +149,32 @@ async def test_openai_chat_rejects_unsupported_fields_before_provider_call(
         assert error["param"] == "tools"
         assert error["code"] == "unsupported_parameter"
         assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_occult_native_routes_coexist_with_gateway_openai_routes(
+    tmp_path: Path,
+):
+    service, token, _seen = _service()
+    app = Application()
+
+    async def gateway_models(_request):
+        return Application
+
+    async def gateway_chat(_request):
+        return Application
+
+    app.router.add_get("/v1/models", gateway_models)
+    app.router.add_post("/v1/chat/completions", gateway_chat)
+    adapter = OccultHTTPAdapter(service, ReadingStore(tmp_path / "readings.db"))
+    adapter.register(app, include_openai_compat=False)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get(
+            "/v1/occult/major-arcana",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status == 200
+        assert (await response.json())["data"][0]["agent_id"] == (
+            "occult.major.magician"
+        )
