@@ -170,6 +170,28 @@ def test_assembly_rejects_sensitive_artifacts(
         _assemble(artifacts, source, tmp_path / "release")
 
 
+def test_assembly_allows_explicit_documentation_placeholders(tmp_path: Path):
+    artifacts, source = _assembly_roots(tmp_path)
+    docs = artifacts / "docs"
+    docs.mkdir()
+    (docs / "llms-full.txt").write_text(
+        "\n".join([
+            "Authorization: Bearer change-me-local-dev",
+            "api_key = 'unused-proxy-attaches-real-creds'",
+            '"password": "your-password"',
+            '"access_token": "sk-or-v1-..."',
+        ]),
+        encoding="utf-8",
+    )
+
+    manifest = _assemble(artifacts, source, tmp_path / "release")
+
+    assert any(
+        artifact["path"] == "artifacts/docs/llms-full.txt"
+        for artifact in manifest["artifacts"]
+    )
+
+
 def test_stable_release_requires_sigstore_bundle_structure(tmp_path: Path):
     artifacts, source = _assembly_roots(tmp_path)
     release = tmp_path / "stable"

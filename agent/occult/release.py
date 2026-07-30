@@ -44,6 +44,16 @@ _SECRET_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+_PLACEHOLDER_SECRET_MARKERS = (
+    "...",
+    "change-me",
+    "not-a-real",
+    "placeholder",
+    "unused-",
+    "your-",
+    "your_",
+    "your.",
+)
 
 
 class OccultReleaseError(ValueError):
@@ -333,8 +343,11 @@ def _assert_safe_artifact(path: Path, relative: str) -> None:
     if path.suffix.lower() not in _TEXT_EXTENSIONS or path.stat().st_size > 5_000_000:
         return
     text = path.read_text(encoding="utf-8", errors="replace")
-    if any(pattern.search(text) for pattern in _SECRET_PATTERNS):
-        raise OccultReleaseError(f"secret-shaped release content: {relative}")
+    for pattern in _SECRET_PATTERNS:
+        for match in pattern.finditer(text):
+            candidate = match.group(0).lower()
+            if not any(marker in candidate for marker in _PLACEHOLDER_SECRET_MARKERS):
+                raise OccultReleaseError(f"secret-shaped release content: {relative}")
 
 
 def _write_json(path: Path, payload: Any, epoch: int) -> None:
