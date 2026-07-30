@@ -249,7 +249,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Install pinned Python dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra occult
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: occult-staged-${{ env.RELEASE_COMMIT }}
