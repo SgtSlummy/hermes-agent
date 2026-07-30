@@ -1,10 +1,11 @@
 # Occult OpenAI Chat Compatibility
 
-The feature-gated Occult HTTP adapter exposes a strict OpenAI-compatible
-surface for existing clients:
+The feature-gated Occult HTTP adapter exposes strict OpenAI-compatible text
+surfaces for existing clients:
 
 - `GET /v1/models`
 - `POST /v1/chat/completions`
+- `POST /v1/responses`
 
 Both endpoints require a Hermes-issued Occult virtual token:
 
@@ -71,6 +72,28 @@ error before any provider call. This is intentional: the compatibility layer
 does not silently ignore sampling, tool, audio, or vision controls that the
 current Occult contract cannot honor.
 
+## Responses API
+
+The Responses mapping follows the official OpenAI response object and
+server-sent event shapes:
+
+<https://developers.openai.com/api/reference/resources/responses/methods/create>
+
+It accepts:
+
+- `model`
+- string input or text-only message input
+- `instructions`
+- `metadata`
+- `stream`
+- the optional `occult` extension
+
+The response contains one completed assistant message and token usage. Because
+the Occult runtime does not persist OpenAI response objects, `store` is false
+and continuation through `previous_response_id` is unsupported. Streaming
+emits the documented response lifecycle events with sequence numbers; the
+single text delta contains the complete synchronous Mythos result.
+
 ## Client configuration
 
 ```text
@@ -80,6 +103,13 @@ OPENAI_API_KEY=<occult-virtual-token>
 
 The Occult adapter remains inert until the existing Occult feature gate is
 enabled and the adapter is registered by the host application.
+
+When attached to Hermes' existing API server, Occult does not register a
+second copy of `/v1/models` or `/v1/chat/completions`. The existing gateway
+handlers dispatch only `Bearer occult_...` requests to the Occult adapter;
+the configured Hermes API key and all non-Occult traffic continue through the
+original gateway path. A standalone Occult-only application may use the
+adapter's default route registration directly.
 
 ## Rollback
 
