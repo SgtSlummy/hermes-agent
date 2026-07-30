@@ -14,7 +14,12 @@ from agent.occult.mythos import (
     PrivacyClass,
 )
 from agent.occult.pairing import RuntimePolicy
-from agent.occult.readings import CouncilNodeResult, ReadingStore
+from agent.occult.readings import (
+    CouncilNodeResult,
+    ReadingNode,
+    ReadingPlan,
+    ReadingStore,
+)
 from agent.occult.service import OccultService
 from agent.occult.tarot_packages import (
     AgentDefinition,
@@ -270,8 +275,101 @@ async def test_http_surface_requires_virtual_token_and_runs_real_operations(
         events = await client.get(
             f"/v1/occult/readings/{reading_id}/events", headers=headers
         )
-        assert (await events.json())["data"][-1]["event_type"] == ("reading.completed")
+        event_data = (await events.json())["data"]
+        assert event_data[-1]["event_type"] == "reading.completed"
+        stream = await client.get(
+            f"/v1/occult/readings/{reading_id}/events?stream=1",
+            headers={**headers, "Accept": "text/event-stream"},
+        )
+        assert stream.status == 200
+        assert stream.headers["Content-Type"].startswith("text/event-stream")
+        frames = await stream.text()
+        assert "event: reading.started" in frames
+        assert "event: reading.completed" in frames
+        assert frames.count("event: reading.completed") == 1
+
+        final_sequence = event_data[-1]["sequence"]
+        resumed_stream = await client.get(
+            f"/v1/occult/readings/{reading_id}/events?stream=1",
+            headers={**headers, "Last-Event-ID": str(final_sequence)},
+        )
+        assert resumed_stream.status == 200
+        assert await resumed_stream.text() == ""
     assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_http_event_stream_requires_token_and_valid_cursor(tmp_path: Path):
+    service, token, _seen = _service()
+    readings = ReadingStore(tmp_path / "readings.db")
+    reading_id = readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.single",
+            nodes=(
+                ReadingNode(
+                    node_id="build",
+                    agent_id="occult.major.magician",
+                    task="Build.",
+                ),
+            ),
+        ),
+        idempotency_key="stream-auth",
+        contract_version="1.0.0",
+    )
+    readings.cancel(reading_id)
+    app = Application()
+    OccultHTTPAdapter(service, readings).register(app)
+
+    async with TestClient(TestServer(app)) as client:
+        unauthorized = await client.get(
+            f"/v1/occult/readings/{reading_id}/events?stream=1"
+        )
+        assert unauthorized.status == 401
+        invalid_cursor = await client.get(
+            f"/v1/occult/readings/{reading_id}/events?stream=1&after=-1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert invalid_cursor.status == 400
+        assert (await invalid_cursor.json())["error"]["redacted"] is True
+
+
+@pytest.mark.asyncio
+async def test_http_event_stream_finishes_after_authenticated_cancellation(
+    tmp_path: Path,
+):
+    service, token, _seen = _service()
+    readings = ReadingStore(tmp_path / "readings.db")
+    reading_id = readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.single",
+            nodes=(
+                ReadingNode(
+                    node_id="build",
+                    agent_id="occult.major.magician",
+                    task="Build.",
+                ),
+            ),
+        ),
+        idempotency_key="stream-cancel",
+        contract_version="1.0.0",
+    )
+    app = Application()
+    OccultHTTPAdapter(service, readings).register(app)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with TestClient(TestServer(app)) as client:
+        stream = await client.get(
+            f"/v1/occult/readings/{reading_id}/events?stream=1",
+            headers={**headers, "Accept": "text/event-stream"},
+        )
+        cancelled = await client.post(
+            f"/v1/occult/readings/{reading_id}/cancel", headers=headers
+        )
+        assert cancelled.status == 200
+        frames = await stream.text()
+
+    assert frames.count("event: reading.cancelled") == 1
+    assert "event: reading.completed" not in frames
 
 
 @pytest.mark.asyncio

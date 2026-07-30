@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
@@ -163,7 +164,11 @@ class OccultHTTPAdapter:
             ),
         )
 
-    async def _reading_events(self, request: web.Request) -> web.Response:
+    async def _reading_events(self, request: web.Request) -> web.StreamResponse:
+        if "text/event-stream" in request.headers.get(
+            "Accept", ""
+        ) or request.query.get("stream", "").lower() in {"1", "true", "yes"}:
+            return await self._stream_reading_events(request)
         return await self._call(
             request,
             lambda token, _payload: {
@@ -172,6 +177,69 @@ class OccultHTTPAdapter:
                 )
             },
         )
+
+    async def _stream_reading_events(self, request: web.Request) -> web.StreamResponse:
+        token = self._bearer(request)
+        if token is None:
+            return self._error("Occult virtual token is required", 401)
+        reading_id = request.match_info["reading_id"]
+        cursor_text = request.headers.get("Last-Event-ID") or request.query.get("after")
+        try:
+            cursor = -1 if cursor_text is None else int(cursor_text)
+            if cursor_text is not None and cursor < 0:
+                raise ValueError
+        except ValueError:
+            return self._error("invalid reading event cursor", 400)
+        try:
+            self._authorized_reading(token, reading_id, "status")
+        except VirtualTokenError as exc:
+            return self._error(str(exc), 403)
+        except ReadingError as exc:
+            return self._error(str(exc), 400)
+
+        response = web.StreamResponse(
+            status=200,
+            headers={
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+        await response.prepare(request)
+        try:
+            while True:
+                status = self._authorized_reading(token, reading_id, "status")
+                pending = self.readings.events(
+                    reading_id,
+                    after_sequence=None if cursor < 0 else cursor,
+                )
+                for event in pending:
+                    cursor = int(event["sequence"])
+                    payload = json.dumps(event, separators=(",", ":"), sort_keys=True)
+                    frame = (
+                        f"id: {cursor}\n"
+                        f"event: {event['event_type']}\n"
+                        f"data: {payload}\n\n"
+                    )
+                    await response.write(frame.encode("utf-8"))
+
+                if status["state"] in {"cancelled", "completed", "failed"}:
+                    break
+                await asyncio.sleep(0.1)
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        except VirtualTokenError:
+            # Authentication is checked on every poll. If a token expires or is
+            # revoked after headers are sent, close the stream without leaking
+            # policy details into an untrusted response body.
+            pass
+        finally:
+            try:
+                await response.write_eof()
+            except (ConnectionResetError, RuntimeError):
+                pass
+        return response
 
     async def _resume_reading(self, request: web.Request) -> web.Response:
         if self.reading_executor is None:

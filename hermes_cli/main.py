@@ -10312,11 +10312,22 @@ def main():
     occult_invoke.add_argument("--maximum-cost", type=float, default=0.0)
     occult_invoke.add_argument("--maximum-fallbacks", type=int, default=2)
     occult_invoke.add_argument("--idempotency-key")
-    for action in ("reading-status", "reading-resume", "reading-cancel"):
+    for action in (
+        "reading-status",
+        "reading-events",
+        "reading-resume",
+        "reading-cancel",
+    ):
         command = occult_subparsers.add_parser(
             action, help=f"{action.replace('-', ' ').title()}"
         )
         command.add_argument("reading_id")
+        if action == "reading-events":
+            command.add_argument(
+                "--follow",
+                action="store_true",
+                help="Follow authenticated reading events until the terminal event",
+            )
 
     def _cmd_occult(args):
         from hermes_cli.occult import cmd_occult

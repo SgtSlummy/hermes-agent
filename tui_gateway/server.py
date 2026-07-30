@@ -4384,6 +4384,11 @@ _TUI_EXTRA: list[tuple[str, str, str]] = [
     ("/compact", "Toggle compact display mode", "TUI"),
     ("/logs", "Show recent gateway log lines", "TUI"),
     ("/mouse", "Toggle mouse/wheel tracking [on|off|toggle]", "TUI"),
+    (
+        "/occult",
+        "Inspect or control Occult readings [status|agents|routes|reading-*]",
+        "TUI",
+    ),
 ]
 
 # Commands that queue messages onto _pending_input in the CLI.
@@ -4397,6 +4402,7 @@ _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
         "steer",
         "plan",
         "goal",
+        "occult",
     }
 )
 
@@ -4710,6 +4716,17 @@ def _(rid, params: dict) -> dict:
                 pass
         # Fallback: no active run, treat as next-turn message
         return _ok(rid, {"type": "send", "message": arg})
+
+    if name == "occult":
+        try:
+            from hermes_cli.occult import OccultCLIError, run_tui_occult_command
+
+            output = run_tui_occult_command(arg)
+        except OccultCLIError as exc:
+            return _err(rid, 5030, str(exc))
+        except Exception:
+            return _err(rid, 5030, "Occult TUI operation failed")
+        return _ok(rid, {"type": "exec", "output": output})
 
     if name == "goal":
         if not session:
