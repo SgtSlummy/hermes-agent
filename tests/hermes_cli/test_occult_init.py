@@ -210,11 +210,11 @@ def test_occult_init_does_not_enable_config_when_credentials_fail(
     )
     saved_configs = []
     monkeypatch.setattr(
-        "hermes_cli.config.save_config",
+        "hermes_cli.occult.cli_config.save_config",
         lambda config: saved_configs.append(config),
     )
     monkeypatch.setattr(
-        "hermes_cli.config.save_env_values",
+        "hermes_cli.occult.cli_config.save_env_values",
         lambda _values: (_ for _ in ()).throw(OSError("read-only secrets mount")),
     )
 

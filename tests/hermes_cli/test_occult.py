@@ -200,7 +200,7 @@ def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):
 def test_occult_invoke_builds_versioned_contract(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
     monkeypatch.setattr(
-        "hermes_cli.config.read_raw_config",
+        "hermes_cli.occult.cli_config.read_raw_config",
         lambda: {"occult": {"provider_timeout_seconds": 240}},
     )
     captured = {}
@@ -236,7 +236,7 @@ def test_occult_invoke_builds_versioned_contract(monkeypatch, capsys):
 def test_occult_reading_events_follow_streams_terminal_event(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
     monkeypatch.setattr(
-        "hermes_cli.config.read_raw_config",
+        "hermes_cli.occult.cli_config.read_raw_config",
         lambda: {"occult": {"provider_timeout_seconds": 600}},
     )
     event = {

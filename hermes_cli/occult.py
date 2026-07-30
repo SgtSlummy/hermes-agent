@@ -27,6 +27,7 @@ from agent.occult.runtime import (
     validate_ollama_chat_model,
 )
 from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
+from hermes_cli import config as cli_config
 
 
 class OccultCLIError(RuntimeError):
@@ -47,23 +48,13 @@ def initialize_occult(
 ) -> dict[str, Any]:
     """Initialize a secure local-only Occult profile and starter deck."""
 
-    from hermes_cli.config import (
-        get_config_path,
-        get_env_path,
-        is_managed,
-        load_env,
-        read_raw_config_strict,
-        save_config,
-        save_env_values,
-    )
-
-    if is_managed():
+    if cli_config.is_managed():
         raise OccultCLIError(
             "Occult initialization is unavailable in managed mode; "
             "ask the system administrator to configure the profile"
         )
     try:
-        config = dict(read_raw_config_strict())
+        config = dict(cli_config.read_raw_config_strict())
     except ValueError as exc:
         raise OccultCLIError(
             f"Occult initialization refused to overwrite existing configuration: {exc}"
@@ -72,7 +63,7 @@ def initialize_occult(
     if configured_occult is not None and not isinstance(configured_occult, dict):
         raise OccultCLIError("existing occult configuration must be an object")
     occult = dict(configured_occult or {})
-    staged_env = load_env()
+    staged_env = cli_config.load_env()
 
     def credential(name: str) -> str:
         return str(os.getenv(name, "") or staged_env.get(name, "")).strip()
@@ -205,7 +196,7 @@ def initialize_occult(
 
     try:
         try:
-            save_env_values({
+            cli_config.save_env_values({
                 "API_SERVER_KEY": api_server_key,
                 "OCCULT_ADMIN_KEY": admin_key,
                 "OCCULT_API_KEY": token,
@@ -214,7 +205,7 @@ def initialize_occult(
             if issued_token_id is not None:
                 http.service.token_authority.discard(issued_token_id)
             raise
-        save_config(config)
+        cli_config.save_config(config)
     finally:
         http.close()
 
@@ -226,8 +217,8 @@ def initialize_occult(
         "deck_id": STARTER_DECK_ID,
         "agents": list(STARTER_AGENT_IDS),
         "token_created": token_created,
-        "config_path": str(get_config_path()),
-        "secrets_path": str(get_env_path()),
+        "config_path": str(cli_config.get_config_path()),
+        "secrets_path": str(cli_config.get_env_path()),
         "next": "restart the Hermes gateway, then run 'hermes occult status'",
     }
 
@@ -260,10 +251,8 @@ def _api_base_url() -> str:
 def _client_timeout_seconds() -> float:
     """Keep CLI requests alive for the configured provider budget plus cleanup."""
 
-    from hermes_cli.config import read_raw_config
-
     try:
-        config = read_raw_config() or {}
+        config = cli_config.read_raw_config() or {}
         provider_timeout = float(
             (config.get("occult") or {}).get("provider_timeout_seconds", 120)
         )
