@@ -112,12 +112,14 @@ def assemble_release(
             {"name": "mythos-state", "version": 1},
             {"name": "virtual-tokens-sqlite", "version": 1},
             {"name": "readings-sqlite", "version": 1},
+            {"name": "invocation-results-sqlite", "version": 1},
             {"name": "decks-json", "version": 1},
         ],
         "backup_set": [
             "occult/mythos-state.json",
             "occult/virtual_tokens.db*",
             "occult/readings.db*",
+            "occult/invocations.db*",
             "occult/decks.json",
         ],
     }

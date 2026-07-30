@@ -109,7 +109,12 @@ def initialize_occult(
     token_created = False
     if token:
         try:
-            http.service.token_authority.policy(token)
+            policy = http.service.token_authority.policy(token)
+            if not (
+                frozenset(STARTER_AGENT_IDS) <= policy.allowed_agent_ids
+                and STARTER_CARD_ID in policy.allowed_card_ids
+            ):
+                token = ""
         except VirtualTokenError:
             token = ""
     if not token:
@@ -171,6 +176,23 @@ def _api_base_url() -> str:
     return f"http://{host}:{port}"
 
 
+def _client_timeout_seconds() -> float:
+    """Keep CLI requests alive for the configured provider budget plus cleanup."""
+
+    from hermes_cli.config import read_raw_config
+
+    try:
+        config = read_raw_config() or {}
+        provider_timeout = float(
+            (config.get("occult") or {}).get("provider_timeout_seconds", 120)
+        )
+    except (OSError, TypeError, ValueError):
+        provider_timeout = 120
+    if not 1 <= provider_timeout <= 600:
+        provider_timeout = 120
+    return provider_timeout + 30
+
+
 def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
     base_url = _api_base_url()
     token = os.getenv("OCCULT_API_KEY", "").strip()
@@ -191,7 +213,9 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(
+            request, timeout=_client_timeout_seconds()
+        ) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
@@ -226,7 +250,9 @@ def _admin_request(
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(
+            request, timeout=_client_timeout_seconds()
+        ) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
@@ -253,7 +279,9 @@ def _stream_events(reading_id: str) -> Iterator[dict[str, Any]]:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(
+            request, timeout=_client_timeout_seconds()
+        ) as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8").strip()
                 if not line.startswith("data: "):

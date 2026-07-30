@@ -182,6 +182,7 @@ Stop new invocations and drain active readings before a consistent backup. Copy:
 - `occult/mythos-state.json`
 - `occult/virtual_tokens.db`, including `-wal` and `-shm` when present
 - `occult/readings.db`, including `-wal` and `-shm` when present
+- `occult/invocations.db`, including `-wal` and `-shm` when present
 - `occult/decks.json`
 - installed `.tarot` packages and their signature metadata
 - encrypted credential storage, with its master key backed up separately

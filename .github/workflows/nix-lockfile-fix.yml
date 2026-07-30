@@ -65,7 +65,6 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
-          permission-checks: read
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         if: env.APP_ID != '' && env.APP_PRIVATE_KEY != ''

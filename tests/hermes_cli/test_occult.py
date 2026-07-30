@@ -95,10 +95,15 @@ def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):
 
 def test_occult_invoke_builds_versioned_contract(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"occult": {"provider_timeout_seconds": 240}},
+    )
     captured = {}
 
     def urlopen(request, timeout):
         captured.update(json.loads(request.data.decode()))
+        captured["client_timeout"] = timeout
         return _Response({"output": "done"})
 
     monkeypatch.setattr("urllib.request.urlopen", urlopen)
@@ -120,11 +125,16 @@ def test_occult_invoke_builds_versioned_contract(monkeypatch, capsys):
     assert captured["contract_version"] == "1.0.0"
     assert captured["routing"]["mode"] == "manual"
     assert captured["minor_arcana"] == "minor.swords.king.test"
+    assert captured["client_timeout"] == 270
     assert json.loads(capsys.readouterr().out)["output"] == "done"
 
 
 def test_occult_reading_events_follow_streams_terminal_event(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
+    monkeypatch.setattr(
+        "hermes_cli.config.read_raw_config",
+        lambda: {"occult": {"provider_timeout_seconds": 600}},
+    )
     event = {
         "sequence": 2,
         "event_type": "reading.completed",
@@ -134,6 +144,7 @@ def test_occult_reading_events_follow_streams_terminal_event(monkeypatch, capsys
     def urlopen(request, timeout):
         assert request.headers["Accept"] == "text/event-stream"
         assert request.full_url.endswith("/events?stream=1")
+        assert timeout == 630
         return _Response([
             b"id: 2\n",
             b"event: reading.completed\n",

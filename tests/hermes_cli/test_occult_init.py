@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 import pytest
@@ -62,6 +63,59 @@ def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):
 
     assert first["token_created"] is True
     assert second["token_created"] is False
+
+
+def test_occult_init_replaces_token_without_full_starter_scope(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("OCCULT_ADMIN_KEY", "a" * 32)
+    monkeypatch.setenv("OCCULT_API_KEY", "occult_narrow")
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("qwen2.5:3b",),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model: None,
+    )
+    issued = []
+
+    class _Authority:
+        @staticmethod
+        def policy(_token):
+            return SimpleNamespace(
+                allowed_agent_ids=frozenset({"occult.major.magician"}),
+                allowed_card_ids=frozenset(),
+            )
+
+        @staticmethod
+        def statuses():
+            return []
+
+        @staticmethod
+        def issue(policy):
+            issued.append(policy)
+            return "occult_replacement"
+
+    monkeypatch.setattr(
+        "hermes_cli.occult.build_occult_http",
+        lambda _config, *, environ: SimpleNamespace(
+            service=SimpleNamespace(token_authority=_Authority()),
+            close=lambda: None,
+        ),
+    )
+
+    result = initialize_occult(model="qwen2.5:3b")
+
+    assert result["token_created"] is True
+    assert issued[0].allowed_agent_ids == frozenset(result["agents"])
+    assert issued[0].allowed_card_ids == frozenset({result["card_id"]})
+    assert "OCCULT_API_KEY=occult_replacement" in (home / ".env").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_occult_init_rejects_short_admin_key(tmp_path: Path, monkeypatch):
