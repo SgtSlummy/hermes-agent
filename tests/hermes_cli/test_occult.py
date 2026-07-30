@@ -1,4 +1,5 @@
 import json
+import urllib.request
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,7 @@ from gateway.config import Platform
 from hermes_cli.occult import (
     OccultCLIError,
     _api_base_url,
+    _open_occult_url,
     cmd_occult,
     run_tui_occult_command,
 )
@@ -86,6 +88,33 @@ def test_occult_api_url_normalizes_malformed_config(monkeypatch, extra):
         _api_base_url()
 
 
+def test_occult_transport_disables_ambient_proxies(monkeypatch):
+    seen = {}
+
+    class Opener:
+        @staticmethod
+        def open(request, *, timeout):
+            seen["url"] = request.full_url
+            seen["timeout"] = timeout
+            return _Response({"ok": True})
+
+    def build_opener(handler):
+        seen["proxies"] = handler.proxies
+        return Opener()
+
+    monkeypatch.setattr("urllib.request.build_opener", build_opener)
+    request = urllib.request.Request("http://127.0.0.1:8642/v1/occult/decks")
+
+    with _open_occult_url(request, timeout=9) as response:
+        assert json.loads(response.read()) == {"ok": True}
+
+    assert seen == {
+        "url": "http://127.0.0.1:8642/v1/occult/decks",
+        "timeout": 9,
+        "proxies": {},
+    }
+
+
 def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
     seen = []
@@ -96,7 +125,7 @@ def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):
             return _Response({"data": [{"agent_id": "occult.major.magician"}]})
         return _Response({"data": [{"card_id": "minor.swords.king.test"}]})
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     cmd_occult(SimpleNamespace(occult_action="status"))
 
     output = json.loads(capsys.readouterr().out)
@@ -121,7 +150,7 @@ def test_occult_invoke_builds_versioned_contract(monkeypatch, capsys):
         captured["client_timeout"] = timeout
         return _Response({"output": "done"})
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     cmd_occult(
         SimpleNamespace(
             occult_action="invoke",
@@ -167,7 +196,7 @@ def test_occult_reading_events_follow_streams_terminal_event(monkeypatch, capsys
             b"\n",
         ])
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     cmd_occult(
         SimpleNamespace(
             occult_action="reading-events",
@@ -188,7 +217,7 @@ def test_tui_occult_command_runs_real_reading_control(monkeypatch):
         seen["method"] = request.method
         return _Response({"reading_id": "reading_test", "state": "cancelled"})
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     output = run_tui_occult_command("reading-cancel reading_test")
 
     assert seen["url"].endswith("/v1/occult/readings/reading_test/cancel")
@@ -209,7 +238,7 @@ def test_tui_occult_command_defaults_to_status(monkeypatch):
     def urlopen(request, timeout):
         return _Response({"data": []})
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     assert json.loads(run_tui_occult_command("")) == {"agents": [], "routes": []}
 
 
@@ -227,7 +256,7 @@ def test_occult_token_issue_uses_separate_admin_credential(monkeypatch, capsys):
             "secret_once": True,
         })
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     cmd_occult(
         SimpleNamespace(
             occult_action="token-issue",
@@ -262,7 +291,7 @@ def test_occult_pairings_filters_by_encoded_agent(monkeypatch, capsys):
         seen["url"] = request.full_url
         return _Response({"data": []})
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     cmd_occult(
         SimpleNamespace(
             occult_action="pairings",
@@ -287,7 +316,7 @@ def test_occult_deck_validation_encodes_identifier(monkeypatch, capsys):
             "valid": True,
         })
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     cmd_occult(
         SimpleNamespace(
             occult_action="deck-validate",

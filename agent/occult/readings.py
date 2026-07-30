@@ -47,6 +47,10 @@ class ReadingError(ValueError):
     """Safe-to-surface reading validation or lifecycle failure."""
 
 
+class RetryableReadingError(RuntimeError):
+    """A transient node failure that leaves its reading resumable."""
+
+
 @dataclass(frozen=True, slots=True)
 class ReadingNode:
     node_id: str
@@ -400,6 +404,31 @@ class ReadingStore:
                 result = executor(request)
                 _reject_secret_fields(result.artifact)
                 _reject_secret_fields(result.route_summary)
+            except RetryableReadingError:
+                with self._transaction():
+                    reading = self._reading(reading_id)
+                    if reading["state"] in {"cancelled", "completed", "failed"}:
+                        return self.status(reading_id)
+                    self._append_event(
+                        reading_id,
+                        "node.failed",
+                        {
+                            "node_id": node["node_id"],
+                            "redacted": True,
+                            "retryable": True,
+                        },
+                    )
+                    self._conn.execute(
+                        "UPDATE reading_nodes SET state = 'pending' "
+                        "WHERE reading_id = ? AND node_id = ?",
+                        (reading_id, node["node_id"]),
+                    )
+                    self._conn.execute(
+                        "UPDATE readings SET state = 'pending', updated_at = ? "
+                        "WHERE reading_id = ?",
+                        (time.time(), reading_id),
+                    )
+                raise
             except Exception:
                 with self._transaction():
                     reading = self._reading(reading_id)
@@ -758,4 +787,5 @@ __all__ = [
     "ReadingNode",
     "ReadingPlan",
     "ReadingStore",
+    "RetryableReadingError",
 ]

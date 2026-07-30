@@ -30,12 +30,20 @@ from agent.occult.mythos import (
     LocalProviderAdapter,
     MinorArcanaDescriptor,
     MythosRouter,
+    MythosRoutingError,
     MythosStateStore,
+    NoEligibleRoute,
     PrivacyClass,
     ProviderFailure,
+    RouterBusy,
 )
 from agent.occult.pairing import RuntimePolicy
-from agent.occult.readings import CouncilNodeRequest, CouncilNodeResult, ReadingStore
+from agent.occult.readings import (
+    CouncilNodeRequest,
+    CouncilNodeResult,
+    ReadingStore,
+    RetryableReadingError,
+)
 from agent.occult.service import OccultService
 from agent.occult.tarot_packages import SystemPackagePolicy, TarotPackageManager
 from agent.occult.virtual_tokens import SQLiteVirtualTokenStore, VirtualTokenAuthority
@@ -263,32 +271,55 @@ def _reading_executor(
                 + json.dumps(artifact, sort_keys=True, separators=(",", ":"))
             )
         digest = hashlib.sha256(request.idempotency_key.encode("utf-8")).hexdigest()
-        result = service.invoke(
-            plaintext_token,
-            {
-                "contract_version": request.contract_version,
-                "invocation_id": f"inv_reading_{digest[:24]}",
-                "idempotency_key": request.idempotency_key,
-                "agent_id": request.agent_id,
-                "orientation": "upright",
-                "input": {"message": "\n\n".join(sections)},
-                "required_capabilities": ["text"],
-                "routing": {
-                    "mode": "local_only",
-                    "free_only": True,
-                    "local_only": True,
-                    "maximum_fallbacks": 0,
-                    "maximum_cost_usd": 0,
+        try:
+            result = service.invoke(
+                plaintext_token,
+                {
+                    "contract_version": request.contract_version,
+                    "invocation_id": f"inv_reading_{digest[:24]}",
+                    "idempotency_key": request.idempotency_key,
+                    "agent_id": request.agent_id,
+                    "orientation": "upright",
+                    "input": {"message": "\n\n".join(sections)},
+                    "required_capabilities": ["text"],
+                    "routing": {
+                        "mode": "local_only",
+                        "free_only": True,
+                        "local_only": True,
+                        "maximum_fallbacks": 0,
+                        "maximum_cost_usd": 0,
+                    },
+                    "deck_id": STARTER_DECK_ID,
+                    "spread_id": request.reading_id,
+                    "metadata": {
+                        "reading_id": request.reading_id,
+                        "node_id": request.node_id,
+                    },
                 },
-                "deck_id": STARTER_DECK_ID,
-                "spread_id": request.reading_id,
-                "metadata": {
-                    "reading_id": request.reading_id,
-                    "node_id": request.node_id,
-                },
-            },
-            _skip_idempotency=True,
-        )
+                _skip_idempotency=True,
+            )
+        except RouterBusy as exc:
+            raise RetryableReadingError(
+                "Occult provider capacity is temporarily exhausted"
+            ) from exc
+        except NoEligibleRoute as exc:
+            raise RetryableReadingError(
+                "Occult provider route is temporarily unavailable"
+            ) from exc
+        except MythosRoutingError as exc:
+            retryable_failures = {
+                FailureKind.RATE_LIMIT,
+                FailureKind.TIMEOUT,
+                FailureKind.UNAVAILABLE,
+                FailureKind.UNKNOWN,
+            }
+            if exc.failures and all(
+                kind in retryable_failures for _, kind in exc.failures
+            ):
+                raise RetryableReadingError(
+                    "Occult provider is temporarily unavailable"
+                ) from exc
+            raise
         node_result = CouncilNodeResult(
             artifact={
                 "content": result["output"],

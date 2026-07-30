@@ -5434,12 +5434,18 @@ class GatewayRunner:
                 logger.warning("API Server: aiohttp not installed")
                 return None
             adapter = APIServerAdapter(config)
+            occult_enabled = False
             try:
+                from agent.occult.contracts import is_occult_enabled
                 from agent.occult.runtime import build_occult_http
 
+                occult_config = _load_gateway_config()
+                occult_enabled = is_occult_enabled(occult_config)
                 occult_http = await self._run_in_executor_with_context(
-                    lambda: build_occult_http(_load_gateway_config())
+                    lambda: build_occult_http(occult_config)
                 )
+                if occult_enabled and occult_http is None:
+                    raise RuntimeError("enabled Occult runtime returned no handler")
                 if occult_http is not None:
                     adapter.attach_occult_http(occult_http)
                     logger.info("Occult runtime attached to the API server")
@@ -5450,6 +5456,10 @@ class GatewayRunner:
                     "Occult runtime is enabled but could not be assembled: %s",
                     redact_sensitive_text(str(exc), force=True),
                 )
+                if occult_enabled:
+                    raise RuntimeError(
+                        "enabled Occult runtime could not be assembled"
+                    ) from exc
             return adapter
 
         elif platform == Platform.WEBHOOK:

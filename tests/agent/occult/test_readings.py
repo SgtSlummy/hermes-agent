@@ -14,6 +14,7 @@ from agent.occult.readings import (
     ReadingNode,
     ReadingPlan,
     ReadingStore,
+    RetryableReadingError,
 )
 
 
@@ -149,6 +150,45 @@ def test_three_node_reading_resumes_without_reexecuting_completed_node(
     restarted.resume(reading_id, execute)
     assert calls == ["build", "review", "synthesis"]
     assert len(restarted.events(reading_id)) == len(events)
+
+
+def test_retryable_node_failure_leaves_reading_pending_for_resume(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        ReadingPlan(
+            spread_id="occult.spread.retryable",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="retryable-reading",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    attempts = 0
+
+    def execute(_request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RetryableReadingError("provider unavailable")
+        return CouncilNodeResult(
+            artifact={"content": "built"},
+            route_summary={"provider_id": "test"},
+        )
+
+    with pytest.raises(RetryableReadingError):
+        store.run(reading_id, execute)
+
+    pending = store.status(reading_id)
+    assert pending["state"] == "pending"
+    assert pending["nodes"][0]["state"] == "pending"
+    assert not any(
+        event["event_type"].startswith("reading.")
+        and event["event_type"] != "reading.started"
+        for event in store.events(reading_id)
+    )
+
+    completed = store.resume(reading_id, execute)
+    assert completed["state"] == "completed"
+    assert attempts == 2
 
 
 def test_event_cursor_rejects_negative_sequence(tmp_path: Path):

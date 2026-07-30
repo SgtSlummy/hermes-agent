@@ -60,10 +60,13 @@ async def test_occult_runtime_assembly_logs_safe_actionable_error(
         thread_sessions_per_user=False,
     )
 
-    adapter = await runner._create_adapter(
-        Platform.API_SERVER,
-        PlatformConfig(enabled=True),
-    )
+    with pytest.raises(
+        RuntimeError,
+        match="enabled Occult runtime could not be assembled",
+    ):
+        await runner._create_adapter(
+            Platform.API_SERVER,
+            PlatformConfig(enabled=True),
+        )
 
-    assert isinstance(adapter, APIServerAdapter)
     assert "Ollama is unavailable" in caplog.text

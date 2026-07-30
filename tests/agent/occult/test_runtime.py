@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import make_mocked_request
 
-from agent.occult.readings import CouncilNodeRequest, ReadingNode, ReadingPlan
+from agent.occult.readings import (
+    CouncilNodeRequest,
+    ReadingNode,
+    ReadingPlan,
+    RetryableReadingError,
+)
 from agent.occult.runtime import (
     STARTER_AGENT_IDS,
     STARTER_CARD_ID,
@@ -270,6 +275,61 @@ def test_reading_access_is_bound_to_creating_virtual_token(tmp_path: Path):
     assert http._authorized_reading(owner, reading_id, "status")["state"] == "pending"
     with pytest.raises(VirtualTokenError, match="does not allow requested reading"):
         http._authorized_reading(other, reading_id, "status")
+    http.close()
+
+
+def test_transient_provider_failure_keeps_runtime_reading_resumable(
+    tmp_path: Path,
+    monkeypatch,
+):
+    def timeout(_request, *, timeout):
+        raise TimeoutError
+
+    monkeypatch.setattr("agent.occult.runtime._open_local_url", timeout)
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    token = http.service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="retryable-runtime",
+            allowed_agent_ids=frozenset({"occult.major.magician"}),
+            allowed_card_ids=frozenset({STARTER_CARD_ID}),
+        )
+    )
+    reading_id = http.readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.retryable-runtime",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="retryable-runtime-reading",
+        contract_version="1.0.0",
+        owner_token_id="retryable-runtime",
+    )
+
+    with pytest.raises(RetryableReadingError):
+        http._authorized_reading(token, reading_id, "resume")
+    assert http.readings.status(reading_id)["state"] == "pending"
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        @staticmethod
+        def read():
+            return json.dumps({
+                "choices": [{"message": {"content": "built"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            }).encode()
+
+    monkeypatch.setattr(
+        "agent.occult.runtime._open_local_url",
+        lambda _request, *, timeout: Response(),
+    )
+    completed = http._authorized_reading(token, reading_id, "resume")
+
+    assert completed["state"] == "completed"
     http.close()
 
 

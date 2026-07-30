@@ -9,7 +9,10 @@ from aiohttp.web import Application
 from agent.occult.contracts import DeckDescriptor, RoutingPolicy
 from agent.occult.decks import DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
-from agent.occult.idempotency import SQLiteInvocationResultStore
+from agent.occult.idempotency import (
+    InvocationIdempotencyError,
+    SQLiteInvocationResultStore,
+)
 from agent.occult.mythos import (
     AdapterResponse,
     MinorArcanaDescriptor,
@@ -23,6 +26,7 @@ from agent.occult.readings import (
     ReadingNode,
     ReadingPlan,
     ReadingStore,
+    RetryableReadingError,
 )
 from agent.occult.service import OccultService
 from agent.occult.tarot_packages import (
@@ -275,9 +279,28 @@ def test_durable_invocation_results_have_bounded_retention(tmp_path: Path):
         "fingerprint-2",
         lambda: pytest.fail("retained result must replay"),
     )
+    with pytest.raises(InvocationIdempotencyError, match="result expired"):
+        store.run(
+            "client",
+            "key-0",
+            "fingerprint-0",
+            lambda: pytest.fail("expired identity must not execute again"),
+        )
+    with pytest.raises(InvocationIdempotencyError, match="different input"):
+        store.run(
+            "client",
+            "key-0",
+            "different-fingerprint",
+            lambda: pytest.fail("reused identity must not execute again"),
+        )
+    with sqlite3.connect(path) as connection:
+        identities = connection.execute(
+            "SELECT COUNT(*) FROM invocation_identities"
+        ).fetchone()[0]
     store.close()
 
     assert retained == [("key-1",), ("key-2",)]
+    assert identities == 3
     assert replay == {"index": 2}
     assert calls == [0, 1, 2]
 
@@ -375,6 +398,40 @@ async def test_http_surface_requires_virtual_token_and_runs_real_operations(
         assert resumed_stream.status == 200
         assert await resumed_stream.text() == ""
     assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_retryable_reading_failure_returns_503_and_remains_pending(
+    tmp_path: Path,
+):
+    service, token, _seen = _service()
+    readings = ReadingStore(tmp_path / "readings.db")
+    owner = service.token_authority.policy(token).token_id
+    reading_id = readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.retryable-http",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="retryable-http",
+        contract_version="1.0.0",
+        owner_token_id=owner,
+    )
+
+    def unavailable(_token, _request):
+        raise RetryableReadingError("provider unavailable")
+
+    app = Application()
+    OccultHTTPAdapter(service, readings, unavailable).register(app)
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            f"/v1/occult/readings/{reading_id}/resume",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        body = await response.json()
+
+    assert response.status == 503
+    assert body["error"]["retryable"] is True
+    assert readings.status(reading_id)["state"] == "pending"
 
 
 @pytest.mark.asyncio

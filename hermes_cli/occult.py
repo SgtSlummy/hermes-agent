@@ -233,6 +233,13 @@ def _client_timeout_seconds() -> float:
     return provider_timeout + 30
 
 
+def _open_occult_url(request: urllib.request.Request, *, timeout: float):
+    """Open an Occult request without exposing credentials to ambient proxies."""
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return opener.open(request, timeout=timeout)
+
+
 def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
     base_url = _api_base_url()
     token = os.getenv("OCCULT_API_KEY", "").strip()
@@ -253,7 +260,7 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
         },
     )
     try:
-        with urllib.request.urlopen(
+        with _open_occult_url(
             request, timeout=_client_timeout_seconds()
         ) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -290,7 +297,7 @@ def _admin_request(
         },
     )
     try:
-        with urllib.request.urlopen(
+        with _open_occult_url(
             request, timeout=_client_timeout_seconds()
         ) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -319,7 +326,7 @@ def _stream_events(reading_id: str) -> Iterator[dict[str, Any]]:
         },
     )
     try:
-        with urllib.request.urlopen(
+        with _open_occult_url(
             request, timeout=_client_timeout_seconds()
         ) as response:
             for raw_line in response:

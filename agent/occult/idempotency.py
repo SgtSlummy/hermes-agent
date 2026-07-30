@@ -46,6 +46,13 @@ class SQLiteInvocationResultStore:
         self._conn.executescript(
             """
             PRAGMA journal_mode=WAL;
+            CREATE TABLE IF NOT EXISTS invocation_identities (
+                owner_token_id TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                request_fingerprint TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (owner_token_id, idempotency_key)
+            );
             CREATE TABLE IF NOT EXISTS invocation_results (
                 owner_token_id TEXT NOT NULL,
                 idempotency_key TEXT NOT NULL,
@@ -54,6 +61,14 @@ class SQLiteInvocationResultStore:
                 created_at REAL NOT NULL,
                 PRIMARY KEY (owner_token_id, idempotency_key)
             );
+            INSERT OR IGNORE INTO invocation_identities (
+                owner_token_id, idempotency_key,
+                request_fingerprint, created_at
+            )
+            SELECT
+                owner_token_id, idempotency_key,
+                request_fingerprint, created_at
+            FROM invocation_results;
             """
         )
 
@@ -86,6 +101,23 @@ class SQLiteInvocationResultStore:
                 if on_replay is not None:
                     on_replay(result)
                 return result
+            with self._db_lock:
+                identity = self._conn.execute(
+                    """
+                    SELECT request_fingerprint
+                    FROM invocation_identities
+                    WHERE owner_token_id = ? AND idempotency_key = ?
+                    """,
+                    lock_key,
+                ).fetchone()
+            if identity is not None:
+                if identity["request_fingerprint"] != request_fingerprint:
+                    raise InvocationIdempotencyError(
+                        "idempotency key was reused with different input"
+                    )
+                raise InvocationIdempotencyError(
+                    "idempotency result expired; submit the request with a new key"
+                )
 
             result = dict(callback())
             encoded = json.dumps(result, sort_keys=True, separators=(",", ":"))
@@ -93,6 +125,20 @@ class SQLiteInvocationResultStore:
                 self._conn.execute("BEGIN IMMEDIATE")
                 try:
                     now = time.time()
+                    self._conn.execute(
+                        """
+                        INSERT INTO invocation_identities (
+                            owner_token_id, idempotency_key,
+                            request_fingerprint, created_at
+                        ) VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            owner_token_id,
+                            idempotency_key,
+                            request_fingerprint,
+                            now,
+                        ),
+                    )
                     self._conn.execute(
                         """
                         INSERT INTO invocation_results (

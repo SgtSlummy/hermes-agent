@@ -22,6 +22,7 @@ from agent.occult.readings import (
     ReadingNode,
     ReadingPlan,
     ReadingStore,
+    RetryableReadingError,
 )
 from agent.occult.service import OccultService
 from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
@@ -541,6 +542,12 @@ class OccultHTTPAdapter:
             return web.json_response(result, status=status)
         except VirtualTokenError as exc:
             return self._error(str(exc), 403)
+        except RetryableReadingError:
+            return self._error(
+                "Occult provider is temporarily unavailable",
+                503,
+                retryable=True,
+            )
         except (OccultContractError, ReadingError, ValueError) as exc:
             return self._error(str(exc), 400)
         except Exception:
@@ -555,15 +562,21 @@ class OccultHTTPAdapter:
         return token or None
 
     @staticmethod
-    def _error(message: str, status: int) -> web.Response:
+    def _error(
+        message: str,
+        status: int,
+        *,
+        retryable: bool = False,
+    ) -> web.Response:
+        error: dict[str, Any] = {
+            "message": message,
+            "type": "occult_error",
+            "redacted": True,
+        }
+        if retryable:
+            error["retryable"] = True
         return web.json_response(
-            {
-                "error": {
-                    "message": message,
-                    "type": "occult_error",
-                    "redacted": True,
-                }
-            },
+            {"error": error},
             status=status,
         )
 
