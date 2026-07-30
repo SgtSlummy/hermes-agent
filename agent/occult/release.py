@@ -54,6 +54,9 @@ _PLACEHOLDER_SECRET_MARKERS = (
     "your_",
     "your.",
 )
+_PLACEHOLDER_SECRET_PATTERNS = (
+    re.compile(r"(?:Bearer\s+)?sk-x{20,}", re.IGNORECASE),
+)
 
 
 class OccultReleaseError(ValueError):
@@ -346,7 +349,13 @@ def _assert_safe_artifact(path: Path, relative: str) -> None:
     for pattern in _SECRET_PATTERNS:
         for match in pattern.finditer(text):
             candidate = match.group(0).lower()
-            if not any(marker in candidate for marker in _PLACEHOLDER_SECRET_MARKERS):
+            explicit_placeholder = any(
+                marker in candidate for marker in _PLACEHOLDER_SECRET_MARKERS
+            ) or any(
+                placeholder.fullmatch(candidate)
+                for placeholder in _PLACEHOLDER_SECRET_PATTERNS
+            )
+            if not explicit_placeholder:
                 raise OccultReleaseError(f"secret-shaped release content: {relative}")
 
 

@@ -180,6 +180,7 @@ def test_assembly_allows_explicit_documentation_placeholders(tmp_path: Path):
             "api_key = 'unused-proxy-attaches-real-creds'",
             '"password": "your-password"',
             '"access_token": "sk-or-v1-..."',
+            f"Authorization: Bearer sk-{'x' * 32}",
         ]),
         encoding="utf-8",
     )
