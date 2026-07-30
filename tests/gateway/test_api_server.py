@@ -353,6 +353,40 @@ class TestAuth:
         assert result is not None
         assert result.status == 401
 
+    @pytest.mark.asyncio
+    async def test_models_dispatches_occult_token_before_gateway_auth(self):
+        adapter = _make_adapter(api_key="gateway-key")
+        occult = MagicMock()
+        occult.handles_openai_request.return_value = True
+        occult.handle_openai_models = AsyncMock(
+            return_value=web.json_response({"object": "list", "data": []})
+        )
+        adapter.attach_occult_http(occult)
+        request = MagicMock()
+        request.headers = {"Authorization": "Bearer occult_client"}
+
+        response = await adapter._handle_models(request)
+
+        assert response.status == 200
+        occult.handle_openai_models.assert_awaited_once_with(request)
+
+    @pytest.mark.asyncio
+    async def test_chat_dispatches_occult_token_before_gateway_auth(self):
+        adapter = _make_adapter(api_key="gateway-key")
+        occult = MagicMock()
+        occult.handles_openai_request.return_value = True
+        occult.handle_openai_chat = AsyncMock(
+            return_value=web.json_response({"id": "chatcmpl_occult"})
+        )
+        adapter.attach_occult_http(occult)
+        request = MagicMock()
+        request.headers = {"Authorization": "Bearer occult_client"}
+
+        response = await adapter._handle_chat_completions(request)
+
+        assert response.status == 200
+        occult.handle_openai_chat.assert_awaited_once_with(request)
+
 
 # ---------------------------------------------------------------------------
 # Helpers for HTTP tests

@@ -13,6 +13,7 @@ from aiohttp import web
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
 from agent.occult.decks import DeckError
+from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.readings import (
     CouncilNodeRequest,
     CouncilNodeResult,
@@ -32,7 +33,14 @@ class OccultHTTPAdapter:
     reading_executor: Callable[[CouncilNodeRequest], CouncilNodeResult] | None = None
     admin_key_digest: bytes | None = None
 
-    def register(self, app: web.Application) -> None:
+    def register(
+        self,
+        app: web.Application,
+        *,
+        include_openai_compat: bool = True,
+    ) -> None:
+        if include_openai_compat:
+            OccultOpenAIAdapter(self.service).register(app)
         app.router.add_get("/v1/occult/major-arcana", self._agents)
         app.router.add_get("/v1/occult/minor-arcana", self._routes)
         app.router.add_get("/v1/occult/decks", self._decks)
@@ -61,6 +69,22 @@ class OccultHTTPAdapter:
                 self._admin_revoke_token,
             )
             app.router.add_post("/v1/occult/admin/decks", self._admin_install_deck)
+
+    @staticmethod
+    def handles_openai_request(request: web.Request) -> bool:
+        """Identify router-issued virtual tokens before gateway API-key auth."""
+
+        header = request.headers.get("Authorization", "")
+        return header.startswith("Bearer occult_")
+
+    async def handle_openai_models(self, request: web.Request) -> web.Response:
+        return await OccultOpenAIAdapter(self.service).models(request)
+
+    async def handle_openai_chat(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+        return await OccultOpenAIAdapter(self.service).chat_completions(request)
 
     async def _agents(self, request: web.Request) -> web.Response:
         return await self._call(
