@@ -56,6 +56,7 @@ def test_occult_production_workflow_preserves_release_invariants():
     ):
         assert expected in text
     promote = text.split("  promote:", 1)[1]
+    assert "uv sync --frozen --extra occult" in promote
     assert "npm run build" not in promote
     assert "uv build" not in promote
     assert "docker build" not in promote
