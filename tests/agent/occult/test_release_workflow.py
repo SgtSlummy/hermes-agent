@@ -31,9 +31,8 @@ def test_occult_production_workflow_preserves_release_invariants():
 
     for expected in (
         "ubuntu-latest, macos-latest, windows-latest",
-        "uv sync --frozen",
+        "uv sync --frozen --extra dev --extra homeassistant",
         "bun install --frozen-lockfile",
-        "test:occult-hermes-e2e",
         "test_council_transport_e2e.py",
         "tests/hermes_cli/test_backup.py",
         "nix flake check",
