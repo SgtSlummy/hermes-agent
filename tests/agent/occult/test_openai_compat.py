@@ -229,9 +229,7 @@ async def test_openai_responses_stream_emits_documented_lifecycle(tmp_path: Path
         assert response.headers["Content-Type"].startswith("text/event-stream")
         lines = (await response.text()).splitlines()
         event_types = [
-            line.removeprefix("event: ")
-            for line in lines
-            if line.startswith("event: ")
+            line.removeprefix("event: ") for line in lines if line.startswith("event: ")
         ]
         payloads = [
             json.loads(line.removeprefix("data: "))

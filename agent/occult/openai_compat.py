@@ -721,9 +721,7 @@ class OccultOpenAIAdapter:
             for sequence_number, (event_type, event) in enumerate(events):
                 payload = {**event, "sequence_number": sequence_number}
                 data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-                await response.write(
-                    f"event: {event_type}\ndata: {data}\n\n".encode()
-                )
+                await response.write(f"event: {event_type}\ndata: {data}\n\n".encode())
         except (ConnectionResetError, asyncio.CancelledError):
             pass
         finally:
