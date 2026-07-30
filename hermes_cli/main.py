@@ -10288,9 +10288,22 @@ def main():
     # =========================================================================
     occult_parser = subparsers.add_parser(
         "occult",
-        help="Inspect and invoke an explicitly enabled Occult runtime",
+        help="Initialize, inspect, and invoke the local-first Occult runtime",
     )
     occult_subparsers = occult_parser.add_subparsers(dest="occult_action")
+    occult_init = occult_subparsers.add_parser(
+        "init",
+        help="Install the signed starter deck and configure local Ollama",
+    )
+    occult_init.add_argument(
+        "--base-url",
+        default=None,
+        help="Loopback Ollama OpenAI-compatible base URL",
+    )
+    occult_init.add_argument(
+        "--model",
+        help="Installed Ollama model (defaults to the first discovered model)",
+    )
     occult_subparsers.add_parser("status", help="Show active agents and routes")
     occult_subparsers.add_parser("agents", help="List permitted Major Arcana")
     occult_subparsers.add_parser("routes", help="List permitted Minor Arcana")

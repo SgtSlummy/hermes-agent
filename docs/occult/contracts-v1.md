@@ -76,6 +76,18 @@ contain provider and model identifiers, but never their authentication data.
 - Each invocation supplies an `idempotency_key`.
 - Repeating the same key and semantic request must return the existing reading
   or invocation result; reuse with different content must fail.
+- Reading retries compare a canonical fingerprint of the spread, agents,
+  tasks, and dependencies before returning an existing reading.
+- Invocation result bodies are retained for seven days by default. Their
+  token-scoped key fingerprints remain protected for four times the configured
+  result-retention window. After that explicit identity horizon, a key is
+  expired and may execute again; clients requiring longer deduplication must
+  issue a fresh key or configure a longer horizon.
+- Terminal reading payloads are retained for 30 days by default. Their
+  token-scoped key and canonical plan fingerprint remain protected for a
+  separate 120-day identity horizon, preventing duplicate Council execution
+  after payload pruning. Both horizons are configurable, and the identity
+  horizon must exceed payload retention.
 - Event sequences are contiguous and strictly increasing within one reading.
 - An event stream belongs to exactly one reading.
 - A completed stream ends in exactly one of `reading.completed`,
@@ -111,5 +123,7 @@ may expand system, user, deck, or tool authority.
 5. Roll back the feature boundary before rolling back shared storage.
 6. Never make credential material part of a migration payload or audit event.
 
-The version-1 package has no database migration and no persistent state, so
-rollback consists of disabling/removing the integration code.
+The readings v2 storage migration hashes legacy idempotency keys in place.
+Downgrading to a binary that expects readings v1 therefore requires restoring
+the matching pre-migration `readings.db` backup; disabling the feature alone
+does not reverse that storage change.

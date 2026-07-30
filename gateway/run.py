@@ -3556,7 +3556,7 @@ class GatewayRunner:
                 continue
             enabled_platform_count += 1
             
-            adapter = self._create_adapter(platform, platform_config)
+            adapter = await self._create_adapter(platform, platform_config)
             if not adapter:
                 # Distinguish between missing builtin deps and missing plugin
                 _pval = platform.value
@@ -4859,8 +4859,9 @@ class GatewayRunner:
                     platform.value, attempt,
                 )
 
+                adapter = None
                 try:
-                    adapter = self._create_adapter(platform, platform_config)
+                    adapter = await self._create_adapter(platform, platform_config)
                     if not adapter:
                         logger.warning(
                             "Reconnect %s: adapter creation returned None, removing from retry queue",
@@ -4929,7 +4930,10 @@ class GatewayRunner:
                                     or "failed to reconnect"
                                 ),
                             )
+                        await self._safe_adapter_disconnect(adapter, platform)
                 except Exception as e:
+                    if adapter is not None:
+                        await self._safe_adapter_disconnect(adapter, platform)
                     self._update_platform_runtime_status(
                         platform.value,
                         platform_state="retrying",
@@ -5253,7 +5257,7 @@ class GatewayRunner:
         """Wait for shutdown signal."""
         await self._shutdown_event.wait()
 
-    def _create_adapter(
+    async def _create_adapter(
         self, 
         platform: Platform, 
         config: Any
@@ -5429,7 +5433,34 @@ class GatewayRunner:
             if not check_api_server_requirements():
                 logger.warning("API Server: aiohttp not installed")
                 return None
-            return APIServerAdapter(config)
+            adapter = APIServerAdapter(config)
+            occult_enabled = False
+            try:
+                from agent.occult.contracts import is_occult_enabled
+                from agent.occult.runtime import build_occult_http
+
+                occult_config = _load_gateway_config()
+                occult_enabled = is_occult_enabled(occult_config)
+                occult_http = await self._run_in_executor_with_context(
+                    lambda: build_occult_http(occult_config)
+                )
+                if occult_enabled and occult_http is None:
+                    raise RuntimeError("enabled Occult runtime returned no handler")
+                if occult_http is not None:
+                    adapter.attach_occult_http(occult_http)
+                    logger.info("Occult runtime attached to the API server")
+            except Exception as exc:
+                from agent.redact import redact_sensitive_text
+
+                logger.error(
+                    "Occult runtime is enabled but could not be assembled: %s",
+                    redact_sensitive_text(str(exc), force=True),
+                )
+                if occult_enabled:
+                    raise RuntimeError(
+                        "enabled Occult runtime could not be assembled"
+                    ) from exc
+            return adapter
 
         elif platform == Platform.WEBHOOK:
             from gateway.platforms.webhook import WebhookAdapter, check_webhook_requirements

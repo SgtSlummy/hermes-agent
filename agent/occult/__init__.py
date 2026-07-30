@@ -57,6 +57,16 @@ from agent.occult.pairing import (
 )
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.openai_compat import OccultOpenAIAdapter
+from agent.occult.runtime import (
+    DEFAULT_OLLAMA_BASE_URL,
+    STARTER_AGENT_IDS,
+    STARTER_CARD_ID,
+    STARTER_DECK_ID,
+    OccultRuntimeError,
+    build_occult_http,
+    discover_ollama_models,
+    normalize_loopback_openai_url,
+)
 from agent.occult.readings import (
     CouncilNodeRequest,
     CouncilNodeResult,
@@ -109,6 +119,7 @@ __all__ = [
     "OccultContractError",
     "OccultHTTPAdapter",
     "OccultOpenAIAdapter",
+    "OccultRuntimeError",
     "OccultService",
     "PairingContext",
     "PairingError",
@@ -130,6 +141,13 @@ __all__ = [
     "TarotManifest",
     "TarotPackageError",
     "TarotPackageManager",
+    "DEFAULT_OLLAMA_BASE_URL",
+    "STARTER_AGENT_IDS",
+    "STARTER_CARD_ID",
+    "STARTER_DECK_ID",
+    "build_occult_http",
+    "discover_ollama_models",
+    "normalize_loopback_openai_url",
     "ToolAuthorization",
     "ToolAuthorizationDecision",
     "UnsupportedCapability",

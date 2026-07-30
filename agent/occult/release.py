@@ -108,16 +108,19 @@ def assemble_release(
         "release_version": version,
         "data_loss_expected": False,
         "rollback_supported": True,
+        "rollback_requires_backup_restore": ["readings-sqlite"],
         "state": [
             {"name": "mythos-state", "version": 1},
             {"name": "virtual-tokens-sqlite", "version": 1},
-            {"name": "readings-sqlite", "version": 1},
+            {"name": "readings-sqlite", "version": 3},
+            {"name": "invocation-results-sqlite", "version": 1},
             {"name": "decks-json", "version": 1},
         ],
         "backup_set": [
             "occult/mythos-state.json",
             "occult/virtual_tokens.db*",
             "occult/readings.db*",
+            "occult/invocations.db*",
             "occult/decks.json",
         ],
     }

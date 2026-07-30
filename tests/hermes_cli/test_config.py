@@ -2,9 +2,11 @@
 
 import os
 from pathlib import Path
+from threading import Event, Thread
 from unittest.mock import patch, MagicMock
 
 import yaml
+import hermes_cli.config as config_module
 
 from hermes_cli.config import (
     DEFAULT_CONFIG,
@@ -17,11 +19,11 @@ from hermes_cli.config import (
     remove_env_value,
     save_config,
     save_env_value,
+    save_env_values,
     save_env_value_secure,
     sanitize_env_file,
     _sanitize_env_lines,
 )
-from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 
 
 class TestGetHermesHome:
@@ -71,10 +73,7 @@ class TestLoadConfigDefaults:
             assert "terminal" in config
             assert config["terminal"]["backend"] == "local"
             assert config["display"]["interim_assistant_messages"] is True
-            assert config["occult"] == {
-                "enabled": False,
-                "contract_version": OCCULT_CONTRACT_VERSION,
-            }
+            assert config["occult"] == DEFAULT_CONFIG["occult"]
 
     def test_legacy_root_level_max_turns_migrates_to_agent_config(self, tmp_path):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
@@ -196,6 +195,64 @@ class TestSaveAndLoadRoundtrip:
 
 
 class TestSaveEnvValueSecure:
+    def test_save_env_values_updates_multiple_keys_atomically(self, tmp_path):
+        with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}, clear=False):
+            save_env_values({
+                "OCCULT_ADMIN_KEY": "admin-value",
+                "OCCULT_API_KEY": "token-value",
+            })
+
+            env_values = load_env()
+            assert env_values["OCCULT_ADMIN_KEY"] == "admin-value"
+            assert env_values["OCCULT_API_KEY"] == "token-value"
+            assert os.environ["OCCULT_ADMIN_KEY"] == "admin-value"
+            assert os.environ["OCCULT_API_KEY"] == "token-value"
+
+    def test_env_writers_serialize_the_entire_read_modify_write(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        first_replace_entered = Event()
+        release_first_replace = Event()
+        original_atomic_replace = config_module.atomic_replace
+        replace_calls = [0]
+
+        def controlled_atomic_replace(source, destination):
+            replace_calls[0] += 1
+            if replace_calls[0] == 1:
+                first_replace_entered.set()
+                assert release_first_replace.wait(timeout=5)
+            return original_atomic_replace(source, destination)
+
+        monkeypatch.setattr(
+            config_module,
+            "atomic_replace",
+            controlled_atomic_replace,
+        )
+        with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}, clear=False):
+            first = Thread(
+                target=save_env_values,
+                args=({"OCCULT_ADMIN_KEY": "admin-value"},),
+            )
+            second = Thread(
+                target=save_env_value,
+                args=("OCCULT_API_KEY", "token-value"),
+            )
+            first.start()
+            assert first_replace_entered.wait(timeout=5)
+            second.start()
+            assert second.is_alive()
+            release_first_replace.set()
+            first.join(timeout=5)
+            second.join(timeout=5)
+
+            assert not first.is_alive()
+            assert not second.is_alive()
+            env_values = load_env()
+            assert env_values["OCCULT_ADMIN_KEY"] == "admin-value"
+            assert env_values["OCCULT_API_KEY"] == "token-value"
+
     def test_save_env_value_writes_without_stdout(self, tmp_path, capsys):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
             save_env_value("TENOR_API_KEY", "sk-test-secret")
@@ -434,6 +491,13 @@ class TestSanitizeEnvLines:
             assert "OPENAI_BASE_URL=https://api.openai.com/v1" in lines
             assert "MESSAGING_CWD=/tmp" in lines
 
+    def test_occult_credentials_are_split_when_concatenated(self):
+        lines = ["OCCULT_ADMIN_KEY=adminOCCULT_API_KEY=client\n"]
+        assert _sanitize_env_lines(lines) == [
+            "OCCULT_ADMIN_KEY=admin\n",
+            "OCCULT_API_KEY=client\n",
+        ]
+
     def test_sanitize_env_file_returns_fix_count(self, tmp_path):
         """sanitize_env_file reports how many entries were fixed."""
         env_file = tmp_path / ".env"
@@ -489,6 +553,16 @@ class TestOptionalEnvVarsRegistry:
         for vars_list in ENV_VARS_BY_VERSION.values():
             all_vars.extend(vars_list)
         assert "TAVILY_API_KEY" in all_vars
+
+    def test_occult_credentials_are_registered_as_passwords(self):
+        from hermes_cli.config import OPTIONAL_ENV_VARS
+
+        for key in (
+            "OCCULT_ADMIN_KEY",
+            "OCCULT_API_KEY",
+            "OCCULT_STARTER_SIGNING_KEY",
+        ):
+            assert OPTIONAL_ENV_VARS[key]["password"] is True
 
 
 class TestAnthropicTokenMigration:

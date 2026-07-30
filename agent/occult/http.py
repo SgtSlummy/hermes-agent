@@ -6,14 +6,14 @@ import asyncio
 import hashlib
 import json
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
 from aiohttp import web
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
 from agent.occult.decks import DeckError
-from agent.occult.mythos import RouterBusy
+from agent.occult.mythos import FailureKind, MythosRoutingError, RouterBusy
 from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.readings import (
     CouncilNodeRequest,
@@ -22,17 +22,72 @@ from agent.occult.readings import (
     ReadingNode,
     ReadingPlan,
     ReadingStore,
+    RetryableReadingError,
 )
 from agent.occult.service import OccultService
-from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
+from agent.occult.virtual_tokens import (
+    VirtualTokenError,
+    VirtualTokenPolicy,
+    VirtualTokenRateLimitError,
+)
 
 
 @dataclass(slots=True)
 class OccultHTTPAdapter:
     service: OccultService
     readings: ReadingStore
-    reading_executor: Callable[[CouncilNodeRequest], CouncilNodeResult] | None = None
+    reading_executor: (
+        Callable[[str, CouncilNodeRequest], CouncilNodeResult] | None
+    ) = None
     admin_key_digest: bytes | None = None
+    _worker_tasks: set[asyncio.Task[Any]] = field(
+        default_factory=set,
+        init=False,
+        repr=False,
+    )
+    _stores_closed: bool = field(default=False, init=False, repr=False)
+
+    def close(self) -> None:
+        """Close profile-scoped stores owned by the assembled runtime."""
+
+        if any(not task.done() for task in self._worker_tasks):
+            raise RuntimeError("active Occult workers must be drained with aclose()")
+        self._close_stores()
+
+    async def aclose(self) -> None:
+        """Drain uncancellable worker threads before closing durable stores."""
+
+        active = tuple(task for task in self._worker_tasks if not task.done())
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)
+        self._close_stores()
+
+    def _close_stores(self) -> None:
+        if self._stores_closed:
+            return
+        self._stores_closed = True
+        try:
+            self.readings.close()
+        finally:
+            try:
+                store = self.service.token_authority.store
+                if store is not None:
+                    store.close()
+            finally:
+                invocation_store = self.service.invocation_store
+                if invocation_store is not None:
+                    invocation_store.close()
+
+    async def _run_worker(
+        self,
+        callback: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        task = asyncio.create_task(asyncio.to_thread(callback, *args, **kwargs))
+        self._worker_tasks.add(task)
+        task.add_done_callback(self._worker_tasks.discard)
+        return await asyncio.shield(task)
 
     def register(
         self,
@@ -41,7 +96,7 @@ class OccultHTTPAdapter:
         include_openai_compat: bool = True,
     ) -> None:
         if include_openai_compat:
-            OccultOpenAIAdapter(self.service).register(app)
+            OccultOpenAIAdapter(self.service, worker=self._run_worker).register(app)
         app.router.add_get("/v1/occult/major-arcana", self._agents)
         app.router.add_get("/v1/occult/minor-arcana", self._routes)
         app.router.add_get("/v1/occult/decks", self._decks)
@@ -71,27 +126,38 @@ class OccultHTTPAdapter:
             )
             app.router.add_post("/v1/occult/admin/decks", self._admin_install_deck)
 
-    @staticmethod
-    def handles_openai_request(request: web.Request) -> bool:
+    def handles_openai_request(self, request: web.Request) -> bool:
         """Identify router-issued virtual tokens before gateway API-key auth."""
 
-        header = request.headers.get("Authorization", "")
-        return header.startswith("Bearer occult_")
+        token = self._bearer(request)
+        return (
+            token is not None
+            and self.service.token_authority.recognizes(token)
+        )
 
     async def handle_openai_models(self, request: web.Request) -> web.Response:
-        return await OccultOpenAIAdapter(self.service).models(request)
+        return await OccultOpenAIAdapter(
+            self.service,
+            worker=self._run_worker,
+        ).models(request)
 
     async def handle_openai_chat(
         self,
         request: web.Request,
     ) -> web.StreamResponse:
-        return await OccultOpenAIAdapter(self.service).chat_completions(request)
+        return await OccultOpenAIAdapter(
+            self.service,
+            worker=self._run_worker,
+        ).chat_completions(request)
 
     async def handle_openai_responses(
         self,
         request: web.Request,
     ) -> web.StreamResponse:
-        return await OccultOpenAIAdapter(self.service).responses(request)
+        return await OccultOpenAIAdapter(
+            self.service,
+            worker=self._run_worker,
+        ).responses(request)
 
     async def _agents(self, request: web.Request) -> web.Response:
         return await self._call(
@@ -170,8 +236,16 @@ class OccultHTTPAdapter:
             }
 
         try:
-            result = await asyncio.to_thread(invoke)
+            result = await self._run_worker(invoke)
             return web.json_response(result)
+        except VirtualTokenRateLimitError as exc:
+            return self._bridge_error(
+                invocation_id,
+                "OCCULT_RATE_LIMITED",
+                str(exc),
+                429,
+                retryable=True,
+            )
         except VirtualTokenError as exc:
             return self._bridge_error(
                 invocation_id,
@@ -194,6 +268,8 @@ class OccultHTTPAdapter:
                 503,
                 retryable=True,
             )
+        except MythosRoutingError as exc:
+            return self._bridge_routing_error(invocation_id, exc)
         except Exception:
             return self._bridge_error(
                 invocation_id,
@@ -224,11 +300,16 @@ class OccultHTTPAdapter:
                 spread_id=str(payload.get("spread_id", "")),
                 nodes=nodes,
             )
-            reading_id = self.readings.create(
-                plan,
-                idempotency_key=str(payload.get("idempotency_key", "")),
-                contract_version=str(payload.get("contract_version", "")),
-            )
+            with self.service.token_authority.reserve(
+                token,
+                agent_id=nodes[0].agent_id,
+            ):
+                reading_id = self.readings.create(
+                    plan,
+                    idempotency_key=str(payload.get("idempotency_key", "")),
+                    contract_version=str(payload.get("contract_version", "")),
+                    owner_token_id=policy.token_id,
+                )
             return self.readings.status(reading_id)
 
         return await self._call(request, create, require_json=True, status=202)
@@ -414,14 +495,21 @@ class OccultHTTPAdapter:
             policy.allowed_agent_ids
         ):
             raise VirtualTokenError("virtual token does not allow requested reading")
+        owner = self.readings.claim_legacy_owner(reading_id, policy.token_id)
+        if owner != policy.token_id:
+            raise VirtualTokenError("virtual token does not allow requested reading")
         if operation == "status":
             return status
         if operation == "events":
             return self.readings.events(reading_id)
         if operation == "cancel":
             return self.readings.cancel(reading_id)
-        if operation == "resume" and self.reading_executor is not None:
-            return self.readings.resume(reading_id, self.reading_executor)
+        executor = self.reading_executor
+        if operation == "resume" and executor is not None:
+            return self.readings.resume(
+                reading_id,
+                lambda request: executor(token, request),
+            )
         raise ReadingError("unsupported reading operation")
 
     def _admin_authorized(self, request: web.Request) -> bool:
@@ -508,12 +596,22 @@ class OccultHTTPAdapter:
             payload = parsed
         try:
             if worker_thread:
-                result = await asyncio.to_thread(callback, token, payload)
+                result = await self._run_worker(callback, token, payload)
             else:
                 result = callback(token, payload)
             return web.json_response(result, status=status)
+        except VirtualTokenRateLimitError as exc:
+            return self._error(str(exc), 429, retryable=True)
         except VirtualTokenError as exc:
             return self._error(str(exc), 403)
+        except RetryableReadingError:
+            return self._error(
+                "Occult provider is temporarily unavailable",
+                503,
+                retryable=True,
+            )
+        except MythosRoutingError as exc:
+            return self._routing_error(exc)
         except (OccultContractError, ReadingError, ValueError) as exc:
             return self._error(str(exc), 400)
         except Exception:
@@ -528,15 +626,21 @@ class OccultHTTPAdapter:
         return token or None
 
     @staticmethod
-    def _error(message: str, status: int) -> web.Response:
+    def _error(
+        message: str,
+        status: int,
+        *,
+        retryable: bool = False,
+    ) -> web.Response:
+        error: dict[str, Any] = {
+            "message": message,
+            "type": "occult_error",
+            "redacted": True,
+        }
+        if retryable:
+            error["retryable"] = True
         return web.json_response(
-            {
-                "error": {
-                    "message": message,
-                    "type": "occult_error",
-                    "redacted": True,
-                }
-            },
+            {"error": error},
             status=status,
         )
 
@@ -566,6 +670,65 @@ class OccultHTTPAdapter:
                 },
             },
             status=status,
+        )
+
+    @classmethod
+    def _bridge_routing_error(
+        cls,
+        invocation_id: str,
+        error: MythosRoutingError,
+    ) -> web.Response:
+        kinds = {kind for _, kind in error.failures}
+        transient = {
+            FailureKind.RATE_LIMIT,
+            FailureKind.TIMEOUT,
+            FailureKind.UNAVAILABLE,
+            FailureKind.UNKNOWN,
+        }
+        if FailureKind.INVALID_REQUEST in kinds:
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_INVALID_REQUEST",
+                "Occult provider rejected the request",
+                400,
+            )
+        if FailureKind.AUTHENTICATION in kinds:
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_PROVIDER_AUTHENTICATION_FAILED",
+                "Occult provider authentication failed",
+                502,
+            )
+        if FailureKind.INVALID_RESPONSE in kinds:
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_INVALID_RESPONSE",
+                "Occult provider returned an invalid response",
+                502,
+            )
+        if kinds and kinds.issubset(transient):
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_PROVIDER_UNAVAILABLE",
+                "Occult provider is temporarily unavailable",
+                503,
+                retryable=True,
+            )
+        return cls._bridge_error(
+            invocation_id,
+            "OCCULT_PROVIDER_FAILED",
+            "Occult provider rejected the invocation",
+            502,
+        )
+
+    @classmethod
+    def _routing_error(cls, error: MythosRoutingError) -> web.Response:
+        bridge = cls._bridge_routing_error("unknown", error)
+        body = json.loads(bridge.text or "{}")
+        return cls._error(
+            str(body["error"]["message"]),
+            bridge.status,
+            retryable=bool(body["error"]["retryable"]),
         )
 
 

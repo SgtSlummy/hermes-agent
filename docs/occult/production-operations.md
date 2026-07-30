@@ -33,6 +33,27 @@ The normal Hermes path remains unchanged while `occult.enabled` is false.
 Production defaults are local-first, free-only, no paid fallback, and a
 zero-dollar request ceiling.
 
+## Clean local installation
+
+Install Ollama and pull at least one chat model, then run:
+
+```text
+ollama pull qwen2.5:3b
+hermes occult init --model qwen2.5:3b
+hermes gateway restart
+hermes occult status
+```
+
+`hermes occult init` is idempotent. It validates a loopback-only provider,
+installs the bundled signed Major Arcana packages, registers a local zero-cost
+Minor Arcana route, creates `occult.deck.starter`, and issues scoped API
+credentials without printing them. The active profile owns all Occult state.
+
+The starter agents are The Magician, Justice, Temperance, Judgement, and The
+World. Their source prompts and package builder remain in the repository; only
+the public signing key and deterministic signed packages ship in the build.
+Regenerating official packages requires a separately controlled signing key.
+
 ## Source and branch assembly
 
 1. Review the dedicated Hermes and Agents Council pull-request stacks.
@@ -161,6 +182,7 @@ Stop new invocations and drain active readings before a consistent backup. Copy:
 - `occult/mythos-state.json`
 - `occult/virtual_tokens.db`, including `-wal` and `-shm` when present
 - `occult/readings.db`, including `-wal` and `-shm` when present
+- `occult/invocations.db`, including `-wal` and `-shm` when present
 - `occult/decks.json`
 - installed `.tarot` packages and their signature metadata
 - encrypted credential storage, with its master key backed up separately
@@ -170,6 +192,12 @@ Restore into a clean directory, apply only documented migrations, start with
 `occult.enabled=false`, validate database integrity and package signatures, then
 enable local-only routing. Run a canary invocation and resume a non-destructive
 test reading before admitting normal traffic.
+
+The readings v3 migration hashes legacy idempotency keys, records canonical
+reading-plan fingerprints, and repairs state written after the first terminal
+event. It is not reversible in place. Downgrading to a release that expects an
+older readings schema requires restoring the matching pre-upgrade
+`readings.db` backup and its WAL/SHM companions.
 
 ## Upgrade
 

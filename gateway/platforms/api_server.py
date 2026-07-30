@@ -3490,6 +3490,15 @@ class APIServerAdapter(BasePlatformAdapter):
         if self._runner:
             await self._runner.cleanup()
             self._runner = None
+        if self._occult_http is not None:
+            async_close = getattr(self._occult_http, "aclose", None)
+            if callable(async_close):
+                await async_close()
+            else:
+                close = getattr(self._occult_http, "close", None)
+                if callable(close):
+                    close()
+            self._occult_http = None
         self._app = None
         logger.info("[%s] API server stopped", self.name)
 

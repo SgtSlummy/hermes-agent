@@ -31,7 +31,7 @@ def test_occult_production_workflow_preserves_release_invariants():
 
     for expected in (
         "ubuntu-latest, macos-latest, windows-latest",
-        "uv sync --frozen --extra dev --extra homeassistant",
+        "uv sync --frozen --extra dev --extra occult",
         "bun install --frozen-lockfile",
         "test_council_transport_e2e.py",
         "tests/hermes_cli/test_backup.py",
@@ -49,6 +49,10 @@ def test_occult_production_workflow_preserves_release_invariants():
         "sigstore/gh-action-sigstore-python@",
         "environment: occult-production",
         "scripts/occult_release.py promote staged promoted",
+        "gateway/platforms/api_server.py",
+        "tests/gateway/test_occult_runtime_wiring.py",
+        "--sort=name",
+        "gzip -n",
     ):
         assert expected in text
     promote = text.split("  promote:", 1)[1]

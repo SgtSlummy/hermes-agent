@@ -1569,11 +1569,10 @@ wheels = [
 
 [[package]]
 name = "hermes-agent"
-version = "0.13.0"
+version = "0.14.0"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
-    { name = "cryptography" },
     { name = "fire" },
     { name = "httpx", extra = ["socks"] },
     { name = "jinja2" },
@@ -1698,6 +1697,9 @@ messaging = [
 modal = [
     { name = "modal" },
 ]
+occult = [
+    { name = "aiohttp" },
+]
 parallel-web = [
     { name = "parallel-web" },
 ]
@@ -1761,6 +1763,7 @@ requires-dist = [
     { name = "agent-client-protocol", marker = "extra == 'acp'", specifier = "==0.9.0" },
     { name = "aiohttp", marker = "extra == 'homeassistant'", specifier = "==3.13.4" },
     { name = "aiohttp", marker = "extra == 'messaging'", specifier = "==3.13.4" },
+    { name = "aiohttp", marker = "extra == 'occult'", specifier = "==3.13.4" },
     { name = "aiohttp", marker = "extra == 'slack'", specifier = "==3.13.4" },
     { name = "aiohttp", marker = "extra == 'sms'", specifier = "==3.13.4" },
     { name = "aiohttp-socks", marker = "extra == 'matrix'", specifier = "==0.11.0" },
@@ -1771,7 +1774,6 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'bedrock'", specifier = "==1.42.89" },
     { name = "brotlicffi", marker = "extra == 'messaging'", specifier = "==1.2.0.1" },
     { name = "croniter", specifier = "==6.0.0" },
-    { name = "cryptography", specifier = "==46.0.7" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = "==0.155.0" },
     { name = "debugpy", marker = "extra == 'dev'", specifier = "==1.8.20" },
     { name = "dingtalk-stream", marker = "extra == 'dingtalk'", specifier = "==0.24.3" },
@@ -1857,7 +1859,7 @@ requires-dist = [
     { name = "vercel", marker = "extra == 'vercel'", specifier = "==0.5.7" },
     { name = "youtube-transcript-api", marker = "extra == 'youtube'", specifier = "==1.2.4" },
 ]
-provides-extras = ["anthropic", "exa", "firecrawl", "parallel-web", "fal", "edge-tts", "modal", "daytona", "vercel", "hindsight", "dev", "messaging", "cron", "slack", "matrix", "cli", "tts-premium", "voice", "pty", "honcho", "mcp", "homeassistant", "sms", "computer-use", "acp", "bedrock", "termux", "termux-all", "dingtalk", "feishu", "google", "youtube", "web", "all"]
+provides-extras = ["anthropic", "exa", "firecrawl", "parallel-web", "fal", "edge-tts", "modal", "daytona", "vercel", "hindsight", "dev", "occult", "messaging", "cron", "slack", "matrix", "cli", "tts-premium", "voice", "pty", "honcho", "mcp", "homeassistant", "sms", "computer-use", "acp", "bedrock", "termux", "termux-all", "dingtalk", "feishu", "google", "youtube", "web", "all"]
 
 [[package]]
 name = "hf-xet"
@@ -4352,10 +4354,10 @@ name = "vercel-workers"
 version = "0.0.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio", marker = "python_full_version >= '3.12'" },
-    { name = "httpx", marker = "python_full_version >= '3.12'" },
-    { name = "python-dotenv", marker = "python_full_version >= '3.12'" },
-    { name = "vercel", marker = "python_full_version >= '3.12'" },
+    { name = "anyio" },
+    { name = "httpx" },
+    { name = "python-dotenv" },
+    { name = "vercel" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/73/d8/17ba256fceff42be231ca8ff0567dcf2da54ee8de633e949fa08b9403b1f/vercel_workers-0.0.16.tar.gz", hash = "sha256:38df45dbf42fbae39ffa0e419f0908bf1beb047e38fc5ddd0a479feac340fb8c", size = 51615, upload-time = "2026-04-13T21:23:27.649Z" }
 wheels = [

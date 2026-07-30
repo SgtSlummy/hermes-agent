@@ -7,14 +7,14 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from aiohttp import web
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
-from agent.occult.mythos import RouterBusy
+from agent.occult.mythos import FailureKind, MythosRoutingError, RouterBusy
 from agent.occult.service import OccultService
-from agent.occult.virtual_tokens import VirtualTokenError
+from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenRateLimitError
 
 
 _SUPPORTED_ROLES = frozenset({"assistant", "developer", "system", "user"})
@@ -34,6 +34,7 @@ class OccultOpenAIAdapter:
     """Map deliberately small OpenAI text-generation subsets to Occult."""
 
     service: OccultService
+    worker: Callable[..., Awaitable[Any]] = asyncio.to_thread
 
     def register(self, app: web.Application) -> None:
         app.router.add_get("/v1/models", self.models)
@@ -63,6 +64,13 @@ class OccultOpenAIAdapter:
                     for agent in agents
                 ],
             })
+        except VirtualTokenRateLimitError as exc:
+            return self._error(
+                str(exc),
+                429,
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
+            )
         except VirtualTokenError as exc:
             return self._error(
                 str(exc),
@@ -132,7 +140,7 @@ class OccultOpenAIAdapter:
             if "deck_id" in extension:
                 invocation["deck_id"] = extension["deck_id"]
             manual_card_id = extension.get("minor_arcana")
-            result = await asyncio.to_thread(
+            result = await self.worker(
                 self.service.invoke,
                 token,
                 invocation,
@@ -147,6 +155,13 @@ class OccultOpenAIAdapter:
                 400,
                 param=exc.param,
                 code=exc.code,
+            )
+        except VirtualTokenRateLimitError as exc:
+            return self._error(
+                str(exc),
+                429,
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
             )
         except VirtualTokenError as exc:
             return self._error(
@@ -164,6 +179,8 @@ class OccultOpenAIAdapter:
                 error_type="server_error",
                 code="occult_capacity_exhausted",
             )
+        except MythosRoutingError as exc:
+            return self._routing_error(exc)
         except Exception:
             return self._error(
                 "Occult chat completion failed",
@@ -228,7 +245,7 @@ class OccultOpenAIAdapter:
             }
             if "deck_id" in extension:
                 invocation["deck_id"] = extension["deck_id"]
-            result = await asyncio.to_thread(
+            result = await self.worker(
                 self.service.invoke,
                 token,
                 invocation,
@@ -250,6 +267,13 @@ class OccultOpenAIAdapter:
                 param=exc.param,
                 code=exc.code,
             )
+        except VirtualTokenRateLimitError as exc:
+            return self._error(
+                str(exc),
+                429,
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
+            )
         except VirtualTokenError as exc:
             return self._error(
                 str(exc),
@@ -266,6 +290,8 @@ class OccultOpenAIAdapter:
                 error_type="server_error",
                 code="occult_capacity_exhausted",
             )
+        except MythosRoutingError as exc:
+            return self._routing_error(exc)
         except Exception:
             return self._error(
                 "Occult response generation failed",
@@ -273,6 +299,49 @@ class OccultOpenAIAdapter:
                 error_type="server_error",
                 code="occult_response_failed",
             )
+
+    @classmethod
+    def _routing_error(cls, error: MythosRoutingError) -> web.Response:
+        kinds = {kind for _, kind in error.failures}
+        transient = {
+            FailureKind.RATE_LIMIT,
+            FailureKind.TIMEOUT,
+            FailureKind.UNAVAILABLE,
+            FailureKind.UNKNOWN,
+        }
+        if FailureKind.INVALID_REQUEST in kinds:
+            return cls._error(
+                "Occult provider rejected the request",
+                400,
+                code="invalid_request",
+            )
+        if FailureKind.AUTHENTICATION in kinds:
+            return cls._error(
+                "Occult provider authentication failed",
+                502,
+                error_type="server_error",
+                code="provider_authentication_failed",
+            )
+        if FailureKind.INVALID_RESPONSE in kinds:
+            return cls._error(
+                "Occult provider returned an invalid response",
+                502,
+                error_type="server_error",
+                code="invalid_provider_response",
+            )
+        if kinds and kinds.issubset(transient):
+            return cls._error(
+                "Occult provider is temporarily unavailable",
+                503,
+                error_type="server_error",
+                code="occult_provider_unavailable",
+            )
+        return cls._error(
+            "Occult provider rejected the invocation",
+            502,
+            error_type="server_error",
+            code="occult_provider_failed",
+        )
 
     @staticmethod
     def _required_string(payload: Mapping[str, Any], name: str) -> str:

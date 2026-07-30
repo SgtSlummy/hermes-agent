@@ -117,7 +117,11 @@ def test_release_assembly_is_deterministic_and_policy_safe(tmp_path: Path):
     assert compatibility["platforms"] == ["linux", "macos", "windows"]
     migration = json.loads((first / MIGRATIONS_FILE).read_text())
     assert migration["rollback_supported"] is True
+    assert migration["rollback_requires_backup_restore"] == ["readings-sqlite"]
     assert "occult/readings.db*" in migration["backup_set"]
+    assert "occult/invocations.db*" in migration["backup_set"]
+    assert {"name": "invocation-results-sqlite", "version": 1} in migration["state"]
+    assert {"name": "readings-sqlite", "version": 3} in migration["state"]
     sbom = json.loads((first / SBOM_FILE).read_text())
     assert sbom["bomFormat"] == "CycloneDX"
     assert sbom["serialNumber"].startswith("urn:uuid:")

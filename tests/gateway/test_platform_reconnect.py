@@ -100,7 +100,7 @@ class TestStartupPlatformIsolation:
             Platform.TELEGRAM: StubAdapter(platform=Platform.TELEGRAM),
             Platform.FEISHU: StubAdapter(platform=Platform.FEISHU),
         }
-        runner._create_adapter = MagicMock(
+        runner._create_adapter = AsyncMock(
             side_effect=lambda platform, _config: adapters[platform]
         )
         runner._connect_adapter_with_timeout = AsyncMock(
@@ -259,6 +259,7 @@ class TestPlatformReconnectWatcher:
     async def test_reconnect_retryable_stays_in_queue(self):
         """Retryable failures should remain in the queue with incremented attempts."""
         runner = _make_runner()
+        runner._safe_adapter_disconnect = AsyncMock()
 
         platform_config = PlatformConfig(enabled=True, token="test")
         runner._failed_platforms[Platform.TELEGRAM] = {
@@ -292,6 +293,9 @@ class TestPlatformReconnectWatcher:
 
         assert Platform.TELEGRAM in runner._failed_platforms
         assert runner._failed_platforms[Platform.TELEGRAM]["attempts"] == 2
+        runner._safe_adapter_disconnect.assert_awaited_once_with(
+            fail_adapter, Platform.TELEGRAM
+        )
 
     @pytest.mark.asyncio
     async def test_reconnect_pauses_after_circuit_breaker_threshold(self):

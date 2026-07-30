@@ -7,11 +7,15 @@ contract is synchronous; HTTP handlers may dispatch it to a worker thread.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from dataclasses import asdict
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from agent.occult.contracts import OccultInvocation, RoutingPolicy, validate_invocation
 from agent.occult.decks import DeckError, DeckRegistry
+from agent.occult.idempotency import SQLiteInvocationResultStore
 from agent.occult.mythos import MythosRouter
 from agent.occult.pairing import (
     MemoryRecord,
@@ -30,6 +34,7 @@ class OccultService:
     token_authority: VirtualTokenAuthority
     runtime_policy: RuntimePolicy
     deck_registry: DeckRegistry | None = None
+    invocation_store: SQLiteInvocationResultStore | None = None
 
     def agents(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
         policy = self.token_authority.policy(plaintext_token)
@@ -159,6 +164,7 @@ class OccultService:
         manual_card_id: str | None = None,
         memories: Sequence[MemoryRecord] = (),
         requested_tools: frozenset[str] = frozenset(),
+        _skip_idempotency: bool = False,
     ) -> dict[str, Any]:
         """Validate, authorize, pair, route, and return a secret-free result."""
 
@@ -200,6 +206,68 @@ class OccultService:
                     )
                 }
             )
+        memory_namespaces = frozenset(record.namespace for record in memories)
+        if self.invocation_store is not None and not _skip_idempotency:
+            semantic_request = request.model_dump(mode="json")
+            semantic_request.pop("invocation_id", None)
+            semantic_request.pop("idempotency_key", None)
+            fingerprint_payload = {
+                "request": semantic_request,
+                "manual_card_id": manual_card_id,
+                "memories": [asdict(record) for record in memories],
+                "requested_tools": sorted(requested_tools),
+            }
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    fingerprint_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+
+            def authorize_replay(result: Mapping[str, Any]) -> None:
+                route_summary = result.get("route")
+                card_id = (
+                    route_summary.get("selected_card_id")
+                    if isinstance(route_summary, Mapping)
+                    else None
+                )
+                if not isinstance(card_id, str) or not card_id:
+                    raise VirtualTokenError("stored invocation route is invalid")
+                if (
+                    token_policy.allowed_card_ids
+                    and card_id not in token_policy.allowed_card_ids
+                ) or (
+                    allowed_deck_cards is not None
+                    and card_id not in allowed_deck_cards
+                ):
+                    raise VirtualTokenError(
+                        "virtual token does not allow stored invocation route"
+                    )
+                replay_lease = self.token_authority.reserve(
+                    plaintext_token,
+                    agent_id=request.agent_id,
+                    card_id=card_id,
+                    tools=requested_tools,
+                    memory_namespaces=memory_namespaces,
+                    maximum_cost_usd=0.0,
+                )
+                replay_lease.release()
+
+            return self.invocation_store.run(
+                token_policy.token_id,
+                request.idempotency_key,
+                fingerprint,
+                lambda: self.invoke(
+                    plaintext_token,
+                    request,
+                    manual_card_id=manual_card_id,
+                    memories=memories,
+                    requested_tools=requested_tools,
+                    _skip_idempotency=True,
+                ),
+                on_replay=authorize_replay,
+            )
         candidates = tuple(
             route
             for route in self.router.candidates(request, manual_card_id=manual_card_id)
@@ -210,7 +278,6 @@ class OccultService:
         if not candidates:
             raise VirtualTokenError("virtual token has no eligible permitted route")
         route = candidates[0]
-        memory_namespaces = frozenset(record.namespace for record in memories)
         maximum_cost = route.estimated_request_cost_usd
         session = PairingSession.start(
             self.package_manager,

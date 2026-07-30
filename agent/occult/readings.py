@@ -7,7 +7,9 @@ only redacted route summaries.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import re
 import sqlite3
 import time
@@ -21,7 +23,10 @@ from typing import Any, Callable, Mapping, Sequence
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 from hermes_constants import get_hermes_home
 
+from .locking import ExactKeyLockPool
+
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_LEGACY_OWNER = "legacy-unclaimed"
 _TERMINAL_TYPES = frozenset({
     "reading.cancelled",
     "reading.completed",
@@ -41,6 +46,10 @@ _SECRET_FIELDS = frozenset({
 
 class ReadingError(ValueError):
     """Safe-to-surface reading validation or lifecycle failure."""
+
+
+class RetryableReadingError(RuntimeError):
+    """A transient node failure that leaves its reading resumable."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,14 +123,38 @@ class CouncilNodeResult:
 class ReadingStore:
     """SQLite-backed reading, node, event, and artifact store."""
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        retention_seconds: float = 30 * 24 * 60 * 60,
+        identity_retention_seconds: float | None = None,
+        maximum_readings: int = 10_000,
+    ) -> None:
+        if not math.isfinite(retention_seconds) or retention_seconds <= 0:
+            raise ValueError("reading retention_seconds must be positive")
+        if identity_retention_seconds is None:
+            identity_retention_seconds = retention_seconds * 4
+        if (
+            not math.isfinite(identity_retention_seconds)
+            or identity_retention_seconds <= retention_seconds
+        ):
+            raise ValueError(
+                "reading identity_retention_seconds must exceed retention_seconds"
+            )
+        if maximum_readings <= 0:
+            raise ValueError("maximum_readings must be positive")
         self.path = path or (get_hermes_home() / "occult" / "readings.db")
+        self.retention_seconds = float(retention_seconds)
+        self.identity_retention_seconds = float(identity_retention_seconds)
+        self.maximum_readings = int(maximum_readings)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
             str(self.path), check_same_thread=False, isolation_level=None
         )
         self._conn.row_factory = sqlite3.Row
         self._lock = RLock()
+        self._execution_locks = ExactKeyLockPool()
         self._conn.executescript(
             """
             PRAGMA journal_mode=WAL;
@@ -129,8 +162,10 @@ class ReadingStore:
             CREATE TABLE IF NOT EXISTS readings (
                 reading_id TEXT PRIMARY KEY,
                 idempotency_key TEXT NOT NULL UNIQUE,
+                owner_token_id TEXT NOT NULL DEFAULT 'local',
                 contract_version TEXT NOT NULL,
                 spread_id TEXT NOT NULL,
+                plan_fingerprint TEXT,
                 state TEXT NOT NULL,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
@@ -165,13 +200,147 @@ class ReadingStore:
                 PRIMARY KEY (reading_id, sequence),
                 FOREIGN KEY (reading_id) REFERENCES readings(reading_id)
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS one_terminal_reading_event
-            ON reading_events(reading_id)
-            WHERE event_type IN (
-                'reading.cancelled', 'reading.completed', 'reading.failed'
+            CREATE TABLE IF NOT EXISTS reading_node_results (
+                idempotency_key TEXT PRIMARY KEY,
+                artifact_json TEXT NOT NULL,
+                route_summary_json TEXT NOT NULL,
+                created_at REAL NOT NULL
             );
             """
         )
+        with self._transaction():
+            terminal_rows = self._conn.execute(
+                """
+                SELECT reading_id, MIN(sequence) AS terminal_sequence
+                FROM reading_events
+                WHERE event_type IN (
+                    'reading.cancelled', 'reading.completed', 'reading.failed'
+                )
+                GROUP BY reading_id
+                """
+            ).fetchall()
+            for terminal in terminal_rows:
+                reading_id = str(terminal["reading_id"])
+                terminal_sequence = int(terminal["terminal_sequence"])
+                late_events = self._conn.execute(
+                    """
+                    SELECT data_json
+                    FROM reading_events
+                    WHERE reading_id = ? AND sequence > ?
+                    """,
+                    (reading_id, terminal_sequence),
+                ).fetchall()
+                affected_nodes: set[str] = set()
+                for event in late_events:
+                    try:
+                        data = json.loads(str(event["data_json"]))
+                        node_id = str(data["node_id"])
+                    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    affected_nodes.add(node_id)
+                for node_id in affected_nodes:
+                    artifact = self._conn.execute(
+                        """
+                        SELECT artifact_reference FROM reading_nodes
+                        WHERE reading_id = ? AND node_id = ?
+                        """,
+                        (reading_id, node_id),
+                    ).fetchone()
+                    if artifact is not None and artifact["artifact_reference"]:
+                        self._conn.execute(
+                            "DELETE FROM reading_artifacts "
+                            "WHERE artifact_reference = ?",
+                            (artifact["artifact_reference"],),
+                        )
+                    self._conn.execute(
+                        """
+                        UPDATE reading_nodes
+                        SET state = 'pending', artifact_reference = NULL
+                        WHERE reading_id = ? AND node_id = ?
+                        """,
+                        (reading_id, node_id),
+                    )
+                    self._conn.execute(
+                        "DELETE FROM reading_node_results WHERE idempotency_key = ?",
+                        (f"{reading_id}:{node_id}",),
+                    )
+                self._conn.execute(
+                    """
+                    DELETE FROM reading_events
+                    WHERE reading_id = ? AND sequence > ?
+                    """,
+                    (reading_id, terminal_sequence),
+                )
+            self._conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS one_terminal_reading_event
+                ON reading_events(reading_id)
+                WHERE event_type IN (
+                    'reading.cancelled', 'reading.completed', 'reading.failed'
+                )
+                """
+            )
+        with self._transaction():
+            columns = {
+                str(row["name"])
+                for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
+            }
+            if "owner_token_id" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE readings ADD COLUMN "
+                    f"owner_token_id TEXT NOT NULL DEFAULT '{_LEGACY_OWNER}'"
+                )
+                legacy_rows = self._conn.execute(
+                    "SELECT reading_id, idempotency_key FROM readings"
+                ).fetchall()
+                for row in legacy_rows:
+                    scoped_key = hashlib.sha256(
+                        _LEGACY_OWNER.encode("utf-8")
+                        + b"\0"
+                        + str(row["idempotency_key"]).encode("utf-8")
+                    ).hexdigest()
+                    self._conn.execute(
+                        "UPDATE readings SET idempotency_key = ? WHERE reading_id = ?",
+                        (scoped_key, row["reading_id"]),
+                    )
+            columns = {
+                str(row["name"])
+                for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
+            }
+            if "plan_fingerprint" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE readings ADD COLUMN plan_fingerprint TEXT"
+                )
+            missing_fingerprints = self._conn.execute(
+                """
+                SELECT reading_id, spread_id
+                FROM readings
+                WHERE plan_fingerprint IS NULL
+                """
+            ).fetchall()
+            for reading in missing_fingerprints:
+                nodes = self._conn.execute(
+                    """
+                    SELECT node_id, agent_id, task, dependencies_json
+                    FROM reading_nodes
+                    WHERE reading_id = ?
+                    ORDER BY node_id
+                    """,
+                    (reading["reading_id"],),
+                ).fetchall()
+                if not nodes:
+                    continue
+                try:
+                    fingerprint = _stored_plan_fingerprint(
+                        str(reading["spread_id"]),
+                        nodes,
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                self._conn.execute(
+                    "UPDATE readings SET plan_fingerprint = ? WHERE reading_id = ?",
+                    (fingerprint, reading["reading_id"]),
+                )
 
     def close(self) -> None:
         self._conn.close()
@@ -182,32 +351,90 @@ class ReadingStore:
         *,
         idempotency_key: str,
         contract_version: str,
+        owner_token_id: str = "local",
     ) -> str:
         if contract_version != OCCULT_CONTRACT_VERSION:
             raise ReadingError("Occult contract version mismatch")
         if not idempotency_key.strip() or len(idempotency_key) > 256:
             raise ReadingError("invalid idempotency key")
+        if not _SAFE_ID.fullmatch(owner_token_id):
+            raise ReadingError("invalid reading owner")
+        if owner_token_id == _LEGACY_OWNER:
+            raise ReadingError("reserved reading owner")
+        plan_fingerprint = _plan_fingerprint(plan)
+        stored_idempotency_key = hashlib.sha256(
+            owner_token_id.encode("utf-8") + b"\0" + idempotency_key.encode("utf-8")
+        ).hexdigest()
+        legacy_idempotency_key = hashlib.sha256(
+            _LEGACY_OWNER.encode("utf-8") + b"\0" + idempotency_key.encode("utf-8")
+        ).hexdigest()
         now = time.time()
         reading_id = "reading_" + uuid.uuid4().hex
         with self._transaction():
+            self._prune_terminal_readings(now)
             existing = self._conn.execute(
-                "SELECT reading_id FROM readings WHERE idempotency_key = ?",
-                (idempotency_key,),
+                """
+                SELECT reading_id, plan_fingerprint
+                FROM readings WHERE idempotency_key = ?
+                """,
+                (stored_idempotency_key,),
             ).fetchone()
             if existing is not None:
+                self._verify_or_adopt_plan(existing, plan_fingerprint)
                 return str(existing["reading_id"])
+            legacy = self._conn.execute(
+                """
+                SELECT reading_id, owner_token_id, plan_fingerprint FROM readings
+                WHERE idempotency_key = ?
+                """,
+                (legacy_idempotency_key,),
+            ).fetchone()
+            if legacy is not None and legacy["owner_token_id"] in {
+                _LEGACY_OWNER,
+                owner_token_id,
+            }:
+                self._verify_or_adopt_plan(legacy, plan_fingerprint)
+                if legacy["owner_token_id"] == _LEGACY_OWNER:
+                    self._conn.execute(
+                        """
+                        UPDATE readings SET owner_token_id = ?, updated_at = ?
+                        WHERE reading_id = ? AND owner_token_id = ?
+                        """,
+                        (
+                            owner_token_id,
+                            time.time(),
+                            legacy["reading_id"],
+                            _LEGACY_OWNER,
+                        ),
+                    )
+                return str(legacy["reading_id"])
+            reading_count = int(
+                self._conn.execute(
+                    """
+                    SELECT COUNT(*) AS count FROM readings
+                    WHERE state NOT IN ('cancelled', 'completed', 'failed')
+                    OR updated_at >= ?
+                    """,
+                    (now - self.retention_seconds,),
+                ).fetchone()["count"]
+            )
+            if reading_count >= self.maximum_readings:
+                raise ReadingError("reading capacity is exhausted")
             self._conn.execute(
                 """
                 INSERT INTO readings (
                     reading_id, idempotency_key, contract_version,
-                    spread_id, state, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                    owner_token_id, spread_id, plan_fingerprint,
+                    state, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 """,
                 (
                     reading_id,
-                    idempotency_key,
+                    stored_idempotency_key,
                     contract_version,
+                    owner_token_id,
                     plan.spread_id,
+                    plan_fingerprint,
                     now,
                     now,
                 ),
@@ -238,6 +465,20 @@ class ReadingStore:
         return reading_id
 
     def run(
+        self,
+        reading_id: str,
+        executor: Callable[[CouncilNodeRequest], CouncilNodeResult],
+        *,
+        maximum_nodes: int | None = None,
+    ) -> dict[str, Any]:
+        with self._execution_locks.acquire(reading_id):
+            return self._run_unlocked(
+                reading_id,
+                executor,
+                maximum_nodes=maximum_nodes,
+            )
+
+    def _run_unlocked(
         self,
         reading_id: str,
         executor: Callable[[CouncilNodeRequest], CouncilNodeResult],
@@ -290,8 +531,36 @@ class ReadingStore:
                 result = executor(request)
                 _reject_secret_fields(result.artifact)
                 _reject_secret_fields(result.route_summary)
+            except RetryableReadingError:
+                with self._transaction():
+                    reading = self._reading(reading_id)
+                    if reading["state"] in {"cancelled", "completed", "failed"}:
+                        return self.status(reading_id)
+                    self._append_event(
+                        reading_id,
+                        "node.failed",
+                        {
+                            "node_id": node["node_id"],
+                            "redacted": True,
+                            "retryable": True,
+                        },
+                    )
+                    self._conn.execute(
+                        "UPDATE reading_nodes SET state = 'pending' "
+                        "WHERE reading_id = ? AND node_id = ?",
+                        (reading_id, node["node_id"]),
+                    )
+                    self._conn.execute(
+                        "UPDATE readings SET state = 'pending', updated_at = ? "
+                        "WHERE reading_id = ?",
+                        (time.time(), reading_id),
+                    )
+                raise
             except Exception:
                 with self._transaction():
+                    reading = self._reading(reading_id)
+                    if reading["state"] in {"cancelled", "completed", "failed"}:
+                        return self.status(reading_id)
                     self._append_event(
                         reading_id,
                         "node.failed",
@@ -310,6 +579,10 @@ class ReadingStore:
                 raise ReadingError("Council node execution failed") from None
 
             with self._transaction():
+                reading = self._reading(reading_id)
+                if reading["state"] in {"cancelled", "completed", "failed"}:
+                    return self.status(reading_id)
+                self._cache_node_result(request.idempotency_key, result)
                 artifact_reference = "artifact_" + uuid.uuid4().hex
                 self._conn.execute(
                     """
@@ -353,16 +626,21 @@ class ReadingStore:
         *,
         maximum_nodes: int | None = None,
     ) -> dict[str, Any]:
-        with self._transaction():
-            reading = self._reading(reading_id)
-            if reading["state"] in {"cancelled", "completed", "failed"}:
-                return self.status(reading_id)
-            self._conn.execute(
-                "UPDATE reading_nodes SET state = 'pending' "
-                "WHERE reading_id = ? AND state = 'running'",
-                (reading_id,),
+        with self._execution_locks.acquire(reading_id):
+            with self._transaction():
+                reading = self._reading(reading_id)
+                if reading["state"] in {"cancelled", "completed", "failed"}:
+                    return self.status(reading_id)
+                self._conn.execute(
+                    "UPDATE reading_nodes SET state = 'pending' "
+                    "WHERE reading_id = ? AND state = 'running'",
+                    (reading_id,),
+                )
+            return self._run_unlocked(
+                reading_id,
+                executor,
+                maximum_nodes=maximum_nodes,
             )
-        return self.run(reading_id, executor, maximum_nodes=maximum_nodes)
 
     def cancel(self, reading_id: str) -> dict[str, Any]:
         with self._transaction():
@@ -392,6 +670,31 @@ class ReadingStore:
             "state": reading["state"],
             "nodes": [dict(node) for node in nodes],
         }
+
+    def owner_token_id(self, reading_id: str) -> str:
+        """Return the non-secret token identifier that owns a reading."""
+
+        return str(self._reading(reading_id)["owner_token_id"])
+
+    def claim_legacy_owner(self, reading_id: str, token_id: str) -> str:
+        """Atomically claim a pre-ownership reading for an authorized token."""
+
+        if not _SAFE_ID.fullmatch(token_id):
+            raise ReadingError("invalid reading owner")
+        if token_id == _LEGACY_OWNER:
+            raise ReadingError("reserved reading owner")
+        with self._transaction():
+            owner = str(self._reading(reading_id)["owner_token_id"])
+            if owner == _LEGACY_OWNER:
+                self._conn.execute(
+                    """
+                    UPDATE readings SET owner_token_id = ?, updated_at = ?
+                    WHERE reading_id = ? AND owner_token_id = ?
+                    """,
+                    (token_id, time.time(), reading_id, _LEGACY_OWNER),
+                )
+                owner = token_id
+            return owner
 
     def events(
         self, reading_id: str, *, after_sequence: int | None = None
@@ -432,6 +735,62 @@ class ReadingStore:
         if row is None:
             raise ReadingError("unknown artifact reference")
         return json.loads(row["payload_json"])
+
+    def cached_node_result(
+        self,
+        idempotency_key: str,
+    ) -> CouncilNodeResult | None:
+        row = self._conn.execute(
+            """
+            SELECT artifact_json, route_summary_json
+            FROM reading_node_results
+            WHERE idempotency_key = ?
+            """,
+            (idempotency_key,),
+        ).fetchone()
+        if row is None:
+            return None
+        return CouncilNodeResult(
+            artifact=json.loads(row["artifact_json"]),
+            route_summary=json.loads(row["route_summary_json"]),
+        )
+
+    def cache_node_result_if_active(
+        self,
+        reading_id: str,
+        idempotency_key: str,
+        result: CouncilNodeResult,
+    ) -> bool:
+        if not idempotency_key.strip() or len(idempotency_key) > 256:
+            raise ReadingError("invalid idempotency key")
+        _reject_secret_fields(result.artifact)
+        _reject_secret_fields(result.route_summary)
+        with self._transaction():
+            reading = self._reading(reading_id)
+            if reading["state"] in {"cancelled", "completed", "failed"}:
+                return False
+            self._cache_node_result(idempotency_key, result)
+            return True
+
+    def _cache_node_result(
+        self,
+        idempotency_key: str,
+        result: CouncilNodeResult,
+    ) -> None:
+        self._conn.execute(
+            """
+            INSERT OR IGNORE INTO reading_node_results (
+                idempotency_key, artifact_json,
+                route_summary_json, created_at
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (
+                idempotency_key,
+                json.dumps(result.artifact, sort_keys=True),
+                json.dumps(result.route_summary, sort_keys=True),
+                time.time(),
+            ),
+        )
 
     def _node_request(self, reading_id: str, node: sqlite3.Row) -> CouncilNodeRequest:
         dependencies = json.loads(node["dependencies_json"])
@@ -478,6 +837,66 @@ class ReadingStore:
         if row is None:
             raise ReadingError("unknown reading")
         return row
+
+    def _prune_terminal_readings(self, now: float) -> None:
+        expired = self._conn.execute(
+            """
+            SELECT reading_id FROM readings
+            WHERE state IN ('cancelled', 'completed', 'failed')
+            AND updated_at < ?
+            """,
+            (now - self.retention_seconds,),
+        ).fetchall()
+        for row in expired:
+            reading_id = str(row["reading_id"])
+            result_prefix = f"{reading_id}:"
+            self._conn.execute(
+                """
+                DELETE FROM reading_node_results
+                WHERE substr(idempotency_key, 1, ?) = ?
+                """,
+                (len(result_prefix), result_prefix),
+            )
+            self._conn.execute(
+                "DELETE FROM reading_events WHERE reading_id = ?",
+                (reading_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM reading_artifacts WHERE reading_id = ?",
+                (reading_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM reading_nodes WHERE reading_id = ?",
+                (reading_id,),
+            )
+        self._conn.execute(
+            """
+            DELETE FROM readings
+            WHERE state IN ('cancelled', 'completed', 'failed')
+            AND updated_at < ?
+            """,
+            (now - self.identity_retention_seconds,),
+        )
+
+    def _verify_or_adopt_plan(
+        self,
+        row: sqlite3.Row,
+        plan_fingerprint: str,
+    ) -> None:
+        stored = row["plan_fingerprint"]
+        if stored is None:
+            self._conn.execute(
+                """
+                UPDATE readings SET plan_fingerprint = ?, updated_at = ?
+                WHERE reading_id = ? AND plan_fingerprint IS NULL
+                """,
+                (plan_fingerprint, time.time(), row["reading_id"]),
+            )
+            return
+        if str(stored) != plan_fingerprint:
+            raise ReadingError(
+                "idempotency key was reused with a different reading plan"
+            )
 
     def _append_event(
         self, reading_id: str, event_type: str, data: Mapping[str, Any]
@@ -538,6 +957,42 @@ class _Transaction:
             self.lock.release()
 
 
+def _plan_fingerprint(plan: ReadingPlan) -> str:
+    payload = {
+        "spread_id": plan.spread_id,
+        "nodes": [
+            {
+                "node_id": node.node_id,
+                "agent_id": node.agent_id,
+                "task": node.task,
+                "depends_on": sorted(node.depends_on),
+            }
+            for node in sorted(plan.nodes, key=lambda item: item.node_id)
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _stored_plan_fingerprint(
+    spread_id: str,
+    rows: Sequence[sqlite3.Row],
+) -> str:
+    plan = ReadingPlan(
+        spread_id=spread_id,
+        nodes=tuple(
+            ReadingNode(
+                node_id=str(row["node_id"]),
+                agent_id=str(row["agent_id"]),
+                task=str(row["task"]),
+                depends_on=tuple(json.loads(str(row["dependencies_json"]))),
+            )
+            for row in rows
+        ),
+    )
+    return _plan_fingerprint(plan)
+
+
 def _reject_secret_fields(value: Any, path: str = "$") -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
@@ -557,4 +1012,5 @@ __all__ = [
     "ReadingNode",
     "ReadingPlan",
     "ReadingStore",
+    "RetryableReadingError",
 ]

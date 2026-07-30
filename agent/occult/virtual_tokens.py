@@ -24,6 +24,7 @@ from hermes_constants import get_hermes_home
 
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _STORE_SCHEMA_VERSION = 1
+_RESERVED_TOKEN_IDS = frozenset({"legacy-unclaimed"})
 
 
 def _decode_scope(value: object) -> frozenset[str]:
@@ -39,6 +40,10 @@ def _decode_scope(value: object) -> frozenset[str]:
 
 class VirtualTokenError(PermissionError):
     """Safe-to-surface authentication, authorization, or budget failure."""
+
+
+class VirtualTokenRateLimitError(VirtualTokenError):
+    """A temporary virtual-token throttle that callers may retry later."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +62,8 @@ class VirtualTokenPolicy:
             self.token_id
         ):
             raise ValueError("invalid token_id")
+        if self.token_id in _RESERVED_TOKEN_IDS:
+            raise ValueError("reserved token_id")
         for field_name in (
             "allowed_agent_ids",
             "allowed_card_ids",
@@ -195,6 +202,16 @@ class SQLiteVirtualTokenStore:
 
     def update_revoked(self, token_id: str, revoked: bool) -> None:
         self._update(token_id, "revoked", int(revoked))
+
+    def delete(self, token_id: str) -> None:
+        try:
+            with self._lock, self._conn:
+                self._conn.execute(
+                    "DELETE FROM virtual_tokens WHERE token_id = ?",
+                    (token_id,),
+                )
+        except sqlite3.DatabaseError as exc:
+            raise VirtualTokenError("virtual token store is unavailable") from exc
 
     def close(self) -> None:
         with self._lock:
@@ -411,9 +428,36 @@ class VirtualTokenAuthority:
                 self.store.update_revoked(token_id, True)
             state.revoked = True
 
+    def discard(self, token_id: str) -> None:
+        """Delete an unexposed token issued during a failed atomic setup."""
+
+        with self._lock:
+            state = self._tokens.get(token_id)
+            if state is None:
+                raise VirtualTokenError("unknown virtual token")
+            if state.revoked:
+                raise VirtualTokenError("revoked virtual token cannot be discarded")
+            if state.calls or state.committed_cost_usd or state.reserved_cost_usd:
+                raise VirtualTokenError("active virtual token cannot be discarded")
+            if self.store is not None:
+                self.store.delete(token_id)
+            self._tokens.pop(token_id, None)
+            self._digest_index.pop(state.digest, None)
+
     def policy(self, plaintext: str) -> VirtualTokenPolicy:
         with self._lock:
             return self._authenticate(plaintext).policy
+
+    def recognizes(self, plaintext: str) -> bool:
+        """Return whether this authority issued the token, even if inactive."""
+
+        if not isinstance(plaintext, str) or not plaintext:
+            return False
+        digest = self._digest(plaintext)
+        with self._lock:
+            token_id = self._digest_index.get(digest)
+            state = self._tokens.get(token_id or "")
+            return state is not None and secrets.compare_digest(state.digest, digest)
 
     def reserve(
         self,
@@ -503,7 +547,7 @@ class VirtualTokenAuthority:
         while state.calls and state.calls[0] <= cutoff:
             state.calls.popleft()
         if len(state.calls) >= state.policy.requests_per_minute:
-            raise VirtualTokenError("virtual token rate limit exceeded")
+            raise VirtualTokenRateLimitError("virtual token rate limit exceeded")
         state.calls.append(now)
 
     def _finish(
@@ -551,6 +595,7 @@ __all__ = [
     "SQLiteVirtualTokenStore",
     "VirtualTokenAuthority",
     "VirtualTokenError",
+    "VirtualTokenRateLimitError",
     "VirtualTokenLease",
     "VirtualTokenPolicy",
 ]

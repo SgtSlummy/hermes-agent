@@ -81,7 +81,11 @@ async def test_runner_stays_alive_for_retryable_startup_errors(monkeypatch, tmp_
     )
     runner = GatewayRunner(config)
 
-    monkeypatch.setattr(runner, "_create_adapter", lambda platform, platform_config: _RetryableFailureAdapter())
+    monkeypatch.setattr(
+        runner,
+        "_create_adapter",
+        AsyncMock(side_effect=lambda _platform, _config: _RetryableFailureAdapter()),
+    )
 
     ok = await runner.start()
 
@@ -127,7 +131,11 @@ async def test_runner_records_connected_platform_state_on_success(monkeypatch, t
     )
     runner = GatewayRunner(config)
 
-    monkeypatch.setattr(runner, "_create_adapter", lambda platform, platform_config: _SuccessfulAdapter())
+    monkeypatch.setattr(
+        runner,
+        "_create_adapter",
+        AsyncMock(side_effect=lambda _platform, _config: _SuccessfulAdapter()),
+    )
     monkeypatch.setattr(runner.hooks, "discover_and_load", lambda: None)
     monkeypatch.setattr(runner.hooks, "emit", AsyncMock())
 
@@ -369,7 +377,11 @@ async def test_runner_degrades_gracefully_when_all_adapters_missing(monkeypatch,
 
     # Simulate _create_adapter returning None for ALL platforms (missing library /
     # missing credentials — no connection attempt ever made).
-    monkeypatch.setattr(runner, "_create_adapter", lambda platform, cfg: None)
+    monkeypatch.setattr(
+        runner,
+        "_create_adapter",
+        AsyncMock(side_effect=lambda _platform, _config: None),
+    )
 
     import logging
     with caplog.at_level(logging.WARNING):

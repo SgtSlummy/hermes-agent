@@ -5,8 +5,15 @@ on:
     branches: [main]
     paths:
       - "agent/occult/**"
+      - "gateway/run.py"
+      - "gateway/platforms/api_server.py"
+      - "hermes_cli/occult.py"
       - "scripts/occult_release.py"
       - "tests/agent/occult/**"
+      - "tests/gateway/test_occult_runtime_wiring.py"
+      - "tests/hermes_cli/test_occult.py"
+      - "tests/hermes_cli/test_occult_init.py"
+      - "tests/hermes_cli/test_config.py"
       - "docs/occult/**"
       - ".github/workflows/occult-production-gate.yml"
       - "pyproject.toml"
@@ -68,9 +75,17 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Install pinned development dependencies
-        run: uv sync --frozen --extra dev --extra homeassistant
+        run: uv sync --frozen --extra dev --extra occult
       - name: Verify Occult runtime and release controls
-        run: uv run pytest tests/agent/occult tests/hermes_cli/test_backup.py -q
+        run: >-
+          uv run pytest
+          tests/agent/occult
+          tests/hermes_cli/test_backup.py
+          tests/hermes_cli/test_occult.py
+          tests/hermes_cli/test_occult_init.py
+          tests/hermes_cli/test_config.py
+          tests/gateway/test_occult_runtime_wiring.py
+          -q
         env:
           OPENAI_API_KEY: ""
           OPENROUTER_API_KEY: ""
@@ -166,9 +181,7 @@ jobs:
           node-version: "22"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Install pinned Python dependencies
-        # The Occult package exports its aiohttp adapter; the existing
-        # homeassistant extra is the smallest pinned aiohttp dependency set.
-        run: uv sync --frozen --extra homeassistant
+        run: uv sync --frozen --extra occult
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: hermes-platform-*
@@ -224,7 +237,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: occult-production
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -253,9 +266,53 @@ jobs:
         run: |
           uv run --frozen python scripts/occult_release.py verify staged --require-signature
           uv run --frozen python scripts/occult_release.py promote staged promoted
+      - name: Create release bundle and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_VERSION}"
+          case "$TAG" in v*) ;; *) TAG="v${TAG}" ;; esac
+          BUNDLE="occult-system-${TAG}.tar.gz"
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$RELEASE_COMMIT")"
+          tar --sort=name \
+            --mtime="@${SOURCE_DATE_EPOCH}" \
+            --owner=0 --group=0 --numeric-owner \
+            -C promoted -cf - . | gzip -n > "$BUNDLE"
+          sha256sum "$BUNDLE" > "${BUNDLE}.sha256"
+      - name: Sign and verify the release bundle checksum
+        uses: sigstore/gh-action-sigstore-python@f514d46b907ebcd5bedc05145c03b69c1edd8b46 # v3.0.0
+        with:
+          inputs: occult-system-*.tar.gz.sha256
+          verify: true
+          verify-cert-identity: >-
+            https://github.com/SgtSlummy/hermes-agent/.github/workflows/occult-production-gate.yml@${{ github.ref }}
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: occult-stable-${{ env.RELEASE_VERSION }}-${{ env.RELEASE_COMMIT }}
           path: promoted/
           if-no-files-found: error
           retention-days: 90
+      - name: Publish signed GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_VERSION}"
+          case "$TAG" in v*) ;; *) TAG="v${TAG}" ;; esac
+          NOTES_VERSION="${TAG#v}"
+          NOTES_PATH="docs/occult/release-notes-v${NOTES_VERSION}.md"
+          test -f "$NOTES_PATH"
+          BUNDLE="occult-system-${TAG}.tar.gz"
+          cp "$NOTES_PATH" release-notes.md
+          gh release create "$TAG" \
+            "$BUNDLE" \
+            "${BUNDLE}.sha256" \
+            "${BUNDLE}.sha256.sigstore.json" \
+            promoted/SHA256SUMS.txt \
+            promoted/SHA256SUMS.txt.sigstore.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${RELEASE_COMMIT}" \
+            --title "Occult System ${TAG}" \
+            --notes-file release-notes.md

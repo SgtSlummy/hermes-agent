@@ -23,6 +23,7 @@ import sys
 import tempfile
 import threading
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -93,6 +94,18 @@ _RAW_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
 # calls read_raw_config. Also covers mutation of the module-level cache
 # dicts above.
 _CONFIG_LOCK = threading.RLock()
+_ENV_WRITE_LOCK = threading.RLock()
+
+
+def _serialized_env_write(function):
+    """Hold one process-wide lock across every .env read-modify-write."""
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _ENV_WRITE_LOCK:
+            return function(*args, **kwargs)
+
+    return wrapped
 # Env var names written to .env that aren't in OPTIONAL_ENV_VARS
 # (managed by setup/provider flows directly).
 _EXTRA_ENV_KEYS = frozenset({
@@ -473,12 +486,21 @@ DEFAULT_CONFIG = {
     "providers": {},
     "fallback_providers": [],
     "credential_pool_strategies": {},
-    # Occult System integration remains inert until a later runtime boundary
-    # explicitly consumes this flag. Keeping the version beside the gate makes
-    # compatibility checks available without changing existing provider paths.
+    # Occult remains inert unless explicitly initialized and enabled.  The
+    # starter route is loopback-only, free-only, and zero-cost by default.
     "occult": {
         "enabled": False,
         "contract_version": "1.0.0",
+        "local_base_url": "http://127.0.0.1:11434/v1",
+        "local_model": "",
+        "provider_timeout_seconds": 120,
+        "maximum_concurrent_requests": 4,
+        "invocation_result_retention_seconds": 604800,
+        "invocation_identity_retention_seconds": 2419200,
+        "maximum_invocation_entries": 10000,
+        "reading_retention_seconds": 2592000,
+        "reading_identity_retention_seconds": 10368000,
+        "maximum_readings": 10000,
     },
     "toolsets": ["hermes-cli"],
     "agent": {
@@ -1667,6 +1689,31 @@ REQUIRED_ENV_VARS = {}
 
 # Optional environment variables that enhance functionality
 OPTIONAL_ENV_VARS = {
+    # ── Occult local API credentials ─────────────────────────────────────
+    "OCCULT_ADMIN_KEY": {
+        "description": "Occult local administration key",
+        "prompt": "Occult administration key",
+        "url": None,
+        "password": True,
+        "category": "occult",
+        "advanced": True,
+    },
+    "OCCULT_API_KEY": {
+        "description": "Occult local virtual API key",
+        "prompt": "Occult virtual API key",
+        "url": None,
+        "password": True,
+        "category": "occult",
+        "advanced": True,
+    },
+    "OCCULT_STARTER_SIGNING_KEY": {
+        "description": "Base64-encoded Ed25519 key for signing starter agents",
+        "prompt": "Occult starter signing key",
+        "url": None,
+        "password": True,
+        "category": "occult",
+        "advanced": True,
+    },
     # ── Provider (handled in provider selection, not shown in checklists) ──
     "NOUS_BASE_URL": {
         "description": "Nous Portal base URL override",
@@ -4219,6 +4266,25 @@ def read_raw_config() -> Dict[str, Any]:
         return data
 
 
+def read_raw_config_strict() -> Dict[str, Any]:
+    """Read raw configuration, surfacing malformed existing files to callers."""
+
+    with _CONFIG_LOCK:
+        config_path = get_config_path()
+        try:
+            with open(config_path, encoding="utf-8") as config_file:
+                data = yaml.safe_load(config_file)
+        except FileNotFoundError:
+            return {}
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"could not parse {config_path}: {exc}") from exc
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ValueError(f"{config_path} must contain a YAML object")
+        return data
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from ~/.hermes/config.yaml.
 
@@ -4528,6 +4594,7 @@ def _sanitize_env_lines(lines: list) -> list:
     return sanitized
 
 
+@_serialized_env_write
 def sanitize_env_file() -> int:
     """Read, sanitize, and rewrite ~/.hermes/.env in place.
 
@@ -4614,6 +4681,71 @@ def _check_non_ascii_credential(key: str, value: str) -> str:
     return sanitized
 
 
+@_serialized_env_write
+def save_env_values(values: Dict[str, str]) -> None:
+    """Atomically save or update multiple values in ~/.hermes/.env."""
+
+    if is_managed():
+        managed_error("set environment values")
+        return
+    sanitized_values: Dict[str, str] = {}
+    for key, value in values.items():
+        if not _ENV_VAR_NAME_RE.match(key):
+            raise ValueError(f"Invalid environment variable name: {key!r}")
+        clean = value.replace("\n", "").replace("\r", "")
+        sanitized_values[key] = _check_non_ascii_credential(key, clean)
+
+    ensure_hermes_home()
+    env_path = get_env_path()
+    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
+    write_kw = {"encoding": "utf-8"}
+    lines = []
+    if env_path.exists():
+        with open(env_path, **read_kw) as f:
+            lines = _sanitize_env_lines(f.readlines())
+
+    for key, value in sanitized_values.items():
+        for index, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                lines[index] = f"{key}={value}\n"
+                break
+        else:
+            if lines and not lines[-1].endswith("\n"):
+                lines[-1] += "\n"
+            lines.append(f"{key}={value}\n")
+
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(env_path.parent), suffix=".tmp", prefix=".env_"
+    )
+    original_mode = None
+    if env_path.exists():
+        try:
+            original_mode = stat.S_IMODE(env_path.stat().st_mode)
+        except OSError:
+            pass
+    try:
+        with os.fdopen(fd, "w", **write_kw) as f:
+            f.writelines(lines)
+            f.flush()
+            os.fsync(f.fileno())
+        atomic_replace(tmp_path, env_path)
+        if original_mode is not None:
+            try:
+                os.chmod(env_path, original_mode)
+            except OSError:
+                pass
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    _secure_file(env_path)
+    os.environ.update(sanitized_values)
+    invalidate_env_cache()
+
+
+@_serialized_env_write
 def save_env_value(key: str, value: str):
     """Save or update a value in ~/.hermes/.env."""
     if is_managed():
@@ -4685,6 +4817,7 @@ def save_env_value(key: str, value: str):
     invalidate_env_cache()
 
 
+@_serialized_env_write
 def remove_env_value(key: str) -> bool:
     """Remove a key from ~/.hermes/.env and os.environ.
 
