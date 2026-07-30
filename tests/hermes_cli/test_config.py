@@ -21,6 +21,7 @@ from hermes_cli.config import (
     sanitize_env_file,
     _sanitize_env_lines,
 )
+from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 
 
 class TestGetHermesHome:
@@ -70,6 +71,10 @@ class TestLoadConfigDefaults:
             assert "terminal" in config
             assert config["terminal"]["backend"] == "local"
             assert config["display"]["interim_assistant_messages"] is True
+            assert config["occult"] == {
+                "enabled": False,
+                "contract_version": OCCULT_CONTRACT_VERSION,
+            }
 
     def test_legacy_root_level_max_turns_migrates_to_agent_config(self, tmp_path):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):

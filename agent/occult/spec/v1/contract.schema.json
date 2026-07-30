@@ -1,0 +1,692 @@
+{
+  "$id": "https://github.com/SgtSlummy/hermes-agent/occult/contracts/1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_version": "1.0.0",
+  "models": {
+    "DeckDescriptor": {
+      "$defs": {
+        "RouteMode": {
+          "enum": [
+            "free_only",
+            "local_first",
+            "local_only",
+            "manual",
+            "privacy_first",
+            "quality_first",
+            "speed_first"
+          ],
+          "title": "RouteMode",
+          "type": "string"
+        },
+        "RoutingPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "free_only": {
+              "default": true,
+              "title": "Free Only",
+              "type": "boolean"
+            },
+            "local_only": {
+              "default": false,
+              "title": "Local Only",
+              "type": "boolean"
+            },
+            "maximum_cost_usd": {
+              "default": 0.0,
+              "minimum": 0,
+              "title": "Maximum Cost Usd",
+              "type": "number"
+            },
+            "maximum_fallbacks": {
+              "default": 2,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "Maximum Fallbacks",
+              "type": "integer"
+            },
+            "mode": {
+              "$ref": "#/$defs/RouteMode",
+              "default": "local_first"
+            }
+          },
+          "title": "RoutingPolicy",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "allowed_agent_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Agent Ids",
+          "type": "array"
+        },
+        "allowed_card_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Card Ids",
+          "type": "array"
+        },
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "deck_id": {
+          "title": "Deck Id",
+          "type": "string"
+        },
+        "routing": {
+          "$ref": "#/$defs/RoutingPolicy"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "version",
+        "allowed_agent_ids",
+        "allowed_card_ids",
+        "routing"
+      ],
+      "title": "DeckDescriptor",
+      "type": "object"
+    },
+    "MajorArcanaAgent": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "maximum_risk_level": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Maximum Risk Level",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id",
+        "name",
+        "version",
+        "capabilities",
+        "maximum_risk_level"
+      ],
+      "title": "MajorArcanaAgent",
+      "type": "object"
+    },
+    "MinorArcanaRoute": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "card_id": {
+          "title": "Card Id",
+          "type": "string"
+        },
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "free": {
+          "title": "Free",
+          "type": "boolean"
+        },
+        "healthy": {
+          "title": "Healthy",
+          "type": "boolean"
+        },
+        "local": {
+          "title": "Local",
+          "type": "boolean"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "provider_id": {
+          "title": "Provider Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "provider_id",
+        "model_id",
+        "capabilities",
+        "local",
+        "free",
+        "healthy"
+      ],
+      "title": "MinorArcanaRoute",
+      "type": "object"
+    },
+    "OccultError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "redacted": {
+          "const": true,
+          "default": true,
+          "title": "Redacted",
+          "type": "boolean"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "OccultError",
+      "type": "object"
+    },
+    "OccultInvocation": {
+      "$defs": {
+        "InvocationInput": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "minLength": 1,
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "title": "InvocationInput",
+          "type": "object"
+        },
+        "Orientation": {
+          "enum": [
+            "upright",
+            "reversed"
+          ],
+          "title": "Orientation",
+          "type": "string"
+        },
+        "RouteMode": {
+          "enum": [
+            "free_only",
+            "local_first",
+            "local_only",
+            "manual",
+            "privacy_first",
+            "quality_first",
+            "speed_first"
+          ],
+          "title": "RouteMode",
+          "type": "string"
+        },
+        "RoutingPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "free_only": {
+              "default": true,
+              "title": "Free Only",
+              "type": "boolean"
+            },
+            "local_only": {
+              "default": false,
+              "title": "Local Only",
+              "type": "boolean"
+            },
+            "maximum_cost_usd": {
+              "default": 0.0,
+              "minimum": 0,
+              "title": "Maximum Cost Usd",
+              "type": "number"
+            },
+            "maximum_fallbacks": {
+              "default": 2,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "Maximum Fallbacks",
+              "type": "integer"
+            },
+            "mode": {
+              "$ref": "#/$defs/RouteMode",
+              "default": "local_first"
+            }
+          },
+          "title": "RoutingPolicy",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "deck_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deck Id"
+        },
+        "idempotency_key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/InvocationInput"
+        },
+        "invocation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Invocation Id",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "orientation": {
+          "$ref": "#/$defs/Orientation",
+          "default": "upright"
+        },
+        "required_capabilities": {
+          "default": [
+            "text"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "routing": {
+          "$ref": "#/$defs/RoutingPolicy",
+          "default": {
+            "free_only": true,
+            "local_only": false,
+            "maximum_cost_usd": 0.0,
+            "maximum_fallbacks": 2,
+            "mode": "local_first"
+          }
+        },
+        "spread_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spread Id"
+        }
+      },
+      "required": [
+        "invocation_id",
+        "idempotency_key",
+        "agent_id",
+        "input"
+      ],
+      "title": "OccultInvocation",
+      "type": "object"
+    },
+    "ReadingDescriptor": {
+      "$defs": {
+        "ReadingState": {
+          "enum": [
+            "cancelled",
+            "completed",
+            "failed",
+            "pending",
+            "running"
+          ],
+          "title": "ReadingState",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "next_sequence": {
+          "minimum": 0,
+          "title": "Next Sequence",
+          "type": "integer"
+        },
+        "reading_id": {
+          "title": "Reading Id",
+          "type": "string"
+        },
+        "spread_id": {
+          "title": "Spread Id",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ReadingState"
+        }
+      },
+      "required": [
+        "reading_id",
+        "spread_id",
+        "state",
+        "next_sequence"
+      ],
+      "title": "ReadingDescriptor",
+      "type": "object"
+    },
+    "ReadingEvent": {
+      "$defs": {
+        "EventType": {
+          "enum": [
+            "node.completed",
+            "node.failed",
+            "node.started",
+            "reading.cancelled",
+            "reading.completed",
+            "reading.failed",
+            "reading.started",
+            "route.selected"
+          ],
+          "title": "EventType",
+          "type": "string"
+        },
+        "OccultError": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "contract_version": {
+              "default": "1.0.0",
+              "title": "Contract Version",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "redacted": {
+              "const": true,
+              "default": true,
+              "title": "Redacted",
+              "type": "boolean"
+            },
+            "retryable": {
+              "default": false,
+              "title": "Retryable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "OccultError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccultError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "event_type": {
+          "$ref": "#/$defs/EventType"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "reading_id": {
+          "title": "Reading Id",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "reading_id",
+        "sequence",
+        "event_type",
+        "occurred_at"
+      ],
+      "title": "ReadingEvent",
+      "type": "object"
+    },
+    "RouteSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "explanation": {
+          "title": "Explanation",
+          "type": "string"
+        },
+        "fallback_count": {
+          "minimum": 0,
+          "title": "Fallback Count",
+          "type": "integer"
+        },
+        "invocation_id": {
+          "title": "Invocation Id",
+          "type": "string"
+        },
+        "model_id": {
+          "title": "Model Id",
+          "type": "string"
+        },
+        "provider_id": {
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "selected_card_id": {
+          "title": "Selected Card Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invocation_id",
+        "selected_card_id",
+        "provider_id",
+        "model_id",
+        "fallback_count",
+        "explanation"
+      ],
+      "title": "RouteSummary",
+      "type": "object"
+    },
+    "SpreadDescriptor": {
+      "$defs": {
+        "SpreadEdge": {
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "default": "success",
+              "title": "Condition",
+              "type": "string"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "target": {
+              "title": "Target",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "target"
+          ],
+          "title": "SpreadEdge",
+          "type": "object"
+        },
+        "SpreadNode": {
+          "additionalProperties": false,
+          "properties": {
+            "agent_id": {
+              "title": "Agent Id",
+              "type": "string"
+            },
+            "node_id": {
+              "title": "Node Id",
+              "type": "string"
+            },
+            "required_capabilities": {
+              "default": [
+                "text"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "title": "Required Capabilities",
+              "type": "array"
+            }
+          },
+          "required": [
+            "node_id",
+            "agent_id"
+          ],
+          "title": "SpreadNode",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "default": "1.0.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/SpreadEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/SpreadNode"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "spread_id": {
+          "title": "Spread Id",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spread_id",
+        "version",
+        "nodes",
+        "edges"
+      ],
+      "title": "SpreadDescriptor",
+      "type": "object"
+    }
+  },
+  "title": "Occult System Contract"
+}

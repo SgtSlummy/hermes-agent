@@ -473,6 +473,13 @@ DEFAULT_CONFIG = {
     "providers": {},
     "fallback_providers": [],
     "credential_pool_strategies": {},
+    # Occult System integration remains inert until a later runtime boundary
+    # explicitly consumes this flag. Keeping the version beside the gate makes
+    # compatibility checks available without changing existing provider paths.
+    "occult": {
+        "enabled": False,
+        "contract_version": "1.0.0",
+    },
     "toolsets": ["hermes-cli"],
     "agent": {
         "max_turns": 90,
