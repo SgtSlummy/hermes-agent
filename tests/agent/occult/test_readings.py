@@ -1,6 +1,7 @@
 from pathlib import Path
 import sqlite3
 from threading import Event, Thread
+import time
 
 import pytest
 
@@ -138,6 +139,7 @@ def test_expired_terminal_readings_are_pruned_before_capacity_check(tmp_path: Pa
     store = ReadingStore(
         tmp_path / "readings.db",
         retention_seconds=1,
+        identity_retention_seconds=100,
         maximum_readings=1,
     )
     first = store.create(
@@ -147,10 +149,18 @@ def test_expired_terminal_readings_are_pruned_before_capacity_check(tmp_path: Pa
     )
     store.cancel(first)
     store._conn.execute(
-        "UPDATE readings SET updated_at = 0 WHERE reading_id = ?",
-        (first,),
+        "UPDATE readings SET updated_at = ? WHERE reading_id = ?",
+        (time.time() - 2, first),
     )
 
+    assert (
+        store.create(
+            _plan(),
+            idempotency_key="first",
+            contract_version=OCCULT_CONTRACT_VERSION,
+        )
+        == first
+    )
     second = store.create(
         _plan(),
         idempotency_key="second",
@@ -158,6 +168,38 @@ def test_expired_terminal_readings_are_pruned_before_capacity_check(tmp_path: Pa
     )
 
     assert second != first
+    tombstone = store.status(first)
+    assert tombstone["state"] == "cancelled"
+    assert tombstone["nodes"] == []
+
+
+def test_terminal_reading_idempotency_expires_only_after_identity_horizon(
+    tmp_path: Path,
+):
+    store = ReadingStore(
+        tmp_path / "readings.db",
+        retention_seconds=1,
+        identity_retention_seconds=2,
+        maximum_readings=1,
+    )
+    first = store.create(
+        _plan(),
+        idempotency_key="first",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    store.cancel(first)
+    store._conn.execute(
+        "UPDATE readings SET updated_at = ? WHERE reading_id = ?",
+        (time.time() - 3, first),
+    )
+
+    replacement = store.create(
+        _plan(),
+        idempotency_key="first",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+
+    assert replacement != first
     with pytest.raises(ReadingError, match="unknown reading"):
         store.status(first)
 

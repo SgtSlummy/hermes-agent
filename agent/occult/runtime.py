@@ -11,6 +11,7 @@ import base64
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import urllib.error
 import urllib.parse
@@ -447,6 +448,12 @@ def build_occult_http(
         reading_retention = float(
             occult.get("reading_retention_seconds", 30 * 24 * 60 * 60)
         )
+        reading_identity_retention = float(
+            occult.get(
+                "reading_identity_retention_seconds",
+                120 * 24 * 60 * 60,
+            )
+        )
         maximum_readings = int(occult.get("maximum_readings", 10_000))
     except (TypeError, ValueError) as exc:
         raise OccultRuntimeError(
@@ -456,18 +463,31 @@ def build_occult_http(
         raise OccultRuntimeError("occult.provider_timeout_seconds must be 1-600")
     if not 1 <= maximum_concurrency <= 64:
         raise OccultRuntimeError("occult.maximum_concurrent_requests must be 1-64")
-    if invocation_result_retention <= 0:
+    if (
+        not math.isfinite(invocation_result_retention)
+        or invocation_result_retention <= 0
+    ):
         raise OccultRuntimeError(
             "occult.invocation_result_retention_seconds must be positive"
         )
-    if invocation_identity_retention <= invocation_result_retention:
+    if (
+        not math.isfinite(invocation_identity_retention)
+        or invocation_identity_retention <= invocation_result_retention
+    ):
         raise OccultRuntimeError(
             "occult.invocation_identity_retention_seconds must exceed result retention"
         )
     if not 1 <= maximum_invocation_entries <= 1_000_000:
         raise OccultRuntimeError("occult.maximum_invocation_entries must be 1-1000000")
-    if reading_retention <= 0:
+    if not math.isfinite(reading_retention) or reading_retention <= 0:
         raise OccultRuntimeError("occult.reading_retention_seconds must be positive")
+    if (
+        not math.isfinite(reading_identity_retention)
+        or reading_identity_retention <= reading_retention
+    ):
+        raise OccultRuntimeError(
+            "occult.reading_identity_retention_seconds must exceed reading retention"
+        )
     if not 1 <= maximum_readings <= 1_000_000:
         raise OccultRuntimeError("occult.maximum_readings must be 1-1000000")
 
@@ -536,6 +556,7 @@ def build_occult_http(
     readings = ReadingStore(
         root / "readings.db",
         retention_seconds=reading_retention,
+        identity_retention_seconds=reading_identity_retention,
         maximum_readings=maximum_readings,
     )
     env = os.environ if environ is None else environ

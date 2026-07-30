@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 import time
@@ -127,14 +128,25 @@ class ReadingStore:
         path: Path | None = None,
         *,
         retention_seconds: float = 30 * 24 * 60 * 60,
+        identity_retention_seconds: float | None = None,
         maximum_readings: int = 10_000,
     ) -> None:
-        if retention_seconds <= 0:
+        if not math.isfinite(retention_seconds) or retention_seconds <= 0:
             raise ValueError("reading retention_seconds must be positive")
+        if identity_retention_seconds is None:
+            identity_retention_seconds = retention_seconds * 4
+        if (
+            not math.isfinite(identity_retention_seconds)
+            or identity_retention_seconds <= retention_seconds
+        ):
+            raise ValueError(
+                "reading identity_retention_seconds must exceed retention_seconds"
+            )
         if maximum_readings <= 0:
             raise ValueError("maximum_readings must be positive")
         self.path = path or (get_hermes_home() / "occult" / "readings.db")
         self.retention_seconds = float(retention_seconds)
+        self.identity_retention_seconds = float(identity_retention_seconds)
         self.maximum_readings = int(maximum_readings)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
@@ -397,9 +409,14 @@ class ReadingStore:
                     )
                 return str(legacy["reading_id"])
             reading_count = int(
-                self._conn.execute("SELECT COUNT(*) AS count FROM readings").fetchone()[
-                    "count"
-                ]
+                self._conn.execute(
+                    """
+                    SELECT COUNT(*) AS count FROM readings
+                    WHERE state NOT IN ('cancelled', 'completed', 'failed')
+                    OR updated_at >= ?
+                    """,
+                    (now - self.retention_seconds,),
+                ).fetchone()["count"]
             )
             if reading_count >= self.maximum_readings:
                 raise ReadingError("reading capacity is exhausted")
@@ -852,10 +869,14 @@ class ReadingStore:
                 "DELETE FROM reading_nodes WHERE reading_id = ?",
                 (reading_id,),
             )
-            self._conn.execute(
-                "DELETE FROM readings WHERE reading_id = ?",
-                (reading_id,),
-            )
+        self._conn.execute(
+            """
+            DELETE FROM readings
+            WHERE state IN ('cancelled', 'completed', 'failed')
+            AND updated_at < ?
+            """,
+            (now - self.identity_retention_seconds,),
+        )
 
     def _verify_or_adopt_plan(
         self,

@@ -83,6 +83,11 @@ contain provider and model identifiers, but never their authentication data.
   result-retention window. After that explicit identity horizon, a key is
   expired and may execute again; clients requiring longer deduplication must
   issue a fresh key or configure a longer horizon.
+- Terminal reading payloads are retained for 30 days by default. Their
+  token-scoped key and canonical plan fingerprint remain protected for a
+  separate 120-day identity horizon, preventing duplicate Council execution
+  after payload pruning. Both horizons are configurable, and the identity
+  horizon must exceed payload retention.
 - Event sequences are contiguous and strictly increasing within one reading.
 - An event stream belongs to exactly one reading.
 - A completed stream ends in exactly one of `reading.completed`,

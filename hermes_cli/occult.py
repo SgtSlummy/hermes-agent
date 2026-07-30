@@ -123,6 +123,12 @@ def initialize_occult(
         "reading_retention_seconds": float(
             occult.get("reading_retention_seconds", 30 * 24 * 60 * 60)
         ),
+        "reading_identity_retention_seconds": float(
+            occult.get(
+                "reading_identity_retention_seconds",
+                120 * 24 * 60 * 60,
+            )
+        ),
         "maximum_readings": int(occult.get("maximum_readings", 10_000)),
     })
     config["occult"] = occult

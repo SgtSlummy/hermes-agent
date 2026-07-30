@@ -99,6 +99,7 @@ def test_runtime_applies_configured_persistence_bounds(tmp_path: Path):
         "invocation_identity_retention_seconds": 120,
         "maximum_invocation_entries": 17,
         "reading_retention_seconds": 180,
+        "reading_identity_retention_seconds": 360,
         "maximum_readings": 19,
     })
 
@@ -109,8 +110,35 @@ def test_runtime_applies_configured_persistence_bounds(tmp_path: Path):
     assert http.service.invocation_store.identity_retention_seconds == 120
     assert http.service.invocation_store.maximum_entries == 17
     assert http.readings.retention_seconds == 180
+    assert http.readings.identity_retention_seconds == 360
     assert http.readings.maximum_readings == 19
     http.close()
+
+
+@pytest.mark.parametrize(
+    ("setting", "value", "message"),
+    [
+        ("invocation_result_retention_seconds", float("nan"), "result_retention"),
+        ("invocation_result_retention_seconds", float("inf"), "result_retention"),
+        ("invocation_identity_retention_seconds", float("nan"), "identity_retention"),
+        ("invocation_identity_retention_seconds", float("inf"), "identity_retention"),
+        ("reading_retention_seconds", float("nan"), "reading_retention"),
+        ("reading_retention_seconds", float("inf"), "reading_retention"),
+        ("reading_identity_retention_seconds", float("nan"), "reading_identity"),
+        ("reading_identity_retention_seconds", float("inf"), "reading_identity"),
+    ],
+)
+def test_runtime_rejects_non_finite_retention_settings(
+    setting: str,
+    value: float,
+    message: str,
+    tmp_path: Path,
+):
+    config = _config()
+    config["occult"][setting] = value
+
+    with pytest.raises(OccultRuntimeError, match=message):
+        build_occult_http(config, home=tmp_path)
 
 
 def test_bundled_starter_version_replaces_an_older_active_version(

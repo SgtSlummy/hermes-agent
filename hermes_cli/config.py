@@ -499,6 +499,7 @@ DEFAULT_CONFIG = {
         "invocation_identity_retention_seconds": 2419200,
         "maximum_invocation_entries": 10000,
         "reading_retention_seconds": 2592000,
+        "reading_identity_retention_seconds": 10368000,
         "maximum_readings": 10000,
     },
     "toolsets": ["hermes-cli"],
