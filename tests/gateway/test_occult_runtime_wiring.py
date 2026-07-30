@@ -1,0 +1,31 @@
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from gateway.config import Platform, PlatformConfig
+from gateway.platforms.api_server import APIServerAdapter
+from gateway.run import GatewayRunner
+
+
+def test_api_server_assembles_occult_runtime_when_enabled(monkeypatch):
+    occult_http = MagicMock()
+    monkeypatch.setattr(
+        "agent.occult.runtime.build_occult_http",
+        lambda _config: occult_http,
+    )
+    monkeypatch.setattr(
+        "hermes_cli.config.load_config",
+        lambda: {"occult": {"enabled": True}},
+    )
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner.config = SimpleNamespace(
+        group_sessions_per_user=False,
+        thread_sessions_per_user=False,
+    )
+
+    adapter = runner._create_adapter(
+        Platform.API_SERVER,
+        PlatformConfig(enabled=True),
+    )
+
+    assert isinstance(adapter, APIServerAdapter)
+    assert adapter._occult_http is occult_http

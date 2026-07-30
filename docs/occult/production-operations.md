@@ -33,6 +33,27 @@ The normal Hermes path remains unchanged while `occult.enabled` is false.
 Production defaults are local-first, free-only, no paid fallback, and a
 zero-dollar request ceiling.
 
+## Clean local installation
+
+Install Ollama and pull at least one chat model, then run:
+
+```text
+ollama pull qwen2.5:3b
+hermes occult init --model qwen2.5:3b
+hermes gateway restart
+hermes occult status
+```
+
+`hermes occult init` is idempotent. It validates a loopback-only provider,
+installs the bundled signed Major Arcana packages, registers a local zero-cost
+Minor Arcana route, creates `occult.deck.starter`, and issues scoped API
+credentials without printing them. The active profile owns all Occult state.
+
+The starter agents are The Magician, Justice, Temperance, Judgement, and The
+World. Their source prompts and package builder remain in the repository; only
+the public signing key and deterministic signed packages ship in the build.
+Regenerating official packages requires a separately controlled signing key.
+
 ## Source and branch assembly
 
 1. Review the dedicated Hermes and Agents Council pull-request stacks.

@@ -5429,7 +5429,21 @@ class GatewayRunner:
             if not check_api_server_requirements():
                 logger.warning("API Server: aiohttp not installed")
                 return None
-            return APIServerAdapter(config)
+            adapter = APIServerAdapter(config)
+            try:
+                from agent.occult.runtime import build_occult_http
+                from hermes_cli.config import load_config
+
+                occult_http = build_occult_http(load_config())
+                if occult_http is not None:
+                    adapter.attach_occult_http(occult_http)
+                    logger.info("Occult runtime attached to the API server")
+            except Exception as exc:
+                logger.error(
+                    "Occult runtime is enabled but could not be assembled: %s",
+                    type(exc).__name__,
+                )
+            return adapter
 
         elif platform == Platform.WEBHOOK:
             from gateway.platforms.webhook import WebhookAdapter, check_webhook_requirements

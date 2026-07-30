@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shlex
 import urllib.error
 import urllib.parse
@@ -13,10 +14,134 @@ from collections.abc import Iterator
 from typing import Any
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION
+from agent.occult.runtime import (
+    DEFAULT_OLLAMA_BASE_URL,
+    STARTER_AGENT_IDS,
+    STARTER_CARD_ID,
+    STARTER_DECK_ID,
+    OccultRuntimeError,
+    build_occult_http,
+    discover_ollama_models,
+    normalize_loopback_openai_url,
+)
+from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
 
 
 class OccultCLIError(RuntimeError):
     pass
+
+
+def initialize_occult(
+    *,
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Initialize a secure local-only Occult profile and starter deck."""
+
+    from hermes_cli.config import (
+        get_config_path,
+        get_env_path,
+        is_managed,
+        read_raw_config,
+        save_config,
+        save_env_value,
+    )
+
+    if is_managed():
+        raise OccultCLIError(
+            "Occult initialization is unavailable in managed mode; "
+            "ask the system administrator to configure the profile"
+        )
+    try:
+        canonical_url = normalize_loopback_openai_url(base_url)
+        models = discover_ollama_models(canonical_url)
+    except OccultRuntimeError as exc:
+        raise OccultCLIError(str(exc)) from None
+    selected_model = str(model or models[0]).strip()
+    if selected_model not in models:
+        raise OccultCLIError(f"model is not installed in Ollama: {selected_model}")
+
+    config = dict(read_raw_config() or {})
+    occult = dict(config.get("occult") or {})
+    occult.update({
+        "enabled": True,
+        "contract_version": OCCULT_CONTRACT_VERSION,
+        "local_base_url": canonical_url,
+        "local_model": selected_model,
+        "provider_timeout_seconds": int(occult.get("provider_timeout_seconds", 120)),
+        "maximum_concurrent_requests": int(
+            occult.get("maximum_concurrent_requests", 4)
+        ),
+    })
+    config["occult"] = occult
+    platforms = dict(config.get("platforms") or {})
+    api_server = dict(platforms.get("api_server") or {})
+    api_server["enabled"] = True
+    extra = dict(api_server.get("extra") or {})
+    extra.update({"host": "127.0.0.1", "port": 8642})
+    api_server["extra"] = extra
+    platforms["api_server"] = api_server
+    config["platforms"] = platforms
+
+    admin_key = os.getenv("OCCULT_ADMIN_KEY", "").strip()
+    if not admin_key:
+        admin_key = "occult_admin_" + secrets.token_urlsafe(32)
+    runtime_env = dict(os.environ)
+    runtime_env["OCCULT_ADMIN_KEY"] = admin_key
+    try:
+        http = build_occult_http(config, environ=runtime_env)
+    except OccultRuntimeError as exc:
+        raise OccultCLIError(str(exc)) from None
+    if http is None:
+        raise OccultCLIError("Occult runtime did not enable")
+
+    token = os.getenv("OCCULT_API_KEY", "").strip()
+    token_created = False
+    if token:
+        try:
+            http.service.token_authority.policy(token)
+        except VirtualTokenError:
+            token = ""
+    if not token:
+        existing_ids = {
+            str(item["token_id"]) for item in http.service.token_authority.statuses()
+        }
+        token_id = "local-default"
+        if token_id in existing_ids:
+            token_id = "local-" + uuid.uuid4().hex[:12]
+        token = http.service.token_authority.issue(
+            VirtualTokenPolicy(
+                token_id=token_id,
+                allowed_agent_ids=frozenset(STARTER_AGENT_IDS),
+                allowed_card_ids=frozenset({STARTER_CARD_ID}),
+                allowed_tools=frozenset(),
+                allowed_memory_namespaces=frozenset({"project", "agent", "reading"}),
+                requests_per_minute=30,
+                maximum_budget_usd=0.0,
+            )
+        )
+        token_created = True
+
+    try:
+        save_config(config)
+        save_env_value("OCCULT_ADMIN_KEY", admin_key)
+        save_env_value("OCCULT_API_KEY", token)
+        save_env_value("OCCULT_API_URL", "http://127.0.0.1:8642")
+    finally:
+        http.close()
+
+    return {
+        "enabled": True,
+        "provider": "ollama-local",
+        "model": selected_model,
+        "card_id": STARTER_CARD_ID,
+        "deck_id": STARTER_DECK_ID,
+        "agents": list(STARTER_AGENT_IDS),
+        "token_created": token_created,
+        "config_path": str(get_config_path()),
+        "secrets_path": str(get_env_path()),
+        "next": "restart the Hermes gateway, then run 'hermes occult status'",
+    }
 
 
 def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
@@ -194,7 +319,12 @@ def run_tui_occult_command(argument: str) -> str:
 
 def cmd_occult(args) -> None:
     action = args.occult_action
-    if action == "token-list":
+    if action == "init":
+        result = initialize_occult(
+            base_url=args.base_url,
+            model=args.model,
+        )
+    elif action == "token-list":
         result = _admin_request("GET", "/v1/occult/admin/tokens")
     elif action == "token-issue":
         payload = {
@@ -269,4 +399,9 @@ def cmd_occult(args) -> None:
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
-__all__ = ["OccultCLIError", "cmd_occult", "run_tui_occult_command"]
+__all__ = [
+    "OccultCLIError",
+    "cmd_occult",
+    "initialize_occult",
+    "run_tui_occult_command",
+]

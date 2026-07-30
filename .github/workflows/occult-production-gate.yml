@@ -224,7 +224,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: occult-production
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -259,3 +259,21 @@ jobs:
           path: promoted/
           if-no-files-found: error
           retention-days: 90
+      - name: Publish signed GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_VERSION}"
+          case "$TAG" in v*) ;; *) TAG="v${TAG}" ;; esac
+          tar -C promoted -czf "occult-system-${TAG}.tar.gz" .
+          cp docs/occult/release-notes-v1.0.0.md release-notes.md
+          gh release create "$TAG" \
+            "occult-system-${TAG}.tar.gz" \
+            promoted/SHA256SUMS.txt \
+            promoted/SHA256SUMS.txt.sigstore.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${RELEASE_COMMIT}" \
+            --title "Occult System ${TAG}" \
+            --notes-file release-notes.md

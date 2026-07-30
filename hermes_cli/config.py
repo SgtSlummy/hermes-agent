@@ -473,12 +473,15 @@ DEFAULT_CONFIG = {
     "providers": {},
     "fallback_providers": [],
     "credential_pool_strategies": {},
-    # Occult System integration remains inert until a later runtime boundary
-    # explicitly consumes this flag. Keeping the version beside the gate makes
-    # compatibility checks available without changing existing provider paths.
+    # Occult remains inert unless explicitly initialized and enabled.  The
+    # starter route is loopback-only, free-only, and zero-cost by default.
     "occult": {
         "enabled": False,
         "contract_version": "1.0.0",
+        "local_base_url": "http://127.0.0.1:11434/v1",
+        "local_model": "",
+        "provider_timeout_seconds": 120,
+        "maximum_concurrent_requests": 4,
     },
     "toolsets": ["hermes-cli"],
     "agent": {

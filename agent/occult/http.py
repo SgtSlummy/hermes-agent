@@ -34,6 +34,14 @@ class OccultHTTPAdapter:
     reading_executor: Callable[[CouncilNodeRequest], CouncilNodeResult] | None = None
     admin_key_digest: bytes | None = None
 
+    def close(self) -> None:
+        """Close profile-scoped stores owned by the assembled runtime."""
+
+        self.readings.close()
+        store = self.service.token_authority.store
+        if store is not None:
+            store.close()
+
     def register(
         self,
         app: web.Application,
