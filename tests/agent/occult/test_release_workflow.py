@@ -55,6 +55,8 @@ def test_occult_production_workflow_preserves_release_invariants():
         "gzip -n",
     ):
         assert expected in text
+    stage = text.split("  stage:", 1)[1].split("\n  promote:", 1)[0]
+    assert "include-hidden-files: true" in stage
     promote = text.split("  promote:", 1)[1]
     assert "uv sync --frozen --extra occult" in promote
     assert "npm run build" not in promote
