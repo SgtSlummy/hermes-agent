@@ -495,6 +495,11 @@ DEFAULT_CONFIG = {
         "local_model": "",
         "provider_timeout_seconds": 120,
         "maximum_concurrent_requests": 4,
+        "invocation_result_retention_seconds": 604800,
+        "invocation_identity_retention_seconds": 2419200,
+        "maximum_invocation_entries": 10000,
+        "reading_retention_seconds": 2592000,
+        "maximum_readings": 10000,
     },
     "toolsets": ["hermes-cli"],
     "agent": {

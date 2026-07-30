@@ -42,6 +42,10 @@ class VirtualTokenError(PermissionError):
     """Safe-to-surface authentication, authorization, or budget failure."""
 
 
+class VirtualTokenRateLimitError(VirtualTokenError):
+    """A temporary virtual-token throttle that callers may retry later."""
+
+
 @dataclass(frozen=True, slots=True)
 class VirtualTokenPolicy:
     token_id: str
@@ -453,10 +457,7 @@ class VirtualTokenAuthority:
         with self._lock:
             token_id = self._digest_index.get(digest)
             state = self._tokens.get(token_id or "")
-            return (
-                state is not None
-                and secrets.compare_digest(state.digest, digest)
-            )
+            return state is not None and secrets.compare_digest(state.digest, digest)
 
     def reserve(
         self,
@@ -546,7 +547,7 @@ class VirtualTokenAuthority:
         while state.calls and state.calls[0] <= cutoff:
             state.calls.popleft()
         if len(state.calls) >= state.policy.requests_per_minute:
-            raise VirtualTokenError("virtual token rate limit exceeded")
+            raise VirtualTokenRateLimitError("virtual token rate limit exceeded")
         state.calls.append(now)
 
     def _finish(
@@ -594,6 +595,7 @@ __all__ = [
     "SQLiteVirtualTokenStore",
     "VirtualTokenAuthority",
     "VirtualTokenError",
+    "VirtualTokenRateLimitError",
     "VirtualTokenLease",
     "VirtualTokenPolicy",
 ]

@@ -25,7 +25,11 @@ from agent.occult.readings import (
     RetryableReadingError,
 )
 from agent.occult.service import OccultService
-from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
+from agent.occult.virtual_tokens import (
+    VirtualTokenError,
+    VirtualTokenPolicy,
+    VirtualTokenRateLimitError,
+)
 
 
 @dataclass(slots=True)
@@ -234,6 +238,14 @@ class OccultHTTPAdapter:
         try:
             result = await self._run_worker(invoke)
             return web.json_response(result)
+        except VirtualTokenRateLimitError as exc:
+            return self._bridge_error(
+                invocation_id,
+                "OCCULT_RATE_LIMITED",
+                str(exc),
+                429,
+                retryable=True,
+            )
         except VirtualTokenError as exc:
             return self._bridge_error(
                 invocation_id,
@@ -288,12 +300,16 @@ class OccultHTTPAdapter:
                 spread_id=str(payload.get("spread_id", "")),
                 nodes=nodes,
             )
-            reading_id = self.readings.create(
-                plan,
-                idempotency_key=str(payload.get("idempotency_key", "")),
-                contract_version=str(payload.get("contract_version", "")),
-                owner_token_id=policy.token_id,
-            )
+            with self.service.token_authority.reserve(
+                token,
+                agent_id=nodes[0].agent_id,
+            ):
+                reading_id = self.readings.create(
+                    plan,
+                    idempotency_key=str(payload.get("idempotency_key", "")),
+                    contract_version=str(payload.get("contract_version", "")),
+                    owner_token_id=policy.token_id,
+                )
             return self.readings.status(reading_id)
 
         return await self._call(request, create, require_json=True, status=202)
@@ -584,6 +600,8 @@ class OccultHTTPAdapter:
             else:
                 result = callback(token, payload)
             return web.json_response(result, status=status)
+        except VirtualTokenRateLimitError as exc:
+            return self._error(str(exc), 429, retryable=True)
         except VirtualTokenError as exc:
             return self._error(str(exc), 403)
         except RetryableReadingError:

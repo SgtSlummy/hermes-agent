@@ -122,8 +122,20 @@ class CouncilNodeResult:
 class ReadingStore:
     """SQLite-backed reading, node, event, and artifact store."""
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        retention_seconds: float = 30 * 24 * 60 * 60,
+        maximum_readings: int = 10_000,
+    ) -> None:
+        if retention_seconds <= 0:
+            raise ValueError("reading retention_seconds must be positive")
+        if maximum_readings <= 0:
+            raise ValueError("maximum_readings must be positive")
         self.path = path or (get_hermes_home() / "occult" / "readings.db")
+        self.retention_seconds = float(retention_seconds)
+        self.maximum_readings = int(maximum_readings)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
             str(self.path), check_same_thread=False, isolation_level=None
@@ -276,8 +288,7 @@ class ReadingStore:
                         + str(row["idempotency_key"]).encode("utf-8")
                     ).hexdigest()
                     self._conn.execute(
-                        "UPDATE readings SET idempotency_key = ? "
-                        "WHERE reading_id = ?",
+                        "UPDATE readings SET idempotency_key = ? WHERE reading_id = ?",
                         (scoped_key, row["reading_id"]),
                     )
             columns = {
@@ -340,18 +351,15 @@ class ReadingStore:
             raise ReadingError("reserved reading owner")
         plan_fingerprint = _plan_fingerprint(plan)
         stored_idempotency_key = hashlib.sha256(
-            owner_token_id.encode("utf-8")
-            + b"\0"
-            + idempotency_key.encode("utf-8")
+            owner_token_id.encode("utf-8") + b"\0" + idempotency_key.encode("utf-8")
         ).hexdigest()
         legacy_idempotency_key = hashlib.sha256(
-            _LEGACY_OWNER.encode("utf-8")
-            + b"\0"
-            + idempotency_key.encode("utf-8")
+            _LEGACY_OWNER.encode("utf-8") + b"\0" + idempotency_key.encode("utf-8")
         ).hexdigest()
         now = time.time()
         reading_id = "reading_" + uuid.uuid4().hex
         with self._transaction():
+            self._prune_terminal_readings(now)
             existing = self._conn.execute(
                 """
                 SELECT reading_id, plan_fingerprint
@@ -388,6 +396,13 @@ class ReadingStore:
                         ),
                     )
                 return str(legacy["reading_id"])
+            reading_count = int(
+                self._conn.execute("SELECT COUNT(*) AS count FROM readings").fetchone()[
+                    "count"
+                ]
+            )
+            if reading_count >= self.maximum_readings:
+                raise ReadingError("reading capacity is exhausted")
             self._conn.execute(
                 """
                 INSERT INTO readings (
@@ -806,6 +821,38 @@ class ReadingStore:
             raise ReadingError("unknown reading")
         return row
 
+    def _prune_terminal_readings(self, now: float) -> None:
+        expired = self._conn.execute(
+            """
+            SELECT reading_id FROM readings
+            WHERE state IN ('cancelled', 'completed', 'failed')
+            AND updated_at < ?
+            """,
+            (now - self.retention_seconds,),
+        ).fetchall()
+        for row in expired:
+            reading_id = str(row["reading_id"])
+            self._conn.execute(
+                "DELETE FROM reading_node_results WHERE idempotency_key LIKE ?",
+                (f"{reading_id}:%",),
+            )
+            self._conn.execute(
+                "DELETE FROM reading_events WHERE reading_id = ?",
+                (reading_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM reading_artifacts WHERE reading_id = ?",
+                (reading_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM reading_nodes WHERE reading_id = ?",
+                (reading_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM readings WHERE reading_id = ?",
+                (reading_id,),
+            )
+
     def _verify_or_adopt_plan(
         self,
         row: sqlite3.Row,
@@ -898,9 +945,7 @@ def _plan_fingerprint(plan: ReadingPlan) -> str:
             for node in sorted(plan.nodes, key=lambda item: item.node_id)
         ],
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 

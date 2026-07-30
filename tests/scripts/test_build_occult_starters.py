@@ -1,5 +1,6 @@
 import base64
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,11 @@ def test_starter_builder_reads_signing_key_from_environment(
 
     assert main() == 0
     assert (tmp_path / "starter_signers.json").is_file()
-    assert len(tuple(tmp_path.glob("*.tarot"))) > 0
+    archives = tuple(tmp_path.glob("*.tarot"))
+    assert len(archives) > 0
+    for path in archives:
+        with zipfile.ZipFile(path) as archive:
+            assert {item.create_system for item in archive.infolist()} == {3}
 
 
 @pytest.mark.parametrize(

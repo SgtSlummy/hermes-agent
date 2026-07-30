@@ -169,6 +169,7 @@ def write_archive(
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in sorted(content.items()):
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o600 << 16
             archive.writestr(info, data)
@@ -181,9 +182,7 @@ def main() -> int:
     args = parser.parse_args()
     encoded_key = os.getenv("OCCULT_STARTER_SIGNING_KEY", "").strip()
     if bool(encoded_key) == bool(args.ephemeral):
-        parser.error(
-            "choose exactly one of OCCULT_STARTER_SIGNING_KEY or --ephemeral"
-        )
+        parser.error("choose exactly one of OCCULT_STARTER_SIGNING_KEY or --ephemeral")
     if args.ephemeral:
         private_key = Ed25519PrivateKey.generate()
     else:

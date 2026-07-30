@@ -110,6 +110,30 @@ def test_idempotency_and_ownership_are_scoped_per_virtual_token(tmp_path: Path):
     assert store.owner_token_id(second) == "client-b"
 
 
+def test_reading_capacity_bounds_new_durable_plans(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db", maximum_readings=1)
+    first = store.create(
+        _plan(),
+        idempotency_key="first",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+
+    assert (
+        store.create(
+            _plan(),
+            idempotency_key="first",
+            contract_version=OCCULT_CONTRACT_VERSION,
+        )
+        == first
+    )
+    with pytest.raises(ReadingError, match="capacity is exhausted"):
+        store.create(
+            _plan(),
+            idempotency_key="second",
+            contract_version=OCCULT_CONTRACT_VERSION,
+        )
+
+
 def test_three_node_reading_resumes_without_reexecuting_completed_node(
     tmp_path: Path,
 ):
@@ -344,8 +368,7 @@ def test_concurrent_resume_executes_each_node_once(tmp_path: Path):
         )
 
     threads = [
-        Thread(target=store.resume, args=(reading_id, execute))
-        for _ in range(2)
+        Thread(target=store.resume, args=(reading_id, execute)) for _ in range(2)
     ]
     threads[0].start()
     assert started.wait(timeout=5)

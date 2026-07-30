@@ -1,6 +1,7 @@
 import json
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from aiohttp.test_utils import make_mocked_request
@@ -19,7 +20,10 @@ from agent.occult.runtime import (
     build_occult_http,
     normalize_loopback_openai_url,
 )
-from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
+from agent.occult.virtual_tokens import (
+    VirtualTokenError,
+    VirtualTokenPolicy,
+)
 
 
 def _config(model: str = "qwen2.5:3b"):
@@ -88,6 +92,82 @@ def test_runtime_installs_signed_starters_route_and_deck(tmp_path: Path):
     http.close()
 
 
+def test_runtime_applies_configured_persistence_bounds(tmp_path: Path):
+    config = _config()
+    config["occult"].update({
+        "invocation_result_retention_seconds": 60,
+        "invocation_identity_retention_seconds": 120,
+        "maximum_invocation_entries": 17,
+        "reading_retention_seconds": 180,
+        "maximum_readings": 19,
+    })
+
+    http = build_occult_http(config, home=tmp_path)
+    assert http is not None
+
+    assert http.service.invocation_store.retention_seconds == 60
+    assert http.service.invocation_store.identity_retention_seconds == 120
+    assert http.service.invocation_store.maximum_entries == 17
+    assert http.readings.retention_seconds == 180
+    assert http.readings.maximum_readings == 19
+    http.close()
+
+
+def test_bundled_starter_version_replaces_an_older_active_version(
+    tmp_path: Path,
+):
+    from agent.occult import runtime
+
+    active_versions = {agent_id: "0.9.0" for agent_id in STARTER_AGENT_IDS}
+    activated: list[tuple[str, str]] = []
+    validation_index = 0
+
+    class Manager:
+        packages_root = tmp_path
+
+        def validate(self, _archive):
+            nonlocal validation_index
+            agent_id = STARTER_AGENT_IDS[validation_index]
+            validation_index += 1
+            version = "1.0.0"
+            (self.packages_root / agent_id / version).mkdir(parents=True)
+            return SimpleNamespace(
+                manifest=SimpleNamespace(
+                    agent=SimpleNamespace(id=agent_id, version=version)
+                )
+            )
+
+        def load(self, agent_id, version):
+            return SimpleNamespace(
+                manifest=SimpleNamespace(
+                    agent=SimpleNamespace(id=agent_id, version=version)
+                )
+            )
+
+        def active(self, agent_id):
+            version = active_versions.get(agent_id)
+            if version is None:
+                return None
+            return SimpleNamespace(
+                package=SimpleNamespace(
+                    manifest=SimpleNamespace(
+                        agent=SimpleNamespace(id=agent_id, version=version)
+                    )
+                )
+            )
+
+        def activate(self, agent_id, version):
+            active_versions[agent_id] = version
+            activated.append((agent_id, version))
+
+        def active_packages(self):
+            return tuple(self.active(agent_id) for agent_id in STARTER_AGENT_IDS)
+
+    runtime._install_starter_agents(Manager())
+
+    assert activated == [(agent_id, "1.0.0") for agent_id in STARTER_AGENT_IDS]
+
+
 def test_runtime_restores_the_canonical_starter_deck(tmp_path: Path):
     http = build_occult_http(_config(), home=tmp_path)
     assert http is not None
@@ -95,9 +175,7 @@ def test_runtime_restores_the_canonical_starter_deck(tmp_path: Path):
 
     path = tmp_path / "occult" / "decks.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    payload["decks"][STARTER_DECK_ID]["allowed_agent_ids"] = [
-        "occult.major.magician"
-    ]
+    payload["decks"][STARTER_DECK_ID]["allowed_agent_ids"] = ["occult.major.magician"]
     payload["decks"][STARTER_DECK_ID]["routing"]["local_only"] = False
     path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -286,9 +364,7 @@ def test_reading_access_is_bound_to_creating_virtual_token(tmp_path: Path):
     reading_id = http.readings.create(
         ReadingPlan(
             spread_id="occult.spread.owner",
-            nodes=(
-                ReadingNode("build", "occult.major.magician", "Build."),
-            ),
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
         ),
         idempotency_key="owner-check",
         contract_version="1.0.0",
@@ -353,6 +429,42 @@ def test_transient_provider_failure_keeps_runtime_reading_resumable(
     completed = http._authorized_reading(token, reading_id, "resume")
 
     assert completed["state"] == "completed"
+    http.close()
+
+
+def test_virtual_token_rate_limit_keeps_runtime_reading_resumable(
+    tmp_path: Path,
+):
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    token = http.service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="rate-limited-runtime",
+            allowed_agent_ids=frozenset({"occult.major.magician"}),
+            allowed_card_ids=frozenset({STARTER_CARD_ID}),
+            requests_per_minute=1,
+        )
+    )
+    reading_id = http.readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.rate-limited-runtime",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="rate-limited-runtime-reading",
+        contract_version="1.0.0",
+        owner_token_id="rate-limited-runtime",
+    )
+
+    lease = http.service.token_authority.reserve(
+        token,
+        agent_id="occult.major.magician",
+        card_id=STARTER_CARD_ID,
+    )
+    lease.release()
+
+    with pytest.raises(RetryableReadingError, match="temporarily rate limited"):
+        http._authorized_reading(token, reading_id, "resume")
+    assert http.readings.status(reading_id)["state"] == "pending"
     http.close()
 
 
@@ -474,9 +586,7 @@ def test_runtime_persists_and_validates_invocation_idempotency(
     assert first == retry
     assert calls == 1
     assert (
-        http.service.token_authority.status("idempotent-local")[
-            "requests_in_window"
-        ]
+        http.service.token_authority.status("idempotent-local")["requests_in_window"]
         == 2
     )
     with pytest.raises(ValueError, match="different input"):

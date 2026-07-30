@@ -47,6 +47,7 @@ from agent.occult.readings import (
 from agent.occult.service import OccultService
 from agent.occult.tarot_packages import SystemPackagePolicy, TarotPackageManager
 from agent.occult.virtual_tokens import SQLiteVirtualTokenStore, VirtualTokenAuthority
+from agent.occult.virtual_tokens import VirtualTokenRateLimitError
 from hermes_constants import get_hermes_home
 
 STARTER_CARD_ID = "minor.pentacles.ace.ollama.local"
@@ -298,6 +299,10 @@ def _reading_executor(
                 },
                 _skip_idempotency=True,
             )
+        except VirtualTokenRateLimitError as exc:
+            raise RetryableReadingError(
+                "Occult virtual token is temporarily rate limited"
+            ) from exc
         except RouterBusy as exc:
             raise RetryableReadingError(
                 "Occult provider capacity is temporarily exhausted"
@@ -362,7 +367,8 @@ def _install_starter_agents(manager: TarotPackageManager) -> None:
             manager.install(archive)
         else:
             manager.load(agent_id, version)
-        if manager.active(agent_id) is None:
+        active = manager.active(agent_id)
+        if active is None or active.package.manifest.agent.version != version:
             manager.activate(agent_id, version)
     installed = {item.package.manifest.agent.id for item in manager.active_packages()}
     missing = set(STARTER_AGENT_IDS) - installed
@@ -426,6 +432,22 @@ def build_occult_http(
     try:
         timeout_seconds = float(occult.get("provider_timeout_seconds", 120))
         maximum_concurrency = int(occult.get("maximum_concurrent_requests", 4))
+        invocation_result_retention = float(
+            occult.get("invocation_result_retention_seconds", 7 * 24 * 60 * 60)
+        )
+        invocation_identity_retention = float(
+            occult.get(
+                "invocation_identity_retention_seconds",
+                28 * 24 * 60 * 60,
+            )
+        )
+        maximum_invocation_entries = int(
+            occult.get("maximum_invocation_entries", 10_000)
+        )
+        reading_retention = float(
+            occult.get("reading_retention_seconds", 30 * 24 * 60 * 60)
+        )
+        maximum_readings = int(occult.get("maximum_readings", 10_000))
     except (TypeError, ValueError) as exc:
         raise OccultRuntimeError(
             "Occult numeric settings must contain valid numbers"
@@ -434,6 +456,20 @@ def build_occult_http(
         raise OccultRuntimeError("occult.provider_timeout_seconds must be 1-600")
     if not 1 <= maximum_concurrency <= 64:
         raise OccultRuntimeError("occult.maximum_concurrent_requests must be 1-64")
+    if invocation_result_retention <= 0:
+        raise OccultRuntimeError(
+            "occult.invocation_result_retention_seconds must be positive"
+        )
+    if invocation_identity_retention <= invocation_result_retention:
+        raise OccultRuntimeError(
+            "occult.invocation_identity_retention_seconds must exceed result retention"
+        )
+    if not 1 <= maximum_invocation_entries <= 1_000_000:
+        raise OccultRuntimeError("occult.maximum_invocation_entries must be 1-1000000")
+    if reading_retention <= 0:
+        raise OccultRuntimeError("occult.reading_retention_seconds must be positive")
+    if not 1 <= maximum_readings <= 1_000_000:
+        raise OccultRuntimeError("occult.maximum_readings must be 1-1000000")
 
     profile_home = home or get_hermes_home()
     root = profile_home / "occult"
@@ -490,9 +526,18 @@ def build_occult_http(
             maximum_risk_level=0,
         ),
         deck_registry=deck_registry,
-        invocation_store=SQLiteInvocationResultStore(root / "invocations.db"),
+        invocation_store=SQLiteInvocationResultStore(
+            root / "invocations.db",
+            retention_seconds=invocation_result_retention,
+            identity_retention_seconds=invocation_identity_retention,
+            maximum_entries=maximum_invocation_entries,
+        ),
     )
-    readings = ReadingStore(root / "readings.db")
+    readings = ReadingStore(
+        root / "readings.db",
+        retention_seconds=reading_retention,
+        maximum_readings=maximum_readings,
+    )
     env = os.environ if environ is None else environ
     admin_key = str(env.get("OCCULT_ADMIN_KEY", "")).strip()
     return OccultHTTPAdapter(

@@ -19,6 +19,7 @@ def test_occult_init_creates_local_profile_without_returning_secrets(
 ):
     home = tmp_path / ".hermes"
     monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("API_SERVER_KEY", raising=False)
     monkeypatch.delenv("OCCULT_ADMIN_KEY", raising=False)
     monkeypatch.delenv("OCCULT_API_KEY", raising=False)
     monkeypatch.setattr(
@@ -37,6 +38,7 @@ def test_occult_init_creates_local_profile_without_returning_secrets(
     assert config["occult"]["local_model"] == "qwen2.5:3b"
     assert config["platforms"]["api_server"]["enabled"] is True
     env_text = (home / ".env").read_text(encoding="utf-8")
+    assert "API_SERVER_KEY=hermes_api_" in env_text
     assert "OCCULT_ADMIN_KEY=occult_admin_" in env_text
     assert "OCCULT_API_KEY=occult_" in env_text
     assert "OCCULT_API_URL=" not in env_text
@@ -47,6 +49,50 @@ def test_occult_init_creates_local_profile_without_returning_secrets(
     )
     assert result["token_created"] is True
     assert result["deck_id"] == "occult.deck.starter"
+
+
+def test_occult_init_preserves_existing_provider_and_api_server_key(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("API_SERVER_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    api_server_key = "existing-api-server-key-" + "x" * 32
+    (home / ".env").write_text(
+        f"API_SERVER_KEY={api_server_key}\n",
+        encoding="utf-8",
+    )
+    (home / "config.yaml").write_text(
+        "occult:\n"
+        "  local_base_url: http://127.0.0.1:22434/v1\n"
+        "  local_model: configured-model\n",
+        encoding="utf-8",
+    )
+    discovered_urls: list[str] = []
+
+    def discover(url: str):
+        discovered_urls.append(url)
+        return ("another-model", "configured-model")
+
+    monkeypatch.setattr("hermes_cli.occult.discover_ollama_models", discover)
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model, **_kwargs: None,
+    )
+
+    result = initialize_occult()
+
+    config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    env_text = (home / ".env").read_text(encoding="utf-8")
+    assert discovered_urls == ["http://127.0.0.1:22434/v1"]
+    assert result["model"] == "configured-model"
+    assert config["occult"]["local_base_url"] == "http://127.0.0.1:22434/v1"
+    assert config["occult"]["local_model"] == "configured-model"
+    assert f"API_SERVER_KEY={api_server_key}" in env_text
 
 
 def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):

@@ -42,7 +42,7 @@ class _NoOccultRedirect(urllib.request.HTTPRedirectHandler):
 
 def initialize_occult(
     *,
-    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    base_url: str | None = None,
     model: str | None = None,
 ) -> dict[str, Any]:
     """Initialize a secure local-only Occult profile and starter deck."""
@@ -51,6 +51,7 @@ def initialize_occult(
         get_config_path,
         get_env_path,
         is_managed,
+        load_env,
         read_raw_config_strict,
         save_config,
         save_env_values,
@@ -71,10 +72,13 @@ def initialize_occult(
     if configured_occult is not None and not isinstance(configured_occult, dict):
         raise OccultCLIError("existing occult configuration must be an object")
     occult = dict(configured_occult or {})
+    staged_env = load_env()
+
+    def credential(name: str) -> str:
+        return str(os.getenv(name, "") or staged_env.get(name, "")).strip()
+
     try:
-        provider_timeout_seconds = int(
-            occult.get("provider_timeout_seconds", 120)
-        )
+        provider_timeout_seconds = int(occult.get("provider_timeout_seconds", 120))
     except (TypeError, ValueError):
         raise OccultCLIError(
             "occult.provider_timeout_seconds must be a whole number from 1 to 600"
@@ -84,11 +88,18 @@ def initialize_occult(
             "occult.provider_timeout_seconds must be a whole number from 1 to 600"
         )
     try:
-        canonical_url = normalize_loopback_openai_url(base_url)
+        requested_base_url = (
+            base_url
+            if base_url is not None
+            else occult.get("local_base_url", DEFAULT_OLLAMA_BASE_URL)
+        )
+        canonical_url = normalize_loopback_openai_url(str(requested_base_url))
         models = discover_ollama_models(canonical_url)
     except OccultRuntimeError as exc:
         raise OccultCLIError(str(exc)) from None
-    selected_model = str(model or models[0]).strip()
+    selected_model = str(
+        model if model is not None else occult.get("local_model") or models[0]
+    ).strip()
     if selected_model not in models:
         raise OccultCLIError(f"model is not installed in Ollama: {selected_model}")
     try:
@@ -109,6 +120,19 @@ def initialize_occult(
         "maximum_concurrent_requests": int(
             occult.get("maximum_concurrent_requests", 4)
         ),
+        "invocation_result_retention_seconds": float(
+            occult.get("invocation_result_retention_seconds", 7 * 24 * 60 * 60)
+        ),
+        "invocation_identity_retention_seconds": float(
+            occult.get("invocation_identity_retention_seconds", 28 * 24 * 60 * 60)
+        ),
+        "maximum_invocation_entries": int(
+            occult.get("maximum_invocation_entries", 10_000)
+        ),
+        "reading_retention_seconds": float(
+            occult.get("reading_retention_seconds", 30 * 24 * 60 * 60)
+        ),
+        "maximum_readings": int(occult.get("maximum_readings", 10_000)),
     })
     config["occult"] = occult
     platforms = dict(config.get("platforms") or {})
@@ -120,12 +144,20 @@ def initialize_occult(
     platforms["api_server"] = api_server
     config["platforms"] = platforms
 
-    admin_key = os.getenv("OCCULT_ADMIN_KEY", "").strip()
+    admin_key = credential("OCCULT_ADMIN_KEY")
     if not admin_key:
         admin_key = "occult_admin_" + secrets.token_urlsafe(32)
     elif not admin_key.isascii() or len(admin_key) < 32:
         raise OccultCLIError(
             "OCCULT_ADMIN_KEY must be ASCII and at least 32 characters; "
+            "unset it to generate a new key"
+        )
+    api_server_key = credential("API_SERVER_KEY")
+    if not api_server_key:
+        api_server_key = "hermes_api_" + secrets.token_urlsafe(32)
+    elif not api_server_key.isascii() or len(api_server_key) < 32:
+        raise OccultCLIError(
+            "API_SERVER_KEY must be ASCII and at least 32 characters; "
             "unset it to generate a new key"
         )
     runtime_env = dict(os.environ)
@@ -137,7 +169,7 @@ def initialize_occult(
     if http is None:
         raise OccultCLIError("Occult runtime did not enable")
 
-    token = os.getenv("OCCULT_API_KEY", "").strip()
+    token = credential("OCCULT_API_KEY")
     token_created = False
     issued_token_id: str | None = None
     if token:
@@ -174,6 +206,7 @@ def initialize_occult(
     try:
         try:
             save_env_values({
+                "API_SERVER_KEY": api_server_key,
                 "OCCULT_ADMIN_KEY": admin_key,
                 "OCCULT_API_KEY": token,
             })
@@ -283,9 +316,7 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
         },
     )
     try:
-        with _open_occult_url(
-            request, timeout=_client_timeout_seconds()
-        ) as response:
+        with _open_occult_url(request, timeout=_client_timeout_seconds()) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
@@ -320,9 +351,7 @@ def _admin_request(
         },
     )
     try:
-        with _open_occult_url(
-            request, timeout=_client_timeout_seconds()
-        ) as response:
+        with _open_occult_url(request, timeout=_client_timeout_seconds()) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         try:
@@ -349,9 +378,7 @@ def _stream_events(reading_id: str) -> Iterator[dict[str, Any]]:
         },
     )
     try:
-        with _open_occult_url(
-            request, timeout=_client_timeout_seconds()
-        ) as response:
+        with _open_occult_url(request, timeout=_client_timeout_seconds()) as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8").strip()
                 if not line.startswith("data: "):

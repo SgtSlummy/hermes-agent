@@ -14,7 +14,7 @@ from aiohttp import web
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
 from agent.occult.mythos import FailureKind, MythosRoutingError, RouterBusy
 from agent.occult.service import OccultService
-from agent.occult.virtual_tokens import VirtualTokenError
+from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenRateLimitError
 
 
 _SUPPORTED_ROLES = frozenset({"assistant", "developer", "system", "user"})
@@ -64,6 +64,13 @@ class OccultOpenAIAdapter:
                     for agent in agents
                 ],
             })
+        except VirtualTokenRateLimitError as exc:
+            return self._error(
+                str(exc),
+                429,
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
+            )
         except VirtualTokenError as exc:
             return self._error(
                 str(exc),
@@ -148,6 +155,13 @@ class OccultOpenAIAdapter:
                 400,
                 param=exc.param,
                 code=exc.code,
+            )
+        except VirtualTokenRateLimitError as exc:
+            return self._error(
+                str(exc),
+                429,
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
             )
         except VirtualTokenError as exc:
             return self._error(
@@ -252,6 +266,13 @@ class OccultOpenAIAdapter:
                 400,
                 param=exc.param,
                 code=exc.code,
+            )
+        except VirtualTokenRateLimitError as exc:
+            return self._error(
+                str(exc),
+                429,
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
             )
         except VirtualTokenError as exc:
             return self._error(

@@ -10297,7 +10297,7 @@ def main():
     )
     occult_init.add_argument(
         "--base-url",
-        default="http://127.0.0.1:11434/v1",
+        default=None,
         help="Loopback Ollama OpenAI-compatible base URL",
     )
     occult_init.add_argument(
