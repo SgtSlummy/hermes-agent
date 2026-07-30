@@ -165,6 +165,12 @@ class ReadingStore:
                 PRIMARY KEY (reading_id, sequence),
                 FOREIGN KEY (reading_id) REFERENCES readings(reading_id)
             );
+            CREATE TABLE IF NOT EXISTS reading_node_results (
+                idempotency_key TEXT PRIMARY KEY,
+                artifact_json TEXT NOT NULL,
+                route_summary_json TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
             CREATE UNIQUE INDEX IF NOT EXISTS one_terminal_reading_event
             ON reading_events(reading_id)
             WHERE event_type IN (
@@ -432,6 +438,50 @@ class ReadingStore:
         if row is None:
             raise ReadingError("unknown artifact reference")
         return json.loads(row["payload_json"])
+
+    def cached_node_result(
+        self,
+        idempotency_key: str,
+    ) -> CouncilNodeResult | None:
+        row = self._conn.execute(
+            """
+            SELECT artifact_json, route_summary_json
+            FROM reading_node_results
+            WHERE idempotency_key = ?
+            """,
+            (idempotency_key,),
+        ).fetchone()
+        if row is None:
+            return None
+        return CouncilNodeResult(
+            artifact=json.loads(row["artifact_json"]),
+            route_summary=json.loads(row["route_summary_json"]),
+        )
+
+    def cache_node_result(
+        self,
+        idempotency_key: str,
+        result: CouncilNodeResult,
+    ) -> None:
+        if not idempotency_key.strip() or len(idempotency_key) > 256:
+            raise ReadingError("invalid idempotency key")
+        _reject_secret_fields(result.artifact)
+        _reject_secret_fields(result.route_summary)
+        with self._transaction():
+            self._conn.execute(
+                """
+                INSERT OR IGNORE INTO reading_node_results (
+                    idempotency_key, artifact_json,
+                    route_summary_json, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    idempotency_key,
+                    json.dumps(result.artifact, sort_keys=True),
+                    json.dumps(result.route_summary, sort_keys=True),
+                    time.time(),
+                ),
+            )
 
     def _node_request(self, reading_id: str, node: sqlite3.Row) -> CouncilNodeRequest:
         dependencies = json.loads(node["dependencies_json"])

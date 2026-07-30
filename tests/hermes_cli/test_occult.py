@@ -36,6 +36,8 @@ def test_occult_cli_requires_virtual_token(monkeypatch):
 
 def test_occult_api_url_comes_from_api_server_config(monkeypatch):
     monkeypatch.delenv("OCCULT_API_URL", raising=False)
+    monkeypatch.delenv("API_SERVER_HOST", raising=False)
+    monkeypatch.delenv("API_SERVER_PORT", raising=False)
     monkeypatch.setattr(
         "hermes_cli.config.load_config",
         lambda: {
@@ -48,6 +50,24 @@ def test_occult_api_url_comes_from_api_server_config(monkeypatch):
     )
 
     assert _api_base_url() == "http://[::1]:9443"
+
+
+def test_occult_api_url_honors_gateway_environment_overrides(monkeypatch):
+    monkeypatch.delenv("OCCULT_API_URL", raising=False)
+    monkeypatch.setenv("API_SERVER_HOST", "127.0.0.2")
+    monkeypatch.setenv("API_SERVER_PORT", "9555")
+    monkeypatch.setattr(
+        "hermes_cli.config.load_config",
+        lambda: {
+            "platforms": {
+                "api_server": {
+                    "extra": {"host": "127.0.0.1", "port": 8642},
+                }
+            }
+        },
+    )
+
+    assert _api_base_url() == "http://127.0.0.2:9555"
 
 
 def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):

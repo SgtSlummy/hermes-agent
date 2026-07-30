@@ -167,8 +167,17 @@ def _api_base_url() -> str:
         platforms.get("api_server") if isinstance(platforms, dict) else None
     )
     extra = api_server.get("extra") if isinstance(api_server, dict) else None
-    host = str(extra.get("host", "127.0.0.1")) if isinstance(extra, dict) else "127.0.0.1"
-    port = int(extra.get("port", 8642)) if isinstance(extra, dict) else 8642
+    configured_host = (
+        str(extra.get("host", "127.0.0.1"))
+        if isinstance(extra, dict)
+        else "127.0.0.1"
+    )
+    configured_port = int(extra.get("port", 8642)) if isinstance(extra, dict) else 8642
+    host = os.getenv("API_SERVER_HOST", "").strip() or configured_host
+    try:
+        port = int(os.getenv("API_SERVER_PORT", "").strip() or configured_port)
+    except ValueError:
+        port = configured_port
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"http://{host}:{port}"

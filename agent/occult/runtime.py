@@ -251,6 +251,9 @@ def _reading_executor(
         plaintext_token: str,
         request: CouncilNodeRequest,
     ) -> CouncilNodeResult:
+        cached = readings.cached_node_result(request.idempotency_key)
+        if cached is not None:
+            return cached
         sections = [request.task]
         for reference in request.input_artifact_references:
             artifact = readings.artifact(reference)
@@ -284,13 +287,15 @@ def _reading_executor(
                 },
             },
         )
-        return CouncilNodeResult(
+        node_result = CouncilNodeResult(
             artifact={
                 "content": result["output"],
                 "media_type": "text/plain",
             },
             route_summary=result["route"],
         )
+        readings.cache_node_result(request.idempotency_key, node_result)
+        return node_result
 
     return execute
 
@@ -376,6 +381,11 @@ def build_occult_http(
     occult = config.get("occult") if isinstance(config, Mapping) else None
     if not isinstance(occult, Mapping):
         raise OccultRuntimeError("occult configuration must be an object")
+    configured_contract = str(occult.get("contract_version", "")).strip()
+    if configured_contract != OCCULT_CONTRACT_VERSION:
+        raise OccultRuntimeError(
+            "occult.contract_version is incompatible with this Hermes release"
+        )
     model_id = str(occult.get("local_model", "")).strip()
     if not model_id:
         raise OccultRuntimeError(

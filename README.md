@@ -84,6 +84,7 @@ through Mythos routing. It is disabled by default and requires no cloud
 provider key.
 
 ```bash
+pip install "hermes-agent[occult]"
 ollama pull qwen2.5:3b
 hermes occult init --model qwen2.5:3b
 hermes gateway restart

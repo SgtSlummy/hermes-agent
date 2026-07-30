@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.occult.readings import ReadingNode, ReadingPlan
+from agent.occult.readings import CouncilNodeRequest, ReadingNode, ReadingPlan
 from agent.occult.runtime import (
     STARTER_AGENT_IDS,
     STARTER_CARD_ID,
@@ -31,6 +31,16 @@ def _config(model: str = "qwen2.5:3b"):
 
 def test_disabled_runtime_has_no_side_effects(tmp_path: Path):
     assert build_occult_http({"occult": {"enabled": False}}, home=tmp_path) is None
+    assert not (tmp_path / "occult").exists()
+
+
+def test_runtime_rejects_incompatible_contract_before_side_effects(tmp_path: Path):
+    config = _config()
+    config["occult"]["contract_version"] = "2.0.0"
+
+    with pytest.raises(OccultRuntimeError, match="contract_version is incompatible"):
+        build_occult_http(config, home=tmp_path)
+
     assert not (tmp_path / "occult").exists()
 
 
@@ -257,3 +267,62 @@ def test_runtime_close_releases_token_store_when_reading_close_fails(
     assert store_closed is True
     original_readings_close()
     original_store_close()
+
+
+def test_reading_executor_reuses_durable_idempotent_result_after_restart(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps({
+                "choices": [{"message": {"content": "durable"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            }).encode()
+
+    def fake_open(_request, *, timeout):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    monkeypatch.setattr("agent.occult.runtime._open_local_url", fake_open)
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    token = http.service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="durable-reading",
+            allowed_agent_ids=frozenset({"occult.major.magician"}),
+            allowed_card_ids=frozenset({STARTER_CARD_ID}),
+        )
+    )
+    request = CouncilNodeRequest(
+        contract_version="1.0.0",
+        reading_id="reading_durable",
+        node_id="build",
+        agent_id="occult.major.magician",
+        task="Build.",
+        idempotency_key="reading_durable:build",
+        input_artifact_references=(),
+    )
+    executor = http.reading_executor
+    assert executor is not None
+    first = executor(token, request)
+    http.close()
+
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    executor = http.reading_executor
+    assert executor is not None
+    second = executor(token, request)
+
+    assert second == first
+    assert calls == 1
+    http.close()
