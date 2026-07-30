@@ -58,6 +58,18 @@ class TestProviderSelectionGate:
         finally:
             importlib.reload(tt)
 
+    def test_xai_helper_uses_live_config_env_lookup(self):
+        """Import-time patches must not become permanent credential readers."""
+        import hermes_cli.config as config_mod
+        from tools import xai_http
+
+        with patch.object(
+            config_mod,
+            "get_env_value",
+            return_value="live-dotenv-secret",
+        ):
+            assert xai_http.get_env_value("XAI_API_KEY") == "live-dotenv-secret"
+
     def test_explicit_groq_sees_dotenv(self):
         from tools import transcription_tools as tt
 

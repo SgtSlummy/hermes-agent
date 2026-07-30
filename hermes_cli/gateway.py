@@ -2011,6 +2011,14 @@ def _build_user_local_paths(home: Path, path_entries: list[str]) -> list[str]:
     return [p for p in candidates if p not in path_entries and Path(p).exists()]
 
 
+def _safe_is_dir(path: Path) -> bool:
+    """Return whether *path* is a directory without failing on unreadable homes."""
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
 def _build_wsl_interop_paths(path_entries: list[str]) -> list[str]:
     """Return WSL Windows interop PATH entries for generated systemd units.
 
@@ -2111,21 +2119,21 @@ def _build_service_path_dirs(project_root: Path | None = None) -> list[str]:
     candidates = []
 
     venv_bin = project_root / "venv" / "bin"
-    if venv_bin.is_dir():
+    if _safe_is_dir(venv_bin):
         candidates.append(str(venv_bin))
     elif sys.prefix != sys.base_prefix:
         candidates.append(str(Path(sys.prefix) / "bin"))
 
     node_bin = project_root / "node_modules" / ".bin"
-    if node_bin.is_dir():
+    if _safe_is_dir(node_bin):
         candidates.append(str(node_bin))
 
     hermes_home = get_hermes_home()
     hermes_node = hermes_home / "node" / "bin"
-    if hermes_node.is_dir():
+    if _safe_is_dir(hermes_node):
         candidates.append(str(hermes_node))
     hermes_nm = hermes_home / "node_modules" / ".bin"
-    if hermes_nm.is_dir():
+    if _safe_is_dir(hermes_nm):
         candidates.append(str(hermes_nm))
 
     return candidates
