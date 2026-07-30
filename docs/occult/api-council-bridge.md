@@ -301,3 +301,28 @@ Before enabling this adapter in a release composition root:
 7. back up the atomically written `occult/decks.json`;
 8. verify token revocation and committed budget survive restart; and
 9. run the cross-repository contract fixtures and restart-resume scenario.
+
+### Cross-repository production command
+
+Use matching draft-branch checkouts and point Hermes at Agents Council:
+
+```text
+AGENTS_COUNCIL_ROOT=/path/to/agents-council \
+scripts/run_tests.sh tests/agent/occult/test_council_transport_e2e.py -q
+```
+
+On native Windows, where the Bash wrapper is unavailable:
+
+```text
+$env:AGENTS_COUNCIL_ROOT = "C:\path\to\agents-council"
+.\.venv\Scripts\python.exe -m pytest `
+  tests\agent\occult\test_council_transport_e2e.py -q -n 4
+```
+
+The test compares both repositories' language-neutral fixtures, starts a real
+authenticated Hermes HTTP adapter with a local mock route, and launches the
+Council `test:occult-hermes-e2e` runner. Council performs a three-node
+build-review-synthesis reading, stops for approval after the build, recreates
+its persistent services, and resumes the same reading. The gate fails if a
+completed node runs twice, the terminal event is not unique, the wire contract
+drifts, or secret-shaped data crosses the bridge.
