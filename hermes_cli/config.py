@@ -1687,6 +1687,14 @@ OPTIONAL_ENV_VARS = {
         "category": "occult",
         "advanced": True,
     },
+    "OCCULT_STARTER_SIGNING_KEY": {
+        "description": "Base64-encoded Ed25519 key for signing starter agents",
+        "prompt": "Occult starter signing key",
+        "url": None,
+        "password": True,
+        "category": "occult",
+        "advanced": True,
+    },
     # ── Provider (handled in provider selection, not shown in checklists) ──
     "NOUS_BASE_URL": {
         "description": "Nous Portal base URL override",

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build the reviewed, signed Major Arcana starter archives.
 
-Maintainers provide a raw Ed25519 private key through ``--private-key-file``.
+Maintainers provide a base64-encoded raw Ed25519 private key through
+``OCCULT_STARTER_SIGNING_KEY``.
 The ``--ephemeral`` mode exists only to bootstrap a new trust root; it never
 writes or prints the generated private key.
 """
@@ -12,6 +13,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 import zipfile
 from pathlib import Path
 
@@ -175,18 +177,17 @@ def write_archive(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--private-key-file", type=Path)
     parser.add_argument("--ephemeral", action="store_true")
     args = parser.parse_args()
-    if bool(args.private_key_file) == bool(args.ephemeral):
-        parser.error("choose exactly one of --private-key-file or --ephemeral")
+    encoded_key = os.getenv("OCCULT_STARTER_SIGNING_KEY", "").strip()
+    if bool(encoded_key) == bool(args.ephemeral):
+        parser.error(
+            "choose exactly one of OCCULT_STARTER_SIGNING_KEY or --ephemeral"
+        )
     if args.ephemeral:
         private_key = Ed25519PrivateKey.generate()
     else:
-        raw = base64.b64decode(
-            args.private_key_file.read_text(encoding="utf-8").strip(),
-            validate=True,
-        )
+        raw = base64.b64decode(encoded_key, validate=True)
         private_key = Ed25519PrivateKey.from_private_bytes(raw)
 
     args.output.mkdir(parents=True, exist_ok=True)

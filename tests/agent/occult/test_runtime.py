@@ -227,3 +227,33 @@ def test_local_provider_requests_ignore_ambient_proxies(monkeypatch):
 
     assert captured["proxies"] == {}
     assert captured["url"] == "http://127.0.0.1:11434/v1/models"
+
+
+def test_runtime_close_releases_token_store_when_reading_close_fails(
+    tmp_path: Path,
+    monkeypatch,
+):
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    store = http.service.token_authority.store
+    assert store is not None
+    original_readings_close = http.readings.close
+    original_store_close = store.close
+    store_closed = False
+
+    def fail_readings_close():
+        raise RuntimeError("reading close failed")
+
+    def mark_store_closed():
+        nonlocal store_closed
+        store_closed = True
+
+    monkeypatch.setattr(http.readings, "close", fail_readings_close)
+    monkeypatch.setattr(store, "close", mark_store_closed)
+
+    with pytest.raises(RuntimeError, match="reading close failed"):
+        http.close()
+
+    assert store_closed is True
+    original_readings_close()
+    original_store_close()

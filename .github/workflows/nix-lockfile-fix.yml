@@ -64,12 +64,15 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-checks: read
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         if: env.APP_ID != '' && env.APP_PRIVATE_KEY != ''
         with:
           ref: main
           token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
       - uses: ./.github/actions/nix-setup
         if: env.APP_ID != '' && env.APP_PRIVATE_KEY != ''
@@ -84,6 +87,8 @@ jobs:
       - name: Commit & push
         if: env.APP_ID != '' && env.APP_PRIVATE_KEY != '' && steps.apply.outputs.changed == 'true'
         shell: bash
+        env:
+          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -110,8 +115,10 @@ jobs:
           # commit during the nix build. Without this, a non-fast-forward
           # rejection silently loses the fix. If package files changed during
           # the rebase, abort — a fresh auto-fix run will handle the new state.
+          basic_auth="$(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 -w0)"
           for attempt in 1 2 3; do
-            if git push origin HEAD:main; then
+            if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic_auth" \
+              push origin HEAD:main; then
               exit 0
             fi
             echo "::warning::Push attempt $attempt failed (non-fast-forward?), rebasing…"

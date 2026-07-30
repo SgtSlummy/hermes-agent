@@ -39,10 +39,12 @@ class OccultHTTPAdapter:
     def close(self) -> None:
         """Close profile-scoped stores owned by the assembled runtime."""
 
-        self.readings.close()
-        store = self.service.token_authority.store
-        if store is not None:
-            store.close()
+        try:
+            self.readings.close()
+        finally:
+            store = self.service.token_authority.store
+            if store is not None:
+                store.close()
 
     def register(
         self,

@@ -253,6 +253,23 @@ jobs:
         run: |
           uv run --frozen python scripts/occult_release.py verify staged --require-signature
           uv run --frozen python scripts/occult_release.py promote staged promoted
+      - name: Create release bundle and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_VERSION}"
+          case "$TAG" in v*) ;; *) TAG="v${TAG}" ;; esac
+          BUNDLE="occult-system-${TAG}.tar.gz"
+          tar -C promoted -czf "$BUNDLE" .
+          sha256sum "$BUNDLE" > "${BUNDLE}.sha256"
+      - name: Sign and verify the release bundle checksum
+        uses: sigstore/gh-action-sigstore-python@f514d46b907ebcd5bedc05145c03b69c1edd8b46 # v3.0.0
+        with:
+          inputs: occult-system-*.tar.gz.sha256
+          verify: true
+          verify-cert-identity: >-
+            https://github.com/SgtSlummy/hermes-agent/.github/workflows/occult-production-gate.yml@${{ github.ref }}
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: occult-stable-${{ env.RELEASE_VERSION }}-${{ env.RELEASE_COMMIT }}
@@ -270,10 +287,12 @@ jobs:
           NOTES_VERSION="${TAG#v}"
           NOTES_PATH="docs/occult/release-notes-v${NOTES_VERSION}.md"
           test -f "$NOTES_PATH"
-          tar -C promoted -czf "occult-system-${TAG}.tar.gz" .
+          BUNDLE="occult-system-${TAG}.tar.gz"
           cp "$NOTES_PATH" release-notes.md
           gh release create "$TAG" \
-            "occult-system-${TAG}.tar.gz" \
+            "$BUNDLE" \
+            "${BUNDLE}.sha256" \
+            "${BUNDLE}.sha256.sigstore.json" \
             promoted/SHA256SUMS.txt \
             promoted/SHA256SUMS.txt.sigstore.json \
             --repo "${GITHUB_REPOSITORY}" \

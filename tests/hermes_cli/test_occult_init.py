@@ -46,6 +46,8 @@ def test_occult_init_creates_local_profile_without_returning_secrets(
 def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):
     home = tmp_path / ".hermes"
     monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("OCCULT_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
     monkeypatch.setattr(
         "hermes_cli.occult.discover_ollama_models",
         lambda _url: ("qwen2.5:3b",),
@@ -60,6 +62,25 @@ def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):
 
     assert first["token_created"] is True
     assert second["token_created"] is False
+
+
+def test_occult_init_rejects_short_admin_key(tmp_path: Path, monkeypatch):
+    home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("OCCULT_ADMIN_KEY", "too-short")
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("qwen2.5:3b",),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model: None,
+    )
+
+    with pytest.raises(OccultCLIError, match="at least 32 characters"):
+        initialize_occult(model="qwen2.5:3b")
+
+    assert not (home / "config.yaml").exists()
 
 
 def test_occult_init_rejects_non_chat_model_before_writing(

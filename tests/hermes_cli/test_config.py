@@ -496,7 +496,11 @@ class TestOptionalEnvVarsRegistry:
     def test_occult_credentials_are_registered_as_passwords(self):
         from hermes_cli.config import OPTIONAL_ENV_VARS
 
-        for key in ("OCCULT_ADMIN_KEY", "OCCULT_API_KEY"):
+        for key in (
+            "OCCULT_ADMIN_KEY",
+            "OCCULT_API_KEY",
+            "OCCULT_STARTER_SIGNING_KEY",
+        ):
             assert OPTIONAL_ENV_VARS[key]["password"] is True
 
 
