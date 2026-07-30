@@ -6,14 +6,14 @@ import asyncio
 import hashlib
 import json
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
 from aiohttp import web
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
 from agent.occult.decks import DeckError
-from agent.occult.mythos import RouterBusy
+from agent.occult.mythos import FailureKind, MythosRoutingError, RouterBusy
 from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.readings import (
     CouncilNodeRequest,
@@ -36,10 +36,32 @@ class OccultHTTPAdapter:
         Callable[[str, CouncilNodeRequest], CouncilNodeResult] | None
     ) = None
     admin_key_digest: bytes | None = None
+    _worker_tasks: set[asyncio.Task[Any]] = field(
+        default_factory=set,
+        init=False,
+        repr=False,
+    )
+    _stores_closed: bool = field(default=False, init=False, repr=False)
 
     def close(self) -> None:
         """Close profile-scoped stores owned by the assembled runtime."""
 
+        if any(not task.done() for task in self._worker_tasks):
+            raise RuntimeError("active Occult workers must be drained with aclose()")
+        self._close_stores()
+
+    async def aclose(self) -> None:
+        """Drain uncancellable worker threads before closing durable stores."""
+
+        active = tuple(task for task in self._worker_tasks if not task.done())
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)
+        self._close_stores()
+
+    def _close_stores(self) -> None:
+        if self._stores_closed:
+            return
+        self._stores_closed = True
         try:
             self.readings.close()
         finally:
@@ -52,6 +74,17 @@ class OccultHTTPAdapter:
                 if invocation_store is not None:
                     invocation_store.close()
 
+    async def _run_worker(
+        self,
+        callback: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        task = asyncio.create_task(asyncio.to_thread(callback, *args, **kwargs))
+        self._worker_tasks.add(task)
+        task.add_done_callback(self._worker_tasks.discard)
+        return await asyncio.shield(task)
+
     def register(
         self,
         app: web.Application,
@@ -59,7 +92,7 @@ class OccultHTTPAdapter:
         include_openai_compat: bool = True,
     ) -> None:
         if include_openai_compat:
-            OccultOpenAIAdapter(self.service).register(app)
+            OccultOpenAIAdapter(self.service, worker=self._run_worker).register(app)
         app.router.add_get("/v1/occult/major-arcana", self._agents)
         app.router.add_get("/v1/occult/minor-arcana", self._routes)
         app.router.add_get("/v1/occult/decks", self._decks)
@@ -99,19 +132,28 @@ class OccultHTTPAdapter:
         )
 
     async def handle_openai_models(self, request: web.Request) -> web.Response:
-        return await OccultOpenAIAdapter(self.service).models(request)
+        return await OccultOpenAIAdapter(
+            self.service,
+            worker=self._run_worker,
+        ).models(request)
 
     async def handle_openai_chat(
         self,
         request: web.Request,
     ) -> web.StreamResponse:
-        return await OccultOpenAIAdapter(self.service).chat_completions(request)
+        return await OccultOpenAIAdapter(
+            self.service,
+            worker=self._run_worker,
+        ).chat_completions(request)
 
     async def handle_openai_responses(
         self,
         request: web.Request,
     ) -> web.StreamResponse:
-        return await OccultOpenAIAdapter(self.service).responses(request)
+        return await OccultOpenAIAdapter(
+            self.service,
+            worker=self._run_worker,
+        ).responses(request)
 
     async def _agents(self, request: web.Request) -> web.Response:
         return await self._call(
@@ -190,7 +232,7 @@ class OccultHTTPAdapter:
             }
 
         try:
-            result = await asyncio.to_thread(invoke)
+            result = await self._run_worker(invoke)
             return web.json_response(result)
         except VirtualTokenError as exc:
             return self._bridge_error(
@@ -214,6 +256,8 @@ class OccultHTTPAdapter:
                 503,
                 retryable=True,
             )
+        except MythosRoutingError as exc:
+            return self._bridge_routing_error(invocation_id, exc)
         except Exception:
             return self._bridge_error(
                 invocation_id,
@@ -536,7 +580,7 @@ class OccultHTTPAdapter:
             payload = parsed
         try:
             if worker_thread:
-                result = await asyncio.to_thread(callback, token, payload)
+                result = await self._run_worker(callback, token, payload)
             else:
                 result = callback(token, payload)
             return web.json_response(result, status=status)
@@ -548,6 +592,8 @@ class OccultHTTPAdapter:
                 503,
                 retryable=True,
             )
+        except MythosRoutingError as exc:
+            return self._routing_error(exc)
         except (OccultContractError, ReadingError, ValueError) as exc:
             return self._error(str(exc), 400)
         except Exception:
@@ -606,6 +652,65 @@ class OccultHTTPAdapter:
                 },
             },
             status=status,
+        )
+
+    @classmethod
+    def _bridge_routing_error(
+        cls,
+        invocation_id: str,
+        error: MythosRoutingError,
+    ) -> web.Response:
+        kinds = {kind for _, kind in error.failures}
+        transient = {
+            FailureKind.RATE_LIMIT,
+            FailureKind.TIMEOUT,
+            FailureKind.UNAVAILABLE,
+            FailureKind.UNKNOWN,
+        }
+        if FailureKind.INVALID_REQUEST in kinds:
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_INVALID_REQUEST",
+                "Occult provider rejected the request",
+                400,
+            )
+        if FailureKind.AUTHENTICATION in kinds:
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_PROVIDER_AUTHENTICATION_FAILED",
+                "Occult provider authentication failed",
+                502,
+            )
+        if FailureKind.INVALID_RESPONSE in kinds:
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_INVALID_RESPONSE",
+                "Occult provider returned an invalid response",
+                502,
+            )
+        if kinds and kinds.issubset(transient):
+            return cls._bridge_error(
+                invocation_id,
+                "OCCULT_PROVIDER_UNAVAILABLE",
+                "Occult provider is temporarily unavailable",
+                503,
+                retryable=True,
+            )
+        return cls._bridge_error(
+            invocation_id,
+            "OCCULT_PROVIDER_FAILED",
+            "Occult provider rejected the invocation",
+            502,
+        )
+
+    @classmethod
+    def _routing_error(cls, error: MythosRoutingError) -> web.Response:
+        bridge = cls._bridge_routing_error("unknown", error)
+        body = json.loads(bridge.text or "{}")
+        return cls._error(
+            str(body["error"]["message"]),
+            bridge.status,
+            retryable=bool(body["error"]["retryable"]),
         )
 
 

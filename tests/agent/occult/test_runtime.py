@@ -88,6 +88,29 @@ def test_runtime_installs_signed_starters_route_and_deck(tmp_path: Path):
     http.close()
 
 
+def test_runtime_restores_the_canonical_starter_deck(tmp_path: Path):
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    http.close()
+
+    path = tmp_path / "occult" / "decks.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["decks"][STARTER_DECK_ID]["allowed_agent_ids"] = [
+        "occult.major.magician"
+    ]
+    payload["decks"][STARTER_DECK_ID]["routing"]["local_only"] = False
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    restarted = build_occult_http(_config(), home=tmp_path)
+    assert restarted is not None
+    restored = restarted.service.deck_registry.get(STARTER_DECK_ID)
+
+    assert set(restored.allowed_agent_ids) == set(STARTER_AGENT_IDS)
+    assert restored.allowed_card_ids == (STARTER_CARD_ID,)
+    assert restored.routing.local_only is True
+    restarted.close()
+
+
 def test_openai_dispatch_recognizes_only_issued_occult_tokens(tmp_path: Path):
     http = build_occult_http(_config(), home=tmp_path)
     assert http is not None

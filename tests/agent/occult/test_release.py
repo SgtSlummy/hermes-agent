@@ -121,7 +121,7 @@ def test_release_assembly_is_deterministic_and_policy_safe(tmp_path: Path):
     assert "occult/readings.db*" in migration["backup_set"]
     assert "occult/invocations.db*" in migration["backup_set"]
     assert {"name": "invocation-results-sqlite", "version": 1} in migration["state"]
-    assert {"name": "readings-sqlite", "version": 2} in migration["state"]
+    assert {"name": "readings-sqlite", "version": 3} in migration["state"]
     sbom = json.loads((first / SBOM_FILE).read_text())
     assert sbom["bomFormat"] == "CycloneDX"
     assert sbom["serialNumber"].startswith("urn:uuid:")

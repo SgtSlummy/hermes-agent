@@ -92,6 +92,13 @@ class SQLiteInvocationResultStore:
         lock_key = (owner_token_id, idempotency_key)
         with self._key_locks.acquire(lock_key):
             with self._db_lock:
+                self._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    self._prune(time.time())
+                    self._conn.execute("COMMIT")
+                except BaseException:
+                    self._conn.execute("ROLLBACK")
+                    raise
                 row = self._conn.execute(
                     """
                     SELECT request_fingerprint, result_json

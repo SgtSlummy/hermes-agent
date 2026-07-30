@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, is_occult_enabled
-from agent.occult.decks import DeckError, DeckRegistry
+from agent.occult.decks import DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.idempotency import SQLiteInvocationResultStore
 from agent.occult.mythos import (
@@ -375,11 +375,8 @@ def _install_starter_deck(
     *,
     model_card_id: str,
 ) -> None:
-    try:
-        registry.get(STARTER_DECK_ID)
-        return
-    except DeckError:
-        pass
+    # This ID is runtime-owned. Reinstall its canonical descriptor on startup
+    # so stale or administrator-modified registries cannot break readings.
     registry.put(
         {
             "contract_version": OCCULT_CONTRACT_VERSION,

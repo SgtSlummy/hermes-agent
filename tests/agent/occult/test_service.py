@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
@@ -15,10 +16,12 @@ from agent.occult.idempotency import (
 )
 from agent.occult.mythos import (
     AdapterResponse,
+    FailureKind,
     MinorArcanaDescriptor,
     MockProviderAdapter,
     MythosRouter,
     PrivacyClass,
+    ProviderFailure,
 )
 from agent.occult.pairing import RuntimePolicy
 from agent.occult.readings import (
@@ -133,11 +136,14 @@ def _service(
     maximum_concurrent_requests: int = 8,
     requests_per_minute: int = 10,
     invocation_store: SQLiteInvocationResultStore | None = None,
+    provider_invoke=None,
 ):
     seen_messages: list[str] = []
 
     def invoke(request, _route, _credential):
         seen_messages.append(request.message)
+        if provider_invoke is not None:
+            return provider_invoke(request, _route, _credential)
         return AdapterResponse("completed", input_tokens=10, output_tokens=2)
 
     router = MythosRouter(
@@ -325,12 +331,6 @@ def test_idempotency_identity_horizon_expires_keys_explicitly(
     )
 
     now[0] = 121.0
-    store.run(
-        "client",
-        "prune-trigger",
-        "trigger-fingerprint",
-        lambda: calls.append("trigger") or {"value": "trigger"},
-    )
     reused = store.run(
         "client",
         "old-key",
@@ -340,7 +340,7 @@ def test_idempotency_identity_horizon_expires_keys_explicitly(
     store.close()
 
     assert reused == {"value": "reused"}
-    assert calls == ["old", "trigger", "reused"]
+    assert calls == ["old", "reused"]
 
 
 @pytest.mark.asyncio
@@ -471,6 +471,74 @@ async def test_retryable_reading_failure_returns_503_and_remains_pending(
     assert body["error"]["retryable"] is True
     assert readings.status(reading_id)["state"] == "pending"
     readings.close()
+
+
+@pytest.mark.asyncio
+async def test_permanent_provider_rejections_are_not_retryable_http_failures(
+    tmp_path: Path,
+):
+    def reject(_request, _route, _credential):
+        raise ProviderFailure(FailureKind.INVALID_REQUEST)
+
+    service, token, _seen = _service(provider_invoke=reject)
+    readings = ReadingStore(tmp_path / "readings.db")
+    app = Application()
+    adapter = OccultHTTPAdapter(service, readings)
+    adapter.register(app)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with TestClient(TestServer(app)) as client:
+        native = await client.post(
+            "/v1/occult/invoke",
+            headers=headers,
+            json=_invocation(),
+        )
+        native_body = await native.json()
+        compatible = await client.post(
+            "/v1/chat/completions",
+            headers=headers,
+            json={
+                "model": "occult.major.magician",
+                "messages": [{"role": "user", "content": "Reject this."}],
+            },
+        )
+        compatible_body = await compatible.json()
+
+    assert native.status == 400
+    assert native_body["error"]["retryable"] is False
+    assert native_body["error"]["code"] == "OCCULT_INVALID_REQUEST"
+    assert compatible.status == 400
+    assert compatible_body["error"]["code"] == "invalid_request"
+    await adapter.aclose()
+
+
+@pytest.mark.asyncio
+async def test_runtime_shutdown_drains_cancelled_request_workers(tmp_path: Path):
+    from threading import Event
+
+    service, _token, _seen = _service()
+    adapter = OccultHTTPAdapter(service, ReadingStore(tmp_path / "readings.db"))
+    started = Event()
+    release = Event()
+
+    def blocking_worker():
+        started.set()
+        release.wait(timeout=5)
+        return "done"
+
+    request_task = asyncio.create_task(adapter._run_worker(blocking_worker))
+    assert await asyncio.to_thread(started.wait, 1)
+    request_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await request_task
+    with pytest.raises(RuntimeError, match="must be drained"):
+        adapter.close()
+
+    close_task = asyncio.create_task(adapter.aclose())
+    await asyncio.sleep(0)
+    assert close_task.done() is False
+    release.set()
+    await close_task
 
 
 @pytest.mark.asyncio

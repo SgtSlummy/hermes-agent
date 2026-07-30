@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import os
 import secrets
 import shlex
@@ -241,12 +242,24 @@ def _client_timeout_seconds() -> float:
 
 
 def _open_occult_url(request: urllib.request.Request, *, timeout: float):
-    """Open an Occult request without exposing credentials to ambient proxies."""
+    """Open an Occult request without redirects or loopback proxy exposure."""
 
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        _NoOccultRedirect(),
+    parsed = urllib.parse.urlparse(request.full_url)
+    host = (parsed.hostname or "").lower()
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = host == "localhost"
+    proxy_handler = (
+        urllib.request.ProxyHandler({})
+        if is_loopback
+        else urllib.request.ProxyHandler()
     )
+    handlers: list[urllib.request.BaseHandler] = [
+        proxy_handler,
+        _NoOccultRedirect(),
+    ]
+    opener = urllib.request.build_opener(*handlers)
     return opener.open(request, timeout=timeout)
 
 

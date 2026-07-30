@@ -24,6 +24,7 @@ from hermes_constants import get_hermes_home
 
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _STORE_SCHEMA_VERSION = 1
+_RESERVED_TOKEN_IDS = frozenset({"legacy-unclaimed"})
 
 
 def _decode_scope(value: object) -> frozenset[str]:
@@ -57,6 +58,8 @@ class VirtualTokenPolicy:
             self.token_id
         ):
             raise ValueError("invalid token_id")
+        if self.token_id in _RESERVED_TOKEN_IDS:
+            raise ValueError("reserved token_id")
         for field_name in (
             "allowed_agent_ids",
             "allowed_card_ids",

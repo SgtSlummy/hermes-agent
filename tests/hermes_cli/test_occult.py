@@ -131,6 +131,50 @@ def test_occult_transport_disables_ambient_proxies(monkeypatch):
     }
 
 
+def test_remote_occult_transport_preserves_ambient_proxies(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {"https": "http://proxy.internal:8443"},
+    )
+
+    class Opener:
+        @staticmethod
+        def open(request, *, timeout):
+            seen["url"] = request.full_url
+            seen["timeout"] = timeout
+            return _Response({"ok": True})
+
+    def build_opener(*handlers):
+        proxy_handler = next(
+            handler
+            for handler in handlers
+            if isinstance(handler, urllib.request.ProxyHandler)
+        )
+        seen["proxies"] = proxy_handler.proxies
+        seen["redirects_disabled"] = any(
+            handler.__class__.__name__ == "_NoOccultRedirect"
+            for handler in handlers
+        )
+        return Opener()
+
+    monkeypatch.setattr("urllib.request.build_opener", build_opener)
+    request = urllib.request.Request(
+        "https://occult.internal.example/v1/occult/decks"
+    )
+
+    with _open_occult_url(request, timeout=9) as response:
+        assert json.loads(response.read()) == {"ok": True}
+
+    assert seen == {
+        "url": "https://occult.internal.example/v1/occult/decks",
+        "timeout": 9,
+        "proxies": {"https": "http://proxy.internal:8443"},
+        "redirects_disabled": True,
+    }
+
+
 def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
     seen = []

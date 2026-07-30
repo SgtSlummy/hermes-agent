@@ -141,6 +141,7 @@ class ReadingStore:
                 owner_token_id TEXT NOT NULL DEFAULT 'local',
                 contract_version TEXT NOT NULL,
                 spread_id TEXT NOT NULL,
+                plan_fingerprint TEXT,
                 state TEXT NOT NULL,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
@@ -184,22 +185,68 @@ class ReadingStore:
             """
         )
         with self._transaction():
-            self._conn.execute(
+            terminal_rows = self._conn.execute(
                 """
-                DELETE FROM reading_events
+                SELECT reading_id, MIN(sequence) AS terminal_sequence
+                FROM reading_events
                 WHERE event_type IN (
                     'reading.cancelled', 'reading.completed', 'reading.failed'
                 )
-                AND rowid NOT IN (
-                    SELECT MIN(rowid)
-                    FROM reading_events
-                    WHERE event_type IN (
-                        'reading.cancelled', 'reading.completed', 'reading.failed'
-                    )
-                    GROUP BY reading_id
-                )
+                GROUP BY reading_id
                 """
-            )
+            ).fetchall()
+            for terminal in terminal_rows:
+                reading_id = str(terminal["reading_id"])
+                terminal_sequence = int(terminal["terminal_sequence"])
+                late_events = self._conn.execute(
+                    """
+                    SELECT data_json
+                    FROM reading_events
+                    WHERE reading_id = ? AND sequence > ?
+                    """,
+                    (reading_id, terminal_sequence),
+                ).fetchall()
+                affected_nodes: set[str] = set()
+                for event in late_events:
+                    try:
+                        data = json.loads(str(event["data_json"]))
+                        node_id = str(data["node_id"])
+                    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    affected_nodes.add(node_id)
+                for node_id in affected_nodes:
+                    artifact = self._conn.execute(
+                        """
+                        SELECT artifact_reference FROM reading_nodes
+                        WHERE reading_id = ? AND node_id = ?
+                        """,
+                        (reading_id, node_id),
+                    ).fetchone()
+                    if artifact is not None and artifact["artifact_reference"]:
+                        self._conn.execute(
+                            "DELETE FROM reading_artifacts "
+                            "WHERE artifact_reference = ?",
+                            (artifact["artifact_reference"],),
+                        )
+                    self._conn.execute(
+                        """
+                        UPDATE reading_nodes
+                        SET state = 'pending', artifact_reference = NULL
+                        WHERE reading_id = ? AND node_id = ?
+                        """,
+                        (reading_id, node_id),
+                    )
+                    self._conn.execute(
+                        "DELETE FROM reading_node_results WHERE idempotency_key = ?",
+                        (f"{reading_id}:{node_id}",),
+                    )
+                self._conn.execute(
+                    """
+                    DELETE FROM reading_events
+                    WHERE reading_id = ? AND sequence > ?
+                    """,
+                    (reading_id, terminal_sequence),
+                )
             self._conn.execute(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS one_terminal_reading_event
@@ -233,6 +280,44 @@ class ReadingStore:
                         "WHERE reading_id = ?",
                         (scoped_key, row["reading_id"]),
                     )
+            columns = {
+                str(row["name"])
+                for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
+            }
+            if "plan_fingerprint" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE readings ADD COLUMN plan_fingerprint TEXT"
+                )
+            missing_fingerprints = self._conn.execute(
+                """
+                SELECT reading_id, spread_id
+                FROM readings
+                WHERE plan_fingerprint IS NULL
+                """
+            ).fetchall()
+            for reading in missing_fingerprints:
+                nodes = self._conn.execute(
+                    """
+                    SELECT node_id, agent_id, task, dependencies_json
+                    FROM reading_nodes
+                    WHERE reading_id = ?
+                    ORDER BY node_id
+                    """,
+                    (reading["reading_id"],),
+                ).fetchall()
+                if not nodes:
+                    continue
+                try:
+                    fingerprint = _stored_plan_fingerprint(
+                        str(reading["spread_id"]),
+                        nodes,
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                self._conn.execute(
+                    "UPDATE readings SET plan_fingerprint = ? WHERE reading_id = ?",
+                    (fingerprint, reading["reading_id"]),
+                )
 
     def close(self) -> None:
         self._conn.close()
@@ -251,6 +336,9 @@ class ReadingStore:
             raise ReadingError("invalid idempotency key")
         if not _SAFE_ID.fullmatch(owner_token_id):
             raise ReadingError("invalid reading owner")
+        if owner_token_id == _LEGACY_OWNER:
+            raise ReadingError("reserved reading owner")
+        plan_fingerprint = _plan_fingerprint(plan)
         stored_idempotency_key = hashlib.sha256(
             owner_token_id.encode("utf-8")
             + b"\0"
@@ -265,14 +353,18 @@ class ReadingStore:
         reading_id = "reading_" + uuid.uuid4().hex
         with self._transaction():
             existing = self._conn.execute(
-                "SELECT reading_id FROM readings WHERE idempotency_key = ?",
+                """
+                SELECT reading_id, plan_fingerprint
+                FROM readings WHERE idempotency_key = ?
+                """,
                 (stored_idempotency_key,),
             ).fetchone()
             if existing is not None:
+                self._verify_or_adopt_plan(existing, plan_fingerprint)
                 return str(existing["reading_id"])
             legacy = self._conn.execute(
                 """
-                SELECT reading_id, owner_token_id FROM readings
+                SELECT reading_id, owner_token_id, plan_fingerprint FROM readings
                 WHERE idempotency_key = ?
                 """,
                 (legacy_idempotency_key,),
@@ -281,6 +373,7 @@ class ReadingStore:
                 _LEGACY_OWNER,
                 owner_token_id,
             }:
+                self._verify_or_adopt_plan(legacy, plan_fingerprint)
                 if legacy["owner_token_id"] == _LEGACY_OWNER:
                     self._conn.execute(
                         """
@@ -299,8 +392,9 @@ class ReadingStore:
                 """
                 INSERT INTO readings (
                     reading_id, idempotency_key, contract_version,
-                    owner_token_id, spread_id, state, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+                    owner_token_id, spread_id, plan_fingerprint,
+                    state, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 """,
                 (
                     reading_id,
@@ -308,6 +402,7 @@ class ReadingStore:
                     contract_version,
                     owner_token_id,
                     plan.spread_id,
+                    plan_fingerprint,
                     now,
                     now,
                 ),
@@ -554,6 +649,8 @@ class ReadingStore:
 
         if not _SAFE_ID.fullmatch(token_id):
             raise ReadingError("invalid reading owner")
+        if token_id == _LEGACY_OWNER:
+            raise ReadingError("reserved reading owner")
         with self._transaction():
             owner = str(self._reading(reading_id)["owner_token_id"])
             if owner == _LEGACY_OWNER:
@@ -709,6 +806,26 @@ class ReadingStore:
             raise ReadingError("unknown reading")
         return row
 
+    def _verify_or_adopt_plan(
+        self,
+        row: sqlite3.Row,
+        plan_fingerprint: str,
+    ) -> None:
+        stored = row["plan_fingerprint"]
+        if stored is None:
+            self._conn.execute(
+                """
+                UPDATE readings SET plan_fingerprint = ?, updated_at = ?
+                WHERE reading_id = ? AND plan_fingerprint IS NULL
+                """,
+                (plan_fingerprint, time.time(), row["reading_id"]),
+            )
+            return
+        if str(stored) != plan_fingerprint:
+            raise ReadingError(
+                "idempotency key was reused with a different reading plan"
+            )
+
     def _append_event(
         self, reading_id: str, event_type: str, data: Mapping[str, Any]
     ) -> None:
@@ -766,6 +883,44 @@ class _Transaction:
             self.connection.execute("COMMIT" if exc_type is None else "ROLLBACK")
         finally:
             self.lock.release()
+
+
+def _plan_fingerprint(plan: ReadingPlan) -> str:
+    payload = {
+        "spread_id": plan.spread_id,
+        "nodes": [
+            {
+                "node_id": node.node_id,
+                "agent_id": node.agent_id,
+                "task": node.task,
+                "depends_on": sorted(node.depends_on),
+            }
+            for node in sorted(plan.nodes, key=lambda item: item.node_id)
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _stored_plan_fingerprint(
+    spread_id: str,
+    rows: Sequence[sqlite3.Row],
+) -> str:
+    plan = ReadingPlan(
+        spread_id=spread_id,
+        nodes=tuple(
+            ReadingNode(
+                node_id=str(row["node_id"]),
+                agent_id=str(row["agent_id"]),
+                task=str(row["task"]),
+                depends_on=tuple(json.loads(str(row["dependencies_json"]))),
+            )
+            for row in rows
+        ),
+    )
+    return _plan_fingerprint(plan)
 
 
 def _reject_secret_fields(value: Any, path: str = "$") -> None:

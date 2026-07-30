@@ -112,7 +112,7 @@ def assemble_release(
         "state": [
             {"name": "mythos-state", "version": 1},
             {"name": "virtual-tokens-sqlite", "version": 1},
-            {"name": "readings-sqlite", "version": 2},
+            {"name": "readings-sqlite", "version": 3},
             {"name": "invocation-results-sqlite", "version": 1},
             {"name": "decks-json", "version": 1},
         ],

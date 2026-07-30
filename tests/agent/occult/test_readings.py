@@ -61,6 +61,34 @@ def test_idempotent_create_and_contract_mismatch_precede_execution(tmp_path: Pat
         )
 
 
+def test_idempotent_create_rejects_a_different_reading_plan(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    store.create(
+        _plan(),
+        idempotency_key="same-request",
+        contract_version=OCCULT_CONTRACT_VERSION,
+        owner_token_id="client-a",
+    )
+    changed = ReadingPlan(
+        spread_id="occult.spread.build-review-synthesis",
+        nodes=(
+            ReadingNode(
+                "build",
+                "occult.major.magician",
+                "Build a different artifact.",
+            ),
+        ),
+    )
+
+    with pytest.raises(ReadingError, match="different reading plan"):
+        store.create(
+            changed,
+            idempotency_key="same-request",
+            contract_version=OCCULT_CONTRACT_VERSION,
+            owner_token_id="client-a",
+        )
+
+
 def test_idempotency_and_ownership_are_scoped_per_virtual_token(tmp_path: Path):
     store = ReadingStore(tmp_path / "readings.db")
 
@@ -424,6 +452,85 @@ def test_legacy_duplicate_terminal_events_are_deduplicated(tmp_path: Path):
     assert [event["event_type"] for event in terminal] == ["reading.cancelled"]
 
 
+def test_legacy_post_terminal_events_and_artifacts_are_reconciled(tmp_path: Path):
+    path = tmp_path / "readings.db"
+    store = ReadingStore(path)
+    reading_id = store.create(
+        ReadingPlan(
+            spread_id="occult.spread.legacy-terminal",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="legacy-post-terminal",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    store.cancel(reading_id)
+    store.close()
+
+    artifact_reference = "artifact_late"
+    connection = sqlite3.connect(path)
+    terminal_sequence = connection.execute(
+        "SELECT MAX(sequence) FROM reading_events WHERE reading_id = ?",
+        (reading_id,),
+    ).fetchone()[0]
+    connection.execute(
+        """
+        INSERT INTO reading_artifacts (
+            artifact_reference, reading_id, node_id, payload_json, created_at
+        ) VALUES (?, ?, 'build', '{"content":"late"}', 1)
+        """,
+        (artifact_reference, reading_id),
+    )
+    connection.execute(
+        """
+        UPDATE reading_nodes
+        SET state = 'completed', artifact_reference = ?
+        WHERE reading_id = ? AND node_id = 'build'
+        """,
+        (artifact_reference, reading_id),
+    )
+    connection.execute(
+        """
+        INSERT INTO reading_node_results (
+            idempotency_key, artifact_json, route_summary_json, created_at
+        ) VALUES (?, '{"content":"late"}', '{"card_id":"late"}', 1)
+        """,
+        (f"{reading_id}:build",),
+    )
+    connection.execute(
+        """
+        INSERT INTO reading_events (
+            reading_id, sequence, event_id, event_type,
+            occurred_at, data_json
+        ) VALUES (?, ?, 'event_late_completion', 'node.completed', ?, ?)
+        """,
+        (
+            reading_id,
+            terminal_sequence + 1,
+            "2026-01-01T00:00:00Z",
+            (
+                '{"node_id":"build","artifact_reference":"artifact_late",'
+                '"route_summary":{}}'
+            ),
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    restarted = ReadingStore(path)
+    status = restarted.status(reading_id)
+    events = restarted.events(reading_id)
+
+    assert status["state"] == "cancelled"
+    assert status["nodes"][0]["state"] == "pending"
+    assert status["nodes"][0]["artifact_reference"] is None
+    assert events[-1]["event_type"] == "reading.cancelled"
+    validate_event_stream(events)
+    assert restarted.cached_node_result(f"{reading_id}:build") is None
+    with pytest.raises(ReadingError, match="unknown artifact"):
+        restarted.artifact(artifact_reference)
+    restarted.close()
+
+
 def test_legacy_reading_can_be_claimed_by_first_authorized_token(tmp_path: Path):
     path = tmp_path / "readings.db"
     connection = sqlite3.connect(path)
@@ -464,6 +571,18 @@ def test_legacy_reading_can_be_claimed_by_first_authorized_token(tmp_path: Path)
         owner_token_id="client-b",
     )
     assert other_owner != "reading_legacy"
+
+
+def test_legacy_owner_sentinel_is_reserved(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+
+    with pytest.raises(ReadingError, match="reserved reading owner"):
+        store.create(
+            _plan(),
+            idempotency_key="reserved",
+            contract_version=OCCULT_CONTRACT_VERSION,
+            owner_token_id="legacy-unclaimed",
+        )
 
 
 def test_legacy_owner_migration_rolls_back_as_one_transaction(tmp_path: Path):
