@@ -35,13 +35,7 @@ def _bun_executable(council_root: Path) -> str:
     candidates = (
         configured,
         shutil.which("bun"),
-        str(
-            council_root
-            / "node_modules"
-            / "electrobun"
-            / "dist-win-x64"
-            / "bun.exe"
-        ),
+        str(council_root / "node_modules" / "electrobun" / "dist-win-x64" / "bun.exe"),
     )
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
@@ -50,13 +44,9 @@ def _bun_executable(council_root: Path) -> str:
 
 
 def _assert_shared_fixtures(council_root: Path) -> None:
-    fixture_root = (
-        council_root / "src" / "core" / "occult" / "spec" / "v1" / "fixtures"
-    )
+    fixture_root = council_root / "src" / "core" / "occult" / "spec" / "v1" / "fixtures"
     for name in ("invocation.valid.json", "events.valid.json"):
-        council_fixture = json.loads(
-            (fixture_root / name).read_text(encoding="utf-8")
-        )
+        council_fixture = json.loads((fixture_root / name).read_text(encoding="utf-8"))
         assert council_fixture == load_contract_fixture(name)
 
 
