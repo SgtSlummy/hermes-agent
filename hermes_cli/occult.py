@@ -159,25 +159,13 @@ def _api_base_url() -> str:
     override = os.getenv("OCCULT_API_URL", "").strip()
     if override:
         return override.rstrip("/")
-    from hermes_cli.config import load_config
+    from gateway.config import Platform, load_gateway_config
 
-    config = load_config()
-    platforms = config.get("platforms") if isinstance(config, dict) else None
-    api_server = (
-        platforms.get("api_server") if isinstance(platforms, dict) else None
-    )
-    extra = api_server.get("extra") if isinstance(api_server, dict) else None
-    configured_host = (
-        str(extra.get("host", "127.0.0.1"))
-        if isinstance(extra, dict)
-        else "127.0.0.1"
-    )
-    configured_port = int(extra.get("port", 8642)) if isinstance(extra, dict) else 8642
-    host = os.getenv("API_SERVER_HOST", "").strip() or configured_host
-    try:
-        port = int(os.getenv("API_SERVER_PORT", "").strip() or configured_port)
-    except ValueError:
-        port = configured_port
+    config = load_gateway_config()
+    api_server = config.platforms.get(Platform.API_SERVER)
+    extra = api_server.extra if api_server is not None else {}
+    host = str(extra.get("host", "127.0.0.1"))
+    port = int(extra.get("port", 8642))
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"http://{host}:{port}"

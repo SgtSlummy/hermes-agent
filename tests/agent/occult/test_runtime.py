@@ -328,6 +328,86 @@ def test_runtime_close_releases_token_store_when_reading_close_fails(
     original_store_close()
 
 
+def test_runtime_persists_and_validates_invocation_idempotency(
+    tmp_path: Path,
+    monkeypatch,
+):
+    calls = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            nonlocal calls
+            calls += 1
+            return json.dumps({
+                "choices": [{"message": {"content": f"result-{calls}"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+            }).encode()
+
+    monkeypatch.setattr(
+        "agent.occult.runtime._open_local_url",
+        lambda _request, *, timeout: Response(),
+    )
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    token = http.service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="idempotent-local",
+            allowed_agent_ids=frozenset({"occult.major.magician"}),
+            allowed_card_ids=frozenset({STARTER_CARD_ID}),
+        )
+    )
+    payload = {
+        "contract_version": "1.0.0",
+        "invocation_id": "inv-first",
+        "idempotency_key": "persistent-request",
+        "agent_id": "occult.major.magician",
+        "orientation": "upright",
+        "input": {"message": "Build once."},
+        "required_capabilities": ["text"],
+        "routing": {
+            "mode": "local_only",
+            "free_only": True,
+            "local_only": True,
+            "maximum_fallbacks": 0,
+            "maximum_cost_usd": 0,
+        },
+        "deck_id": STARTER_DECK_ID,
+        "spread_id": None,
+        "metadata": {},
+    }
+
+    first = http.service.invoke(token, payload)
+    retry = http.service.invoke(
+        token,
+        {**payload, "invocation_id": "inv-retry"},
+    )
+
+    assert first == retry
+    assert calls == 1
+    with pytest.raises(ValueError, match="different input"):
+        http.service.invoke(
+            token,
+            {
+                **payload,
+                "invocation_id": "inv-conflict",
+                "input": {"message": "Different task."},
+            },
+        )
+    http.close()
+
+    restarted = build_occult_http(_config(), home=tmp_path)
+    assert restarted is not None
+    assert restarted.service.invoke(token, payload) == first
+    assert calls == 1
+    restarted.close()
+
+
 def test_reading_executor_reuses_durable_idempotent_result_after_restart(
     tmp_path: Path,
     monkeypatch,
@@ -362,13 +442,22 @@ def test_reading_executor_reuses_durable_idempotent_result_after_restart(
             allowed_card_ids=frozenset({STARTER_CARD_ID}),
         )
     )
+    reading_id = http.readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.durable",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="durable-reading",
+        contract_version="1.0.0",
+        owner_token_id="durable-reading",
+    )
     request = CouncilNodeRequest(
         contract_version="1.0.0",
-        reading_id="reading_durable",
+        reading_id=reading_id,
         node_id="build",
         agent_id="occult.major.magician",
         task="Build.",
-        idempotency_key="reading_durable:build",
+        idempotency_key=f"{reading_id}:build",
         input_artifact_references=(),
     )
     executor = http.reading_executor

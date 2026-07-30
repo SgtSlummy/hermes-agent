@@ -415,6 +415,20 @@ class VirtualTokenAuthority:
         with self._lock:
             return self._authenticate(plaintext).policy
 
+    def recognizes(self, plaintext: str) -> bool:
+        """Return whether this authority issued the token, even if inactive."""
+
+        if not isinstance(plaintext, str) or not plaintext:
+            return False
+        digest = self._digest(plaintext)
+        with self._lock:
+            token_id = self._digest_index.get(digest)
+            state = self._tokens.get(token_id or "")
+            return (
+                state is not None
+                and secrets.compare_digest(state.digest, digest)
+            )
+
     def reserve(
         self,
         plaintext: str,

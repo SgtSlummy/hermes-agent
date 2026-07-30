@@ -23,6 +23,7 @@ from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 from hermes_constants import get_hermes_home
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_LEGACY_OWNER = "legacy-unclaimed"
 _TERMINAL_TYPES = frozenset({
     "reading.cancelled",
     "reading.completed",
@@ -123,6 +124,7 @@ class ReadingStore:
         )
         self._conn.row_factory = sqlite3.Row
         self._lock = RLock()
+        self._execution_locks = tuple(RLock() for _ in range(64))
         self._conn.executescript(
             """
             PRAGMA journal_mode=WAL;
@@ -187,7 +189,7 @@ class ReadingStore:
         if "owner_token_id" not in columns:
             self._conn.execute(
                 "ALTER TABLE readings ADD COLUMN "
-                "owner_token_id TEXT NOT NULL DEFAULT 'local'"
+                f"owner_token_id TEXT NOT NULL DEFAULT '{_LEGACY_OWNER}'"
             )
 
     def close(self) -> None:
@@ -264,6 +266,20 @@ class ReadingStore:
         return reading_id
 
     def run(
+        self,
+        reading_id: str,
+        executor: Callable[[CouncilNodeRequest], CouncilNodeResult],
+        *,
+        maximum_nodes: int | None = None,
+    ) -> dict[str, Any]:
+        with self._execution_lock(reading_id):
+            return self._run_unlocked(
+                reading_id,
+                executor,
+                maximum_nodes=maximum_nodes,
+            )
+
+    def _run_unlocked(
         self,
         reading_id: str,
         executor: Callable[[CouncilNodeRequest], CouncilNodeResult],
@@ -385,16 +401,21 @@ class ReadingStore:
         *,
         maximum_nodes: int | None = None,
     ) -> dict[str, Any]:
-        with self._transaction():
-            reading = self._reading(reading_id)
-            if reading["state"] in {"cancelled", "completed", "failed"}:
-                return self.status(reading_id)
-            self._conn.execute(
-                "UPDATE reading_nodes SET state = 'pending' "
-                "WHERE reading_id = ? AND state = 'running'",
-                (reading_id,),
+        with self._execution_lock(reading_id):
+            with self._transaction():
+                reading = self._reading(reading_id)
+                if reading["state"] in {"cancelled", "completed", "failed"}:
+                    return self.status(reading_id)
+                self._conn.execute(
+                    "UPDATE reading_nodes SET state = 'pending' "
+                    "WHERE reading_id = ? AND state = 'running'",
+                    (reading_id,),
+                )
+            return self._run_unlocked(
+                reading_id,
+                executor,
+                maximum_nodes=maximum_nodes,
             )
-        return self.run(reading_id, executor, maximum_nodes=maximum_nodes)
 
     def cancel(self, reading_id: str) -> dict[str, Any]:
         with self._transaction():
@@ -429,6 +450,24 @@ class ReadingStore:
         """Return the non-secret token identifier that owns a reading."""
 
         return str(self._reading(reading_id)["owner_token_id"])
+
+    def claim_legacy_owner(self, reading_id: str, token_id: str) -> str:
+        """Atomically claim a pre-ownership reading for an authorized token."""
+
+        if not _SAFE_ID.fullmatch(token_id):
+            raise ReadingError("invalid reading owner")
+        with self._transaction():
+            owner = str(self._reading(reading_id)["owner_token_id"])
+            if owner == _LEGACY_OWNER:
+                self._conn.execute(
+                    """
+                    UPDATE readings SET owner_token_id = ?, updated_at = ?
+                    WHERE reading_id = ? AND owner_token_id = ?
+                    """,
+                    (token_id, time.time(), reading_id, _LEGACY_OWNER),
+                )
+                owner = token_id
+            return owner
 
     def events(
         self, reading_id: str, *, after_sequence: int | None = None
@@ -489,16 +528,20 @@ class ReadingStore:
             route_summary=json.loads(row["route_summary_json"]),
         )
 
-    def cache_node_result(
+    def cache_node_result_if_active(
         self,
+        reading_id: str,
         idempotency_key: str,
         result: CouncilNodeResult,
-    ) -> None:
+    ) -> bool:
         if not idempotency_key.strip() or len(idempotency_key) > 256:
             raise ReadingError("invalid idempotency key")
         _reject_secret_fields(result.artifact)
         _reject_secret_fields(result.route_summary)
         with self._transaction():
+            reading = self._reading(reading_id)
+            if reading["state"] in {"cancelled", "completed", "failed"}:
+                return False
             self._conn.execute(
                 """
                 INSERT OR IGNORE INTO reading_node_results (
@@ -513,6 +556,13 @@ class ReadingStore:
                     time.time(),
                 ),
             )
+            return True
+
+    def _execution_lock(self, reading_id: str) -> RLock:
+        return self._execution_locks[
+            int(hashlib.sha256(reading_id.encode("utf-8")).hexdigest(), 16)
+            % len(self._execution_locks)
+        ]
 
     def _node_request(self, reading_id: str, node: sqlite3.Row) -> CouncilNodeRequest:
         dependencies = json.loads(node["dependencies_json"])

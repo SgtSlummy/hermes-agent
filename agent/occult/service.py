@@ -7,11 +7,15 @@ contract is synchronous; HTTP handlers may dispatch it to a worker thread.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from dataclasses import asdict
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from agent.occult.contracts import OccultInvocation, RoutingPolicy, validate_invocation
 from agent.occult.decks import DeckError, DeckRegistry
+from agent.occult.idempotency import SQLiteInvocationResultStore
 from agent.occult.mythos import MythosRouter
 from agent.occult.pairing import (
     MemoryRecord,
@@ -30,6 +34,7 @@ class OccultService:
     token_authority: VirtualTokenAuthority
     runtime_policy: RuntimePolicy
     deck_registry: DeckRegistry | None = None
+    invocation_store: SQLiteInvocationResultStore | None = None
 
     def agents(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
         policy = self.token_authority.policy(plaintext_token)
@@ -159,6 +164,7 @@ class OccultService:
         manual_card_id: str | None = None,
         memories: Sequence[MemoryRecord] = (),
         requested_tools: frozenset[str] = frozenset(),
+        _skip_idempotency: bool = False,
     ) -> dict[str, Any]:
         """Validate, authorize, pair, route, and return a secret-free result."""
 
@@ -168,6 +174,36 @@ class OccultService:
             else validate_invocation(payload)
         )
         token_policy = self.token_authority.policy(plaintext_token)
+        if self.invocation_store is not None and not _skip_idempotency:
+            semantic_request = request.model_dump(mode="json")
+            semantic_request.pop("invocation_id", None)
+            semantic_request.pop("idempotency_key", None)
+            fingerprint_payload = {
+                "request": semantic_request,
+                "manual_card_id": manual_card_id,
+                "memories": [asdict(record) for record in memories],
+                "requested_tools": sorted(requested_tools),
+            }
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    fingerprint_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            return self.invocation_store.run(
+                token_policy.token_id,
+                request.idempotency_key,
+                fingerprint,
+                lambda: self.invoke(
+                    plaintext_token,
+                    request,
+                    manual_card_id=manual_card_id,
+                    memories=memories,
+                    requested_tools=requested_tools,
+                    _skip_idempotency=True,
+                ),
+            )
         if (
             token_policy.allowed_agent_ids
             and request.agent_id not in token_policy.allowed_agent_ids

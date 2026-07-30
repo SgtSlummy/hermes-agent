@@ -22,6 +22,7 @@ from typing import Any
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, is_occult_enabled
 from agent.occult.decks import DeckError, DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
+from agent.occult.idempotency import SQLiteInvocationResultStore
 from agent.occult.mythos import (
     AdapterRequest,
     AdapterResponse,
@@ -286,6 +287,7 @@ def _reading_executor(
                     "node_id": request.node_id,
                 },
             },
+            _skip_idempotency=True,
         )
         node_result = CouncilNodeResult(
             artifact={
@@ -294,7 +296,11 @@ def _reading_executor(
             },
             route_summary=result["route"],
         )
-        readings.cache_node_result(request.idempotency_key, node_result)
+        readings.cache_node_result_if_active(
+            request.reading_id,
+            request.idempotency_key,
+            node_result,
+        )
         return node_result
 
     return execute
@@ -461,6 +467,7 @@ def build_occult_http(
             maximum_risk_level=0,
         ),
         deck_registry=deck_registry,
+        invocation_store=SQLiteInvocationResultStore(root / "invocations.db"),
     )
     readings = ReadingStore(root / "readings.db")
     env = os.environ if environ is None else environ

@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 from threading import Event, Thread
 
 import pytest
@@ -245,3 +246,97 @@ def test_plan_rejects_cycles():
                 ReadingNode("b", "occult.major.justice", "B", ("a",)),
             ),
         )
+
+
+def test_concurrent_resume_executes_each_node_once(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        ReadingPlan(
+            spread_id="occult.spread.concurrent",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="concurrent-resume",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    started = Event()
+    release = Event()
+    calls: list[str] = []
+
+    def execute(request):
+        calls.append(request.node_id)
+        started.set()
+        assert release.wait(timeout=5)
+        return CouncilNodeResult(
+            artifact={"content": "built"},
+            route_summary={"card_id": "minor.pentacles.ace.local"},
+        )
+
+    threads = [
+        Thread(target=store.resume, args=(reading_id, execute))
+        for _ in range(2)
+    ]
+    threads[0].start()
+    assert started.wait(timeout=5)
+    threads[1].start()
+    release.set()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert calls == ["build"]
+    assert store.status(reading_id)["state"] == "completed"
+
+
+def test_cancelled_reading_does_not_cache_late_node_result(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        ReadingPlan(
+            spread_id="occult.spread.cancelled-cache",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="cancelled-cache",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    store.cancel(reading_id)
+    key = f"{reading_id}:build"
+
+    cached = store.cache_node_result_if_active(
+        reading_id,
+        key,
+        CouncilNodeResult(
+            artifact={"content": "late"},
+            route_summary={"card_id": "minor.pentacles.ace.local"},
+        ),
+    )
+
+    assert cached is False
+    assert store.cached_node_result(key) is None
+
+
+def test_legacy_reading_can_be_claimed_by_first_authorized_token(tmp_path: Path):
+    path = tmp_path / "readings.db"
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        """
+        CREATE TABLE readings (
+            reading_id TEXT PRIMARY KEY,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            contract_version TEXT NOT NULL,
+            spread_id TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        INSERT INTO readings VALUES (
+            'reading_legacy', 'legacy-key', '1.0.0',
+            'occult.spread.legacy', 'pending', 1, 1
+        );
+        """
+    )
+    connection.close()
+
+    store = ReadingStore(path)
+
+    assert store.owner_token_id("reading_legacy") == "legacy-unclaimed"
+    assert store.claim_legacy_owner("reading_legacy", "client-a") == "client-a"
+    assert store.claim_legacy_owner("reading_legacy", "client-b") == "client-a"

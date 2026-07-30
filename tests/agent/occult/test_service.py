@@ -405,11 +405,12 @@ async def test_http_token_admin_is_separate_gated_and_secret_once(tmp_path: Path
     readings = ReadingStore(tmp_path / "readings.db")
     admin_key = "admin-" + ("a" * 40)
     app = Application()
-    OccultHTTPAdapter(
+    adapter = OccultHTTPAdapter(
         service,
         readings,
         admin_key_digest=OccultHTTPAdapter.digest_admin_key(admin_key),
-    ).register(app)
+    )
+    adapter.register(app)
     payload = {
         "token_id": "council-client",
         "allowed_agent_ids": ["occult.major.magician"],
@@ -464,6 +465,10 @@ async def test_http_token_admin_is_separate_gated_and_secret_once(tmp_path: Path
         )
         assert revoked.status == 200
         assert (await revoked.json())["revoked"] is True
+        routed_request = SimpleNamespace(
+            headers={"Authorization": f"Bearer {plaintext}"}
+        )
+        assert adapter.handles_openai_request(routed_request) is True
         denied = await client.get(
             "/v1/occult/major-arcana",
             headers={"Authorization": f"Bearer {plaintext}"},

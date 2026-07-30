@@ -42,9 +42,14 @@ class OccultHTTPAdapter:
         try:
             self.readings.close()
         finally:
-            store = self.service.token_authority.store
-            if store is not None:
-                store.close()
+            try:
+                store = self.service.token_authority.store
+                if store is not None:
+                    store.close()
+            finally:
+                invocation_store = self.service.invocation_store
+                if invocation_store is not None:
+                    invocation_store.close()
 
     def register(
         self,
@@ -87,13 +92,10 @@ class OccultHTTPAdapter:
         """Identify router-issued virtual tokens before gateway API-key auth."""
 
         token = self._bearer(request)
-        if token is None:
-            return False
-        try:
-            self.service.token_authority.policy(token)
-        except VirtualTokenError:
-            return False
-        return True
+        return (
+            token is not None
+            and self.service.token_authority.recognizes(token)
+        )
 
     async def handle_openai_models(self, request: web.Request) -> web.Response:
         return await OccultOpenAIAdapter(self.service).models(request)
@@ -426,13 +428,14 @@ class OccultHTTPAdapter:
 
     def _authorized_reading(self, token: str, reading_id: str, operation: str) -> Any:
         policy = self.service.token_authority.policy(token)
-        if self.readings.owner_token_id(reading_id) != policy.token_id:
-            raise VirtualTokenError("virtual token does not allow requested reading")
         status = self.readings.status(reading_id)
         requested_agents = {node["agent_id"] for node in status["nodes"]}
         if policy.allowed_agent_ids and not requested_agents.issubset(
             policy.allowed_agent_ids
         ):
+            raise VirtualTokenError("virtual token does not allow requested reading")
+        owner = self.readings.claim_legacy_owner(reading_id, policy.token_id)
+        if owner != policy.token_id:
             raise VirtualTokenError("virtual token does not allow requested reading")
         if operation == "status":
             return status

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from gateway.config import Platform
 from hermes_cli.occult import (
     OccultCLIError,
     _api_base_url,
@@ -39,32 +40,32 @@ def test_occult_api_url_comes_from_api_server_config(monkeypatch):
     monkeypatch.delenv("API_SERVER_HOST", raising=False)
     monkeypatch.delenv("API_SERVER_PORT", raising=False)
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
-        lambda: {
-            "platforms": {
-                "api_server": {
-                    "extra": {"host": "::1", "port": 9443},
-                }
+        "gateway.config.load_gateway_config",
+        lambda: SimpleNamespace(
+            platforms={
+                Platform.API_SERVER: SimpleNamespace(
+                    extra={"host": "::1", "port": 9443}
+                )
             }
-        },
+        ),
     )
 
     assert _api_base_url() == "http://[::1]:9443"
 
 
-def test_occult_api_url_honors_gateway_environment_overrides(monkeypatch):
+def test_occult_api_url_uses_effective_gateway_config(monkeypatch):
     monkeypatch.delenv("OCCULT_API_URL", raising=False)
     monkeypatch.setenv("API_SERVER_HOST", "127.0.0.2")
     monkeypatch.setenv("API_SERVER_PORT", "9555")
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
-        lambda: {
-            "platforms": {
-                "api_server": {
-                    "extra": {"host": "127.0.0.1", "port": 8642},
-                }
+        "gateway.config.load_gateway_config",
+        lambda: SimpleNamespace(
+            platforms={
+                Platform.API_SERVER: SimpleNamespace(
+                    extra={"host": "127.0.0.2", "port": 9555}
+                )
             }
-        },
+        ),
     )
 
     assert _api_base_url() == "http://127.0.0.2:9555"
