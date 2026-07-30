@@ -76,6 +76,8 @@ contain provider and model identifiers, but never their authentication data.
 - Each invocation supplies an `idempotency_key`.
 - Repeating the same key and semantic request must return the existing reading
   or invocation result; reuse with different content must fail.
+- Reading retries compare a canonical fingerprint of the spread, agents,
+  tasks, and dependencies before returning an existing reading.
 - Invocation result bodies are retained for seven days by default. Their
   token-scoped key fingerprints remain protected for four times the configured
   result-retention window. After that explicit identity horizon, a key is
