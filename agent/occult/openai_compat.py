@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 from aiohttp import web
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
+from agent.occult.mythos import RouterBusy
 from agent.occult.service import OccultService
 from agent.occult.virtual_tokens import VirtualTokenError
 
@@ -156,6 +157,13 @@ class OccultOpenAIAdapter:
             )
         except (OccultContractError, ValueError) as exc:
             return self._error(str(exc), 400)
+        except RouterBusy:
+            return self._error(
+                "Occult provider capacity is temporarily exhausted",
+                503,
+                error_type="server_error",
+                code="occult_capacity_exhausted",
+            )
         except Exception:
             return self._error(
                 "Occult chat completion failed",
@@ -251,6 +259,13 @@ class OccultOpenAIAdapter:
             )
         except (OccultContractError, ValueError) as exc:
             return self._error(str(exc), 400)
+        except RouterBusy:
+            return self._error(
+                "Occult provider capacity is temporarily exhausted",
+                503,
+                error_type="server_error",
+                code="occult_capacity_exhausted",
+            )
         except Exception:
             return self._error(
                 "Occult response generation failed",
@@ -721,9 +736,7 @@ class OccultOpenAIAdapter:
             for sequence_number, (event_type, event) in enumerate(events):
                 payload = {**event, "sequence_number": sequence_number}
                 data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-                await response.write(
-                    f"event: {event_type}\ndata: {data}\n\n".encode()
-                )
+                await response.write(f"event: {event_type}\ndata: {data}\n\n".encode())
         except (ConnectionResetError, asyncio.CancelledError):
             pass
         finally:

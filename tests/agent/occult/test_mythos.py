@@ -1,5 +1,7 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from threading import Event
 
 import pytest
 
@@ -21,9 +23,9 @@ from agent.occult.mythos import (
     PrivacyClass,
     ProviderFailure,
     ProviderTrustState,
+    RouterBusy,
     RouteRegistrationError,
     RouteHealthState,
-    RouteRegistrationError,
     descriptor_from_provider,
     enforce_acquisition_policy,
 )
@@ -414,6 +416,71 @@ def test_fallback_attempts_are_bounded():
 
     assert len(exc_info.value.failures) == 2
     assert attempts == ["minor.local.0", "minor.local.1"]
+
+
+def test_queue_pressure_fails_closed_and_releases_capacity():
+    started = Event()
+    release = Event()
+
+    def handler(_request, _route, _credential):
+        started.set()
+        assert release.wait(timeout=5)
+        return AdapterResponse(text="completed")
+
+    router = MythosRouter(
+        adapters={"local": LocalProviderAdapter(handler)},
+        maximum_concurrent_requests=1,
+        capacity_wait_seconds=0,
+    )
+    _activate(router, _route("minor.local.capacity"))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(router.execute, _invocation())
+        assert started.wait(timeout=5)
+        with pytest.raises(RouterBusy, match="capacity is exhausted"):
+            router.execute(_invocation())
+        assert router.status()["capacity"] == {
+            "maximum": 1,
+            "in_flight": 1,
+            "rejected": 1,
+        }
+        release.set()
+        assert first.result(timeout=5).response.text == "completed"
+
+    assert router.status()["capacity"] == {
+        "maximum": 1,
+        "in_flight": 0,
+        "rejected": 1,
+    }
+
+
+def test_timeout_opens_circuit_without_exposing_provider_details():
+    def handler(*_):
+        raise ProviderFailure(FailureKind.TIMEOUT)
+
+    router = MythosRouter(
+        adapters={"local": LocalProviderAdapter(handler)},
+        failure_threshold=1,
+    )
+    _activate(router, _route("minor.local.timeout"))
+
+    with pytest.raises(MythosRoutingError) as exc_info:
+        router.execute(_invocation(maximum_fallbacks=0))
+
+    assert exc_info.value.failures == (("minor.local.timeout", FailureKind.TIMEOUT),)
+    assert router.status()["routes"][0]["healthy"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("maximum_concurrent_requests", 0),
+        ("capacity_wait_seconds", -1),
+    ],
+)
+def test_invalid_capacity_configuration_fails_closed(field, value):
+    with pytest.raises(ValueError):
+        MythosRouter(adapters={}, **{field: value})
 
 
 def test_unexpected_adapter_exception_is_redacted_and_normalized():

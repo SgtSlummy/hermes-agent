@@ -13,6 +13,7 @@ from aiohttp import web
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
 from agent.occult.decks import DeckError
+from agent.occult.mythos import RouterBusy
 from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.readings import (
     CouncilNodeRequest,
@@ -184,6 +185,14 @@ class OccultHTTPAdapter:
                 "OCCULT_INVALID_REQUEST",
                 str(exc),
                 400,
+            )
+        except RouterBusy:
+            return self._bridge_error(
+                invocation_id,
+                "OCCULT_CAPACITY_EXHAUSTED",
+                "Occult provider capacity is temporarily exhausted",
+                503,
+                retryable=True,
             )
         except Exception:
             return self._bridge_error(

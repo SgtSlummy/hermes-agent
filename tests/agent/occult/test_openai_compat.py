@@ -229,9 +229,7 @@ async def test_openai_responses_stream_emits_documented_lifecycle(tmp_path: Path
         assert response.headers["Content-Type"].startswith("text/event-stream")
         lines = (await response.text()).splitlines()
         event_types = [
-            line.removeprefix("event: ")
-            for line in lines
-            if line.startswith("event: ")
+            line.removeprefix("event: ") for line in lines if line.startswith("event: ")
         ]
         payloads = [
             json.loads(line.removeprefix("data: "))
@@ -359,3 +357,33 @@ async def test_occult_native_routes_coexist_with_gateway_openai_routes(
         assert (await response.json())["data"][0]["agent_id"] == (
             "occult.major.magician"
         )
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_maps_capacity_pressure_to_server_error(tmp_path: Path):
+    service, token, seen = _service(maximum_concurrent_requests=1)
+    app = Application()
+    OccultHTTPAdapter(service, ReadingStore(tmp_path / "readings.db")).register(app)
+    assert service.router._capacity.acquire(timeout=0)
+    try:
+        async with TestClient(TestServer(app)) as client:
+            response = await client.post(
+                "/v1/chat/completions",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "model": "occult.major.magician",
+                    "messages": [{"role": "user", "content": "Build it."}],
+                },
+            )
+            error = (await response.json())["error"]
+    finally:
+        service.router._capacity.release()
+
+    assert response.status == 503
+    assert error == {
+        "message": "Occult provider capacity is temporarily exhausted",
+        "type": "server_error",
+        "param": None,
+        "code": "occult_capacity_exhausted",
+    }
+    assert seen == []

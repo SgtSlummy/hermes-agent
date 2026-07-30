@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
+from threading import BoundedSemaphore, Lock
 from typing import Any, Protocol
 
 from agent.occult.contracts import (
@@ -44,6 +45,10 @@ class NoEligibleRoute(MythosError):
     """No active route satisfies the invocation policy."""
 
 
+class RouterBusy(MythosError):
+    """The bounded provider-execution capacity is currently exhausted."""
+
+
 class RouteRegistrationError(MythosError):
     """A route or adapter cannot be registered safely."""
 
@@ -67,6 +72,7 @@ class FailureKind(StrEnum):
     INVALID_REQUEST = "invalid_request"
     INVALID_RESPONSE = "invalid_response"
     RATE_LIMIT = "rate_limit"
+    TIMEOUT = "timeout"
     UNAVAILABLE = "unavailable"
     UNKNOWN = "unknown"
 
@@ -484,14 +490,34 @@ class MythosRouter:
     state_store: MythosStateStore | None = None
     failure_threshold: int = 2
     circuit_cooldown_seconds: float = 60.0
+    maximum_concurrent_requests: int = 8
+    capacity_wait_seconds: float = 0.0
     clock: Callable[[], float] = time.time
     _routes: dict[str, MinorArcanaDescriptor] = field(default_factory=dict, init=False)
     _health: dict[str, RouteHealthState] = field(default_factory=dict, init=False)
     _quotas: dict[str, QuotaPoolState] = field(default_factory=dict, init=False)
+    _capacity: BoundedSemaphore = field(init=False, repr=False)
+    _capacity_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+    _in_flight: int = field(default=0, init=False)
+    _capacity_rejections: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         if self.failure_threshold < 1 or self.circuit_cooldown_seconds < 0:
             raise ValueError("invalid circuit-breaker configuration")
+        if (
+            not isinstance(self.maximum_concurrent_requests, int)
+            or isinstance(self.maximum_concurrent_requests, bool)
+            or self.maximum_concurrent_requests < 1
+        ):
+            raise ValueError("maximum_concurrent_requests must be positive")
+        if (
+            not isinstance(self.capacity_wait_seconds, (int, float))
+            or isinstance(self.capacity_wait_seconds, bool)
+            or not math.isfinite(self.capacity_wait_seconds)
+            or self.capacity_wait_seconds < 0
+        ):
+            raise ValueError("capacity_wait_seconds must be finite and non-negative")
+        self._capacity = BoundedSemaphore(self.maximum_concurrent_requests)
         if self.state_store is not None:
             self._health, self._quotas = self.state_store.load()
 
@@ -603,6 +629,28 @@ class MythosRouter:
             if isinstance(invocation, OccultInvocation)
             else validate_invocation(invocation)
         )
+        if not self._capacity.acquire(timeout=self.capacity_wait_seconds):
+            with self._capacity_lock:
+                self._capacity_rejections += 1
+            raise RouterBusy("Mythos provider capacity is exhausted")
+        with self._capacity_lock:
+            self._in_flight += 1
+        try:
+            return self._execute_with_capacity(
+                request,
+                manual_card_id=manual_card_id,
+            )
+        finally:
+            with self._capacity_lock:
+                self._in_flight -= 1
+            self._capacity.release()
+
+    def _execute_with_capacity(
+        self,
+        request: OccultInvocation,
+        *,
+        manual_card_id: str | None,
+    ) -> RouteResult:
         routes = self.candidates(request, manual_card_id=manual_card_id)
         if not routes:
             raise NoEligibleRoute("no eligible Mythos route")
@@ -646,12 +694,6 @@ class MythosRouter:
                 self._record_failure(route, failure)
                 failures.append((route.card_id, failure.kind))
                 continue
-            except Exception:
-                failure = ProviderFailure(FailureKind.UNKNOWN)
-                attempts += 1
-                self._record_failure(route, failure)
-                failures.append((route.card_id, failure.kind))
-                continue
 
             self._record_success(route)
             return RouteResult(
@@ -672,7 +714,14 @@ class MythosRouter:
         """Return redacted operational metadata; prompts and refs are omitted."""
 
         now = self.clock()
+        with self._capacity_lock:
+            capacity = {
+                "maximum": self.maximum_concurrent_requests,
+                "in_flight": self._in_flight,
+                "rejected": self._capacity_rejections,
+            }
         payload = {
+            "capacity": capacity,
             "routes": [
                 {
                     "card_id": route.card_id,
@@ -685,7 +734,7 @@ class MythosRouter:
                 for route in sorted(
                     self._routes.values(), key=lambda item: item.card_id
                 )
-            ]
+            ],
         }
         _assert_secret_free(payload)
         return payload
@@ -770,7 +819,12 @@ class MythosRouter:
             )
             self._quotas[route.quota_pool_id].cooldown_until = now + max(retry_after, 0)
         elif (
-            failure.kind in {FailureKind.UNAVAILABLE, FailureKind.UNKNOWN}
+            failure.kind
+            in {
+                FailureKind.TIMEOUT,
+                FailureKind.UNAVAILABLE,
+                FailureKind.UNKNOWN,
+            }
             and health.consecutive_failures >= self.failure_threshold
         ):
             health.circuit_open_until = now + self.circuit_cooldown_seconds
@@ -811,6 +865,7 @@ __all__ = [
     "ProviderFailure",
     "ProviderTrustState",
     "QuotaPoolState",
+    "RouterBusy",
     "RouteRegistrationError",
     "RouteResult",
     "descriptor_from_provider",
