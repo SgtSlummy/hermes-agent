@@ -307,6 +307,12 @@ def validate_invocation(payload: Mapping[str, Any]) -> OccultInvocation:
     return invocation
 
 
+def validate_deck(payload: Mapping[str, Any]) -> DeckDescriptor:
+    """Validate one versioned, secret-free deck descriptor."""
+
+    return _validate_model(DeckDescriptor, payload)
+
+
 def validate_event_stream(
     payloads: Sequence[Mapping[str, Any]],
 ) -> tuple[ReadingEvent, ...]:

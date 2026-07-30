@@ -184,3 +184,50 @@ def test_occult_token_admin_requires_dedicated_key(monkeypatch):
     monkeypatch.setenv("OCCULT_API_KEY", "user-token-is-not-admin")
     with pytest.raises(OccultCLIError, match="OCCULT_ADMIN_KEY"):
         cmd_occult(SimpleNamespace(occult_action="token-list"))
+
+
+def test_occult_pairings_filters_by_encoded_agent(monkeypatch, capsys):
+    monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
+    seen = {}
+
+    def urlopen(request, timeout):
+        seen["url"] = request.full_url
+        return _Response({"data": []})
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    cmd_occult(
+        SimpleNamespace(
+            occult_action="pairings",
+            agent="occult.major.magician:test",
+        )
+    )
+
+    assert seen["url"].endswith(
+        "/v1/occult/pairings?agent_id=occult.major.magician%3Atest"
+    )
+    assert json.loads(capsys.readouterr().out) == {"data": []}
+
+
+def test_occult_deck_validation_encodes_identifier(monkeypatch, capsys):
+    monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
+    seen = {}
+
+    def urlopen(request, timeout):
+        seen["url"] = request.full_url
+        return _Response({
+            "deck_id": "occult.deck.development:test",
+            "valid": True,
+        })
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    cmd_occult(
+        SimpleNamespace(
+            occult_action="deck-validate",
+            deck_id="occult.deck.development:test",
+        )
+    )
+
+    assert seen["url"].endswith(
+        "/v1/occult/decks/occult.deck.development%3Atest/validate"
+    )
+    assert json.loads(capsys.readouterr().out)["valid"] is True

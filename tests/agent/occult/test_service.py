@@ -5,6 +5,8 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 from aiohttp.web import Application
 
+from agent.occult.contracts import DeckDescriptor, RoutingPolicy
+from agent.occult.decks import DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.mythos import (
     AdapterResponse,
@@ -458,6 +460,65 @@ async def test_http_token_admin_routes_are_absent_without_admin_digest(tmp_path:
     assert response.status == 404
     with pytest.raises(ValueError, match="at least 32"):
         OccultHTTPAdapter.digest_admin_key("short")
+
+
+@pytest.mark.asyncio
+async def test_http_deck_admin_pairing_and_deck_invocation(tmp_path: Path):
+    service, token, seen = _service()
+    service.deck_registry = DeckRegistry(tmp_path / "decks.json")
+    admin_key = "admin-" + ("d" * 40)
+    app = Application()
+    OccultHTTPAdapter(
+        service,
+        ReadingStore(tmp_path / "readings.db"),
+        admin_key_digest=OccultHTTPAdapter.digest_admin_key(admin_key),
+    ).register(app)
+    deck = DeckDescriptor(
+        deck_id="occult.deck.development",
+        version="1.0.0",
+        allowed_agent_ids=("occult.major.magician",),
+        allowed_card_ids=("minor.pentacles.ace.local.test",),
+        routing=RoutingPolicy(
+            mode="local_only",
+            free_only=True,
+            local_only=True,
+            maximum_fallbacks=1,
+            maximum_cost_usd=0,
+        ),
+    ).model_dump(mode="json")
+    admin = {"X-Occult-Admin-Key": admin_key}
+    bearer = {"Authorization": f"Bearer {token}"}
+
+    async with TestClient(TestServer(app)) as client:
+        installed = await client.post(
+            "/v1/occult/admin/decks", headers=admin, json=deck
+        )
+        assert installed.status == 201
+        decks = await client.get("/v1/occult/decks", headers=bearer)
+        assert (await decks.json())["data"][0]["active"] is True
+        pairings = await client.get("/v1/occult/pairings", headers=bearer)
+        assert (await pairings.json())["data"][0]["agent_id"] == (
+            "occult.major.magician"
+        )
+        validation = await client.get(
+            "/v1/occult/decks/occult.deck.development/validate",
+            headers=bearer,
+        )
+        assert validation.status == 200
+        assert (await validation.json()) == {
+            "deck_id": "occult.deck.development",
+            "version": "1.0.0",
+            "valid": True,
+            "missing_agent_ids": [],
+            "missing_card_ids": [],
+            "compatible_pairings": 1,
+        }
+        invocation = {**_invocation(), "deck_id": "occult.deck.development"}
+        invoked = await client.post(
+            "/v1/occult/invoke", headers=bearer, json=invocation
+        )
+        assert invoked.status == 200
+        assert seen
 
 
 @pytest.mark.asyncio

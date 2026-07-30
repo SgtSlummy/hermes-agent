@@ -25,6 +25,7 @@ from agent.occult.credential_broker import (
     InMemoryCredentialBroker,
     SecretValue,
 )
+from agent.occult.decks import DeckError, DeckRegistry
 from agent.occult.mythos import (
     AcquisitionAction,
     AdapterRequest,
@@ -91,6 +92,8 @@ __all__ = [
     "CouncilNodeResult",
     "CredentialBoundaryError",
     "CredentialReference",
+    "DeckError",
+    "DeckRegistry",
     "CredentialStatus",
     "FailureKind",
     "InMemoryCredentialBroker",

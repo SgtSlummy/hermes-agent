@@ -11,10 +11,8 @@ from typing import Any, Callable, Mapping
 
 from aiohttp import web
 
-from agent.occult.contracts import (
-    OCCULT_CONTRACT_VERSION,
-    OccultContractError,
-)
+from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
+from agent.occult.decks import DeckError
 from agent.occult.readings import (
     CouncilNodeRequest,
     CouncilNodeResult,
@@ -37,6 +35,12 @@ class OccultHTTPAdapter:
     def register(self, app: web.Application) -> None:
         app.router.add_get("/v1/occult/major-arcana", self._agents)
         app.router.add_get("/v1/occult/minor-arcana", self._routes)
+        app.router.add_get("/v1/occult/decks", self._decks)
+        app.router.add_get(
+            "/v1/occult/decks/{deck_id}/validate",
+            self._validate_deck,
+        )
+        app.router.add_get("/v1/occult/pairings", self._pairings)
         app.router.add_post("/v1/occult/invoke", self._invoke)
         app.router.add_post("/v1/occult/readings", self._create_reading)
         app.router.add_get("/v1/occult/readings/{reading_id}", self._reading_status)
@@ -56,6 +60,7 @@ class OccultHTTPAdapter:
                 "/v1/occult/admin/tokens/{token_id}/revoke",
                 self._admin_revoke_token,
             )
+            app.router.add_post("/v1/occult/admin/decks", self._admin_install_deck)
 
     async def _agents(self, request: web.Request) -> web.Response:
         return await self._call(
@@ -65,6 +70,29 @@ class OccultHTTPAdapter:
     async def _routes(self, request: web.Request) -> web.Response:
         return await self._call(
             request, lambda token, _payload: {"data": self.service.routes(token)}
+        )
+
+    async def _decks(self, request: web.Request) -> web.Response:
+        return await self._call(
+            request, lambda token, _payload: {"data": self.service.decks(token)}
+        )
+
+    async def _pairings(self, request: web.Request) -> web.Response:
+        agent_id = request.query.get("agent_id")
+        return await self._call(
+            request,
+            lambda token, _payload: {
+                "data": self.service.pairings(token, agent_id=agent_id)
+            },
+        )
+
+    async def _validate_deck(self, request: web.Request) -> web.Response:
+        return await self._call(
+            request,
+            lambda token, _payload: self.service.validate_deck(
+                token,
+                request.match_info["deck_id"],
+            ),
         )
 
     async def _invoke(self, request: web.Request) -> web.Response:
@@ -309,6 +337,35 @@ class OccultHTTPAdapter:
             return self._error(str(exc), 400)
         except Exception:
             return self._error("Occult token revocation failed", 500)
+
+    async def _admin_install_deck(self, request: web.Request) -> web.Response:
+        if not self._admin_authorized(request):
+            return self._error("Occult administrator credential is required", 401)
+        if self.service.deck_registry is None:
+            return self._error("Occult deck runtime is not configured", 503)
+        try:
+            payload = await request.json()
+            descriptor = self.service.deck_registry.put(
+                payload,
+                available_agent_ids=(
+                    installed.package.manifest.agent.id
+                    for installed in self.service.package_manager.active_packages()
+                ),
+                available_card_ids=(
+                    route.card_id for route in self.service.router.routes()
+                ),
+            )
+            return web.json_response(
+                {
+                    **descriptor.model_dump(mode="json"),
+                    "active": True,
+                },
+                status=201,
+            )
+        except (DeckError, ValueError) as exc:
+            return self._error(str(exc), 400)
+        except Exception:
+            return self._error("Occult deck installation failed", 500)
 
     def _authorized_reading(self, token: str, reading_id: str, operation: str) -> Any:
         policy = self.service.token_authority.policy(token)
