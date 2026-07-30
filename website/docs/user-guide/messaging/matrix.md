@@ -133,7 +133,7 @@ curl -X POST https://your-server/_matrix/client/v3/login \
   -d '{
     "type": "m.login.password",
     "user": "@hermes:your-server.org",
-    "password": "your-password"
+    "password": "<matrix-password>"
   }'
 ```
 
