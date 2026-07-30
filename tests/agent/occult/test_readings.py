@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 
@@ -56,6 +57,27 @@ def test_idempotent_create_and_contract_mismatch_precede_execution(tmp_path: Pat
             idempotency_key="wrong-version",
             contract_version="999.0.0",
         )
+
+
+def test_idempotency_and_ownership_are_scoped_per_virtual_token(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+
+    first = store.create(
+        _plan(),
+        idempotency_key="shared-client-key",
+        contract_version=OCCULT_CONTRACT_VERSION,
+        owner_token_id="client-a",
+    )
+    second = store.create(
+        _plan(),
+        idempotency_key="shared-client-key",
+        contract_version=OCCULT_CONTRACT_VERSION,
+        owner_token_id="client-b",
+    )
+
+    assert first != second
+    assert store.owner_token_id(first) == "client-a"
+    assert store.owner_token_id(second) == "client-b"
 
 
 def test_three_node_reading_resumes_without_reexecuting_completed_node(
@@ -153,6 +175,43 @@ def test_cancellation_emits_one_terminal_event(tmp_path: Path):
     events = store.events(reading_id)
     validate_event_stream(events)
     assert events[-1]["event_type"] == "reading.cancelled"
+
+
+def test_cancellation_during_execution_discards_late_result(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        _plan(),
+        idempotency_key="cancel-in-flight",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    started = Event()
+    release = Event()
+    result: dict[str, object] = {}
+
+    def execute(_request):
+        started.set()
+        assert release.wait(timeout=5)
+        return CouncilNodeResult(
+            artifact={"result": "late"},
+            route_summary={"provider_id": "test-provider"},
+        )
+
+    thread = Thread(
+        target=lambda: result.update(store.run(reading_id, execute)),
+        daemon=True,
+    )
+    thread.start()
+    assert started.wait(timeout=5)
+    store.cancel(reading_id)
+    release.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert result["state"] == "cancelled"
+    events = store.events(reading_id)
+    validate_event_stream(events)
+    assert events[-1]["event_type"] == "reading.cancelled"
+    assert all(event["event_type"] != "node.completed" for event in events)
 
 
 def test_council_boundary_rejects_secret_shaped_results(tmp_path: Path):

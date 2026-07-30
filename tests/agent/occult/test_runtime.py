@@ -3,6 +3,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from aiohttp.test_utils import make_mocked_request
 
 from agent.occult.readings import CouncilNodeRequest, ReadingNode, ReadingPlan
 from agent.occult.runtime import (
@@ -13,7 +14,7 @@ from agent.occult.runtime import (
     build_occult_http,
     normalize_loopback_openai_url,
 )
-from agent.occult.virtual_tokens import VirtualTokenPolicy
+from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
 
 
 def _config(model: str = "qwen2.5:3b"):
@@ -79,6 +80,30 @@ def test_runtime_installs_signed_starters_route_and_deck(tmp_path: Path):
     assert [item["deck_id"] for item in http.service.decks(token)] == [STARTER_DECK_ID]
     assert http.service.validate_deck(token, STARTER_DECK_ID)["valid"] is True
     assert http.admin_key_digest is not None
+    http.close()
+
+
+def test_openai_dispatch_recognizes_only_issued_occult_tokens(tmp_path: Path):
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    token = http.service.token_authority.issue(
+        VirtualTokenPolicy(token_id="dispatch-local")
+    )
+
+    assert http.handles_openai_request(
+        make_mocked_request(
+            "GET",
+            "/v1/models",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    )
+    assert not http.handles_openai_request(
+        make_mocked_request(
+            "GET",
+            "/v1/models",
+            headers={"Authorization": "Bearer occult_not-issued"},
+        )
+    )
     http.close()
 
 
@@ -202,6 +227,7 @@ def test_runtime_executes_reading_nodes_through_occult_service(
         ),
         idempotency_key="runtime-reading",
         contract_version="1.0.0",
+        owner_token_id="reading-local",
     )
 
     status = http._authorized_reading(token, reading_id, "resume")
@@ -211,6 +237,39 @@ def test_runtime_executes_reading_nodes_through_occult_service(
     audit_message = captured[1]["messages"][0]["content"]
     assert "# Dependency artifact" in audit_message
     assert "built" in audit_message
+    http.close()
+
+
+def test_reading_access_is_bound_to_creating_virtual_token(tmp_path: Path):
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    owner = http.service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="reading-owner",
+            allowed_agent_ids=frozenset({"occult.major.magician"}),
+        )
+    )
+    other = http.service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="reading-other",
+            allowed_agent_ids=frozenset({"occult.major.magician"}),
+        )
+    )
+    reading_id = http.readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.owner",
+            nodes=(
+                ReadingNode("build", "occult.major.magician", "Build."),
+            ),
+        ),
+        idempotency_key="owner-check",
+        contract_version="1.0.0",
+        owner_token_id="reading-owner",
+    )
+
+    assert http._authorized_reading(owner, reading_id, "status")["state"] == "pending"
+    with pytest.raises(VirtualTokenError, match="does not allow requested reading"):
+        http._authorized_reading(other, reading_id, "status")
     http.close()
 
 

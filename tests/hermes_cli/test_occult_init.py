@@ -83,6 +83,25 @@ def test_occult_init_rejects_short_admin_key(tmp_path: Path, monkeypatch):
     assert not (home / "config.yaml").exists()
 
 
+def test_occult_init_rejects_non_ascii_admin_key(tmp_path: Path, monkeypatch):
+    home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("OCCULT_ADMIN_KEY", "é" * 32)
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("qwen2.5:3b",),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model: None,
+    )
+
+    with pytest.raises(OccultCLIError, match="ASCII"):
+        initialize_occult(model="qwen2.5:3b")
+
+    assert not (home / "config.yaml").exists()
+
+
 def test_occult_init_rejects_non_chat_model_before_writing(
     tmp_path: Path,
     monkeypatch,

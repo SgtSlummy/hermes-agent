@@ -91,9 +91,9 @@ def initialize_occult(
     admin_key = os.getenv("OCCULT_ADMIN_KEY", "").strip()
     if not admin_key:
         admin_key = "occult_admin_" + secrets.token_urlsafe(32)
-    elif len(admin_key) < 32:
+    elif not admin_key.isascii() or len(admin_key) < 32:
         raise OccultCLIError(
-            "OCCULT_ADMIN_KEY must be at least 32 characters; "
+            "OCCULT_ADMIN_KEY must be ASCII and at least 32 characters; "
             "unset it to generate a new key"
         )
     runtime_env = dict(os.environ)

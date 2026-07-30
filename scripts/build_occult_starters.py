@@ -187,8 +187,14 @@ def main() -> int:
     if args.ephemeral:
         private_key = Ed25519PrivateKey.generate()
     else:
-        raw = base64.b64decode(encoded_key, validate=True)
-        private_key = Ed25519PrivateKey.from_private_bytes(raw)
+        try:
+            raw = base64.b64decode(encoded_key, validate=True)
+            private_key = Ed25519PrivateKey.from_private_bytes(raw)
+        except (TypeError, ValueError):
+            parser.error(
+                "OCCULT_STARTER_SIGNING_KEY must be a Base64-encoded "
+                "32-byte Ed25519 private key"
+            )
 
     args.output.mkdir(parents=True, exist_ok=True)
     public_key = private_key.public_key().public_bytes(

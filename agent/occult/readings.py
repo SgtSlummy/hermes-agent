@@ -7,6 +7,7 @@ only redacted route summaries.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -129,6 +130,7 @@ class ReadingStore:
             CREATE TABLE IF NOT EXISTS readings (
                 reading_id TEXT PRIMARY KEY,
                 idempotency_key TEXT NOT NULL UNIQUE,
+                owner_token_id TEXT NOT NULL DEFAULT 'local',
                 contract_version TEXT NOT NULL,
                 spread_id TEXT NOT NULL,
                 state TEXT NOT NULL,
@@ -178,6 +180,15 @@ class ReadingStore:
             );
             """
         )
+        columns = {
+            str(row["name"])
+            for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
+        }
+        if "owner_token_id" not in columns:
+            self._conn.execute(
+                "ALTER TABLE readings ADD COLUMN "
+                "owner_token_id TEXT NOT NULL DEFAULT 'local'"
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -188,17 +199,25 @@ class ReadingStore:
         *,
         idempotency_key: str,
         contract_version: str,
+        owner_token_id: str = "local",
     ) -> str:
         if contract_version != OCCULT_CONTRACT_VERSION:
             raise ReadingError("Occult contract version mismatch")
         if not idempotency_key.strip() or len(idempotency_key) > 256:
             raise ReadingError("invalid idempotency key")
+        if not _SAFE_ID.fullmatch(owner_token_id):
+            raise ReadingError("invalid reading owner")
+        stored_idempotency_key = hashlib.sha256(
+            owner_token_id.encode("utf-8")
+            + b"\0"
+            + idempotency_key.encode("utf-8")
+        ).hexdigest()
         now = time.time()
         reading_id = "reading_" + uuid.uuid4().hex
         with self._transaction():
             existing = self._conn.execute(
                 "SELECT reading_id FROM readings WHERE idempotency_key = ?",
-                (idempotency_key,),
+                (stored_idempotency_key,),
             ).fetchone()
             if existing is not None:
                 return str(existing["reading_id"])
@@ -206,13 +225,14 @@ class ReadingStore:
                 """
                 INSERT INTO readings (
                     reading_id, idempotency_key, contract_version,
-                    spread_id, state, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                    owner_token_id, spread_id, state, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
                 """,
                 (
                     reading_id,
-                    idempotency_key,
+                    stored_idempotency_key,
                     contract_version,
+                    owner_token_id,
                     plan.spread_id,
                     now,
                     now,
@@ -298,6 +318,9 @@ class ReadingStore:
                 _reject_secret_fields(result.route_summary)
             except Exception:
                 with self._transaction():
+                    reading = self._reading(reading_id)
+                    if reading["state"] in {"cancelled", "completed", "failed"}:
+                        return self.status(reading_id)
                     self._append_event(
                         reading_id,
                         "node.failed",
@@ -316,6 +339,9 @@ class ReadingStore:
                 raise ReadingError("Council node execution failed") from None
 
             with self._transaction():
+                reading = self._reading(reading_id)
+                if reading["state"] in {"cancelled", "completed", "failed"}:
+                    return self.status(reading_id)
                 artifact_reference = "artifact_" + uuid.uuid4().hex
                 self._conn.execute(
                     """
@@ -398,6 +424,11 @@ class ReadingStore:
             "state": reading["state"],
             "nodes": [dict(node) for node in nodes],
         }
+
+    def owner_token_id(self, reading_id: str) -> str:
+        """Return the non-secret token identifier that owns a reading."""
+
+        return str(self._reading(reading_id)["owner_token_id"])
 
     def events(
         self, reading_id: str, *, after_sequence: int | None = None

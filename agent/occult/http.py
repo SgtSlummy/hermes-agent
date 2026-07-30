@@ -83,12 +83,17 @@ class OccultHTTPAdapter:
             )
             app.router.add_post("/v1/occult/admin/decks", self._admin_install_deck)
 
-    @staticmethod
-    def handles_openai_request(request: web.Request) -> bool:
+    def handles_openai_request(self, request: web.Request) -> bool:
         """Identify router-issued virtual tokens before gateway API-key auth."""
 
-        header = request.headers.get("Authorization", "")
-        return header.startswith("Bearer occult_")
+        token = self._bearer(request)
+        if token is None:
+            return False
+        try:
+            self.service.token_authority.policy(token)
+        except VirtualTokenError:
+            return False
+        return True
 
     async def handle_openai_models(self, request: web.Request) -> web.Response:
         return await OccultOpenAIAdapter(self.service).models(request)
@@ -240,6 +245,7 @@ class OccultHTTPAdapter:
                 plan,
                 idempotency_key=str(payload.get("idempotency_key", "")),
                 contract_version=str(payload.get("contract_version", "")),
+                owner_token_id=policy.token_id,
             )
             return self.readings.status(reading_id)
 
@@ -420,6 +426,8 @@ class OccultHTTPAdapter:
 
     def _authorized_reading(self, token: str, reading_id: str, operation: str) -> Any:
         policy = self.service.token_authority.policy(token)
+        if self.readings.owner_token_id(reading_id) != policy.token_id:
+            raise VirtualTokenError("virtual token does not allow requested reading")
         status = self.readings.status(reading_id)
         requested_agents = {node["agent_id"] for node in status["nodes"]}
         if policy.allowed_agent_ids and not requested_agents.issubset(

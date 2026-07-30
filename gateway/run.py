@@ -4859,6 +4859,7 @@ class GatewayRunner:
                     platform.value, attempt,
                 )
 
+                adapter = None
                 try:
                     adapter = await self._create_adapter(platform, platform_config)
                     if not adapter:
@@ -4929,7 +4930,10 @@ class GatewayRunner:
                                     or "failed to reconnect"
                                 ),
                             )
+                        await self._safe_adapter_disconnect(adapter, platform)
                 except Exception as e:
+                    if adapter is not None:
+                        await self._safe_adapter_disconnect(adapter, platform)
                     self._update_platform_runtime_status(
                         platform.value,
                         platform_state="retrying",

@@ -378,6 +378,7 @@ async def test_http_event_stream_finishes_after_authenticated_cancellation(
         ),
         idempotency_key="stream-cancel",
         contract_version="1.0.0",
+        owner_token_id="client",
     )
     app = Application()
     OccultHTTPAdapter(service, readings).register(app)
