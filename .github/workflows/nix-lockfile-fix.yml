@@ -59,13 +59,13 @@ jobs:
       - name: Generate GitHub App token
         if: env.APP_CONFIGURED == 'true'
         id: app-token
-        uses: actions/create-github-app-token@7bfa3a4717ef143a604ee0a99d859b8886a96d00  # v1.9.3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: env.APP_CONFIGURED == 'true'
         with:
           ref: main
@@ -153,7 +153,7 @@ jobs:
     steps:
       - name: Authorize & resolve PR
         id: resolve
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             // 1. Verify the actor has write access — applies to both checkbox
@@ -202,7 +202,7 @@ jobs:
       # before the ~minute of nix build work.
       - name: Mark sticky as running
         if: steps.resolve.outputs.pr != ''
-        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728  # v2.9.1
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3.0.5
         with:
           header: nix-lockfile-check
           number: ${{ steps.resolve.outputs.pr }}
@@ -211,7 +211,7 @@ jobs:
 
             Triggered by @${{ github.actor }} — [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: ${{ steps.resolve.outputs.owner }}/${{ steps.resolve.outputs.repo }}
           ref: ${{ steps.resolve.outputs.ref }}
@@ -239,7 +239,7 @@ jobs:
 
       - name: Update sticky (applied)
         if: steps.apply.outputs.changed == 'true' && steps.resolve.outputs.pr != ''
-        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728  # v2.9.1
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3.0.5
         with:
           header: nix-lockfile-check
           number: ${{ steps.resolve.outputs.pr }}
@@ -250,7 +250,7 @@ jobs:
 
       - name: Update sticky (already current)
         if: steps.apply.outputs.changed == 'false' && steps.resolve.outputs.pr != ''
-        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728  # v2.9.1
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3.0.5
         with:
           header: nix-lockfile-check
           number: ${{ steps.resolve.outputs.pr }}
@@ -261,7 +261,7 @@ jobs:
 
       - name: Update sticky (failed)
         if: failure() && steps.resolve.outputs.pr != ''
-        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728  # v2.9.1
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88  # v3.0.5
         with:
           header: nix-lockfile-check
           number: ${{ steps.resolve.outputs.pr }}
