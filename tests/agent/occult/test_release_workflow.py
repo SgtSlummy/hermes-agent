@@ -43,6 +43,7 @@ def test_occult_production_workflow_preserves_release_invariants():
         "npm run build --prefix ui-tui",
         "uv run --frozen npm run prebuild --prefix website",
         "npm run build --prefix website",
+        "docker/setup-buildx-action@",
         "docker buildx build --output type=oci",
         "scripts/occult_release.py assemble",
         "scripts/occult_release.py verify staged",
