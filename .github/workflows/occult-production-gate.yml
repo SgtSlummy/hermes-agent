@@ -167,7 +167,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Install pinned Python dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev --extra homeassistant
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: hermes-platform-*
@@ -189,7 +189,7 @@ jobs:
           npm run build --prefix ui-tui
           npm ci --prefix website
           (cd website && npm audit --omit=dev --audit-level=critical)
-          uv run --frozen npm run prebuild --prefix website
+          uv run --frozen --no-sync npm run prebuild --prefix website
           npm run typecheck --prefix website
           npm run build --prefix website
           mkdir -p compiled/dashboard compiled/tui compiled/docs
@@ -202,13 +202,13 @@ jobs:
         run: |
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$RELEASE_COMMIT")"
           export SOURCE_DATE_EPOCH
-          uv run --frozen python scripts/occult_release.py assemble \
+          uv run --frozen --no-sync python scripts/occult_release.py assemble \
             --artifacts compiled \
             --output staged \
             --version "$RELEASE_VERSION" \
             --commit "$RELEASE_COMMIT" \
             --channel "$RELEASE_CHANNEL"
-          uv run --frozen python scripts/occult_release.py verify staged --allow-unsigned
+          uv run --frozen --no-sync python scripts/occult_release.py verify staged --allow-unsigned
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: occult-staged-${{ env.RELEASE_COMMIT }}
@@ -235,7 +235,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Install pinned Python dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev --extra homeassistant
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: occult-staged-${{ env.RELEASE_COMMIT }}
@@ -250,8 +250,8 @@ jobs:
           verify-oidc-issuer: https://token.actions.githubusercontent.com
       - name: Verify and promote without rebuilding
         run: |
-          uv run --frozen python scripts/occult_release.py verify staged --require-signature
-          uv run --frozen python scripts/occult_release.py promote staged promoted
+          uv run --frozen --no-sync python scripts/occult_release.py verify staged --require-signature
+          uv run --frozen --no-sync python scripts/occult_release.py promote staged promoted
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: occult-stable-${{ env.RELEASE_VERSION }}-${{ env.RELEASE_COMMIT }}
