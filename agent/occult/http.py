@@ -13,6 +13,7 @@ from aiohttp import web
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
 from agent.occult.decks import DeckError
+from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.readings import (
     CouncilNodeRequest,
     CouncilNodeResult,
@@ -33,6 +34,7 @@ class OccultHTTPAdapter:
     admin_key_digest: bytes | None = None
 
     def register(self, app: web.Application) -> None:
+        OccultOpenAIAdapter(self.service).register(app)
         app.router.add_get("/v1/occult/major-arcana", self._agents)
         app.router.add_get("/v1/occult/minor-arcana", self._routes)
         app.router.add_get("/v1/occult/decks", self._decks)

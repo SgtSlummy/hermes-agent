@@ -56,6 +56,7 @@ from agent.occult.pairing import (
     ToolAuthorizationDecision,
 )
 from agent.occult.http import OccultHTTPAdapter
+from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.readings import (
     CouncilNodeRequest,
     CouncilNodeResult,
@@ -107,6 +108,7 @@ __all__ = [
     "NoEligibleRoute",
     "OccultContractError",
     "OccultHTTPAdapter",
+    "OccultOpenAIAdapter",
     "OccultService",
     "PairingContext",
     "PairingError",
