@@ -111,5 +111,7 @@ may expand system, user, deck, or tool authority.
 5. Roll back the feature boundary before rolling back shared storage.
 6. Never make credential material part of a migration payload or audit event.
 
-The version-1 package has no database migration and no persistent state, so
-rollback consists of disabling/removing the integration code.
+The readings v2 storage migration hashes legacy idempotency keys in place.
+Downgrading to a binary that expects readings v1 therefore requires restoring
+the matching pre-migration `readings.db` backup; disabling the feature alone
+does not reverse that storage change.

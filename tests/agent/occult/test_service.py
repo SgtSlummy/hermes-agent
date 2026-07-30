@@ -8,6 +8,7 @@ from aiohttp.web import Application
 from agent.occult.contracts import DeckDescriptor, RoutingPolicy
 from agent.occult.decks import DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
+from agent.occult.idempotency import SQLiteInvocationResultStore
 from agent.occult.mythos import (
     AdapterResponse,
     MinorArcanaDescriptor,
@@ -125,6 +126,8 @@ def _service(
     agent_ids: tuple[str, ...] = ("occult.major.magician",),
     *,
     maximum_concurrent_requests: int = 8,
+    requests_per_minute: int = 10,
+    invocation_store: SQLiteInvocationResultStore | None = None,
 ):
     seen_messages: list[str] = []
 
@@ -155,7 +158,7 @@ def _service(
             token_id="client",
             allowed_agent_ids=frozenset(agent_ids),
             allowed_card_ids=frozenset({route.card_id}),
-            requests_per_minute=10,
+            requests_per_minute=requests_per_minute,
             maximum_budget_usd=0,
         )
     )
@@ -164,6 +167,7 @@ def _service(
         router=router,
         token_authority=authority,
         runtime_policy=RuntimePolicy(),
+        invocation_store=invocation_store,
     )
     return service, plaintext, seen_messages
 
@@ -227,6 +231,23 @@ def test_token_route_allowlist_filters_before_provider_call():
     ):
         service.invoke(restricted_token, _invocation())
     assert seen == []
+
+
+def test_idempotency_replays_consume_rate_limit(tmp_path: Path):
+    store = SQLiteInvocationResultStore(tmp_path / "invocations.db")
+    service, token, seen = _service(
+        requests_per_minute=2,
+        invocation_store=store,
+    )
+
+    first = service.invoke(token, _invocation())
+    replay = service.invoke(token, _invocation())
+
+    assert replay == first
+    assert len(seen) == 1
+    with pytest.raises(VirtualTokenError, match="rate limit"):
+        service.invoke(token, _invocation())
+    store.close()
 
 
 @pytest.mark.asyncio

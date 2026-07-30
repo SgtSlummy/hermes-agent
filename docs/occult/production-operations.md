@@ -193,6 +193,10 @@ Restore into a clean directory, apply only documented migrations, start with
 enable local-only routing. Run a canary invocation and resume a non-destructive
 test reading before admitting normal traffic.
 
+The readings v2 migration hashes legacy idempotency keys and is not reversible
+in place. Downgrading to a release that expects readings v1 requires restoring
+the matching pre-upgrade `readings.db` backup and its WAL/SHM companions.
+
 ## Upgrade
 
 1. Verify the candidate's Sigstore identity, checksum manifest, compatibility

@@ -296,11 +296,6 @@ def _reading_executor(
             },
             route_summary=result["route"],
         )
-        readings.cache_node_result_if_active(
-            request.reading_id,
-            request.idempotency_key,
-            node_result,
-        )
         return node_result
 
     return execute

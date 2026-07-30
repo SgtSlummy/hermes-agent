@@ -17,6 +17,7 @@ from hermes_cli.config import (
     remove_env_value,
     save_config,
     save_env_value,
+    save_env_values,
     save_env_value_secure,
     sanitize_env_file,
     _sanitize_env_lines,
@@ -192,6 +193,19 @@ class TestSaveAndLoadRoundtrip:
 
 
 class TestSaveEnvValueSecure:
+    def test_save_env_values_updates_multiple_keys_atomically(self, tmp_path):
+        with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}, clear=False):
+            save_env_values({
+                "OCCULT_ADMIN_KEY": "admin-value",
+                "OCCULT_API_KEY": "token-value",
+            })
+
+            env_values = load_env()
+            assert env_values["OCCULT_ADMIN_KEY"] == "admin-value"
+            assert env_values["OCCULT_API_KEY"] == "token-value"
+            assert os.environ["OCCULT_ADMIN_KEY"] == "admin-value"
+            assert os.environ["OCCULT_API_KEY"] == "token-value"
+
     def test_save_env_value_writes_without_stdout(self, tmp_path, capsys):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
             save_env_value("TENOR_API_KEY", "sk-test-secret")

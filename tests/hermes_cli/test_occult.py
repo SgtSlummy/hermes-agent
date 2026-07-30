@@ -53,22 +53,37 @@ def test_occult_api_url_comes_from_api_server_config(monkeypatch):
     assert _api_base_url() == "http://[::1]:9443"
 
 
-def test_occult_api_url_uses_effective_gateway_config(monkeypatch):
+def test_occult_api_url_uses_effective_gateway_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.delenv("OCCULT_API_URL", raising=False)
+    (tmp_path / "config.yaml").write_text(
+        "platforms:\n"
+        "  api_server:\n"
+        "    enabled: true\n"
+        "    extra:\n"
+        "      host: 127.0.0.1\n"
+        "      port: 8642\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("API_SERVER_ENABLED", "true")
     monkeypatch.setenv("API_SERVER_HOST", "127.0.0.2")
     monkeypatch.setenv("API_SERVER_PORT", "9555")
+
+    assert _api_base_url() == "http://127.0.0.2:9555"
+
+
+@pytest.mark.parametrize("extra", ["invalid", {"port": "not-a-number"}])
+def test_occult_api_url_normalizes_malformed_config(monkeypatch, extra):
+    monkeypatch.delenv("OCCULT_API_URL", raising=False)
     monkeypatch.setattr(
         "gateway.config.load_gateway_config",
         lambda: SimpleNamespace(
-            platforms={
-                Platform.API_SERVER: SimpleNamespace(
-                    extra={"host": "127.0.0.2", "port": 9555}
-                )
-            }
+            platforms={Platform.API_SERVER: SimpleNamespace(extra=extra)}
         ),
     )
 
-    assert _api_base_url() == "http://127.0.0.2:9555"
+    with pytest.raises(OccultCLIError, match="platforms.api_server.extra"):
+        _api_base_url()
 
 
 def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):

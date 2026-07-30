@@ -196,6 +196,16 @@ class SQLiteVirtualTokenStore:
     def update_revoked(self, token_id: str, revoked: bool) -> None:
         self._update(token_id, "revoked", int(revoked))
 
+    def delete(self, token_id: str) -> None:
+        try:
+            with self._lock, self._conn:
+                self._conn.execute(
+                    "DELETE FROM virtual_tokens WHERE token_id = ?",
+                    (token_id,),
+                )
+        except sqlite3.DatabaseError as exc:
+            raise VirtualTokenError("virtual token store is unavailable") from exc
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -410,6 +420,20 @@ class VirtualTokenAuthority:
             if self.store is not None:
                 self.store.update_revoked(token_id, True)
             state.revoked = True
+
+    def discard(self, token_id: str) -> None:
+        """Delete an unexposed token issued during a failed atomic setup."""
+
+        with self._lock:
+            state = self._tokens.get(token_id)
+            if state is None:
+                raise VirtualTokenError("unknown virtual token")
+            if state.calls or state.committed_cost_usd or state.reserved_cost_usd:
+                raise VirtualTokenError("active virtual token cannot be discarded")
+            if self.store is not None:
+                self.store.delete(token_id)
+            self._tokens.pop(token_id, None)
+            self._digest_index.pop(state.digest, None)
 
     def policy(self, plaintext: str) -> VirtualTokenPolicy:
         with self._lock:

@@ -118,6 +118,63 @@ def test_occult_init_replaces_token_without_full_starter_scope(
     )
 
 
+def test_occult_init_does_not_enable_config_when_credentials_fail(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("OCCULT_ADMIN_KEY", "a" * 32)
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("qwen2.5:3b",),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model: None,
+    )
+    discarded = []
+    closed = []
+
+    class _Authority:
+        @staticmethod
+        def statuses():
+            return []
+
+        @staticmethod
+        def issue(_policy):
+            return "occult_new"
+
+        @staticmethod
+        def discard(token_id):
+            discarded.append(token_id)
+
+    monkeypatch.setattr(
+        "hermes_cli.occult.build_occult_http",
+        lambda _config, *, environ: SimpleNamespace(
+            service=SimpleNamespace(token_authority=_Authority()),
+            close=lambda: closed.append(True),
+        ),
+    )
+    saved_configs = []
+    monkeypatch.setattr(
+        "hermes_cli.config.save_config",
+        lambda config: saved_configs.append(config),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.config.save_env_values",
+        lambda _values: (_ for _ in ()).throw(OSError("read-only secrets mount")),
+    )
+
+    with pytest.raises(OSError, match="read-only"):
+        initialize_occult(model="qwen2.5:3b")
+
+    assert saved_configs == []
+    assert discarded == ["local-default"]
+    assert closed == [True]
+
+
 def test_occult_init_rejects_short_admin_key(tmp_path: Path, monkeypatch):
     home = tmp_path / ".hermes"
     monkeypatch.setenv("HERMES_HOME", str(home))

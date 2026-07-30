@@ -188,8 +188,11 @@ def test_cancellation_during_execution_discards_late_result(tmp_path: Path):
     started = Event()
     release = Event()
     result: dict[str, object] = {}
+    node_key = ""
 
-    def execute(_request):
+    def execute(request):
+        nonlocal node_key
+        node_key = request.idempotency_key
         started.set()
         assert release.wait(timeout=5)
         return CouncilNodeResult(
@@ -213,6 +216,7 @@ def test_cancellation_during_execution_discards_late_result(tmp_path: Path):
     validate_event_stream(events)
     assert events[-1]["event_type"] == "reading.cancelled"
     assert all(event["event_type"] != "node.completed" for event in events)
+    assert store.cached_node_result(node_key) is None
 
 
 def test_council_boundary_rejects_secret_shaped_results(tmp_path: Path):
@@ -311,6 +315,73 @@ def test_cancelled_reading_does_not_cache_late_node_result(tmp_path: Path):
 
     assert cached is False
     assert store.cached_node_result(key) is None
+
+
+def test_cancellation_and_node_cache_commit_are_atomic(tmp_path: Path):
+    store = ReadingStore(tmp_path / "readings.db")
+    reading_id = store.create(
+        ReadingPlan(
+            spread_id="occult.spread.cancel-race",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="cancel-race",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+
+    def execute(_request):
+        store.cancel(reading_id)
+        return CouncilNodeResult(
+            artifact={"content": "late"},
+            route_summary={"card_id": "minor.pentacles.ace.local"},
+        )
+
+    status = store.run(reading_id, execute)
+
+    assert status["state"] == "cancelled"
+    assert store.cached_node_result(f"{reading_id}:build") is None
+    assert status["nodes"][0]["artifact_reference"] is None
+
+
+def test_legacy_duplicate_terminal_events_are_deduplicated(tmp_path: Path):
+    path = tmp_path / "readings.db"
+    store = ReadingStore(path)
+    reading_id = store.create(
+        ReadingPlan(
+            spread_id="occult.spread.legacy-terminal",
+            nodes=(ReadingNode("build", "occult.major.magician", "Build."),),
+        ),
+        idempotency_key="legacy-terminal",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    store.cancel(reading_id)
+    store.close()
+    connection = sqlite3.connect(path)
+    connection.execute("DROP INDEX one_terminal_reading_event")
+    sequence = connection.execute(
+        "SELECT MAX(sequence) FROM reading_events WHERE reading_id = ?",
+        (reading_id,),
+    ).fetchone()[0]
+    connection.execute(
+        """
+        INSERT INTO reading_events (
+            reading_id, sequence, event_id, event_type,
+            occurred_at, data_json
+        ) VALUES (?, ?, ?, 'reading.failed', ?, '{}')
+        """,
+        (reading_id, sequence + 1, "event_legacy_duplicate", "2026-01-01T00:00:00Z"),
+    )
+    connection.commit()
+    connection.close()
+
+    store = ReadingStore(path)
+    terminal = [
+        event
+        for event in store.events(reading_id)
+        if event["event_type"].startswith("reading.")
+        and event["event_type"] != "reading.started"
+    ]
+
+    assert [event["event_type"] for event in terminal] == ["reading.cancelled"]
 
 
 def test_legacy_reading_can_be_claimed_by_first_authorized_token(tmp_path: Path):

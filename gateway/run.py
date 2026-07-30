@@ -5436,10 +5436,9 @@ class GatewayRunner:
             adapter = APIServerAdapter(config)
             try:
                 from agent.occult.runtime import build_occult_http
-                from hermes_cli.config import load_config
 
                 occult_http = await self._run_in_executor_with_context(
-                    lambda: build_occult_http(load_config())
+                    lambda: build_occult_http(_load_gateway_config())
                 )
                 if occult_http is not None:
                     adapter.attach_occult_http(occult_http)

@@ -390,6 +390,12 @@ def test_runtime_persists_and_validates_invocation_idempotency(
 
     assert first == retry
     assert calls == 1
+    assert (
+        http.service.token_authority.status("idempotent-local")[
+            "requests_in_window"
+        ]
+        == 2
+    )
     with pytest.raises(ValueError, match="different input"):
         http.service.invoke(
             token,
@@ -462,7 +468,13 @@ def test_reading_executor_reuses_durable_idempotent_result_after_restart(
     )
     executor = http.reading_executor
     assert executor is not None
-    first = executor(token, request)
+    http.readings.run(
+        reading_id,
+        lambda node_request: executor(token, node_request),
+        maximum_nodes=1,
+    )
+    first = http.readings.cached_node_result(request.idempotency_key)
+    assert first is not None
     http.close()
 
     http = build_occult_http(_config(), home=tmp_path)

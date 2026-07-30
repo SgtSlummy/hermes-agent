@@ -45,7 +45,7 @@ def initialize_occult(
         is_managed,
         read_raw_config,
         save_config,
-        save_env_value,
+        save_env_values,
     )
 
     if is_managed():
@@ -107,6 +107,7 @@ def initialize_occult(
 
     token = os.getenv("OCCULT_API_KEY", "").strip()
     token_created = False
+    issued_token_id: str | None = None
     if token:
         try:
             policy = http.service.token_authority.policy(token)
@@ -136,11 +137,19 @@ def initialize_occult(
             )
         )
         token_created = True
+        issued_token_id = token_id
 
     try:
+        try:
+            save_env_values({
+                "OCCULT_ADMIN_KEY": admin_key,
+                "OCCULT_API_KEY": token,
+            })
+        except Exception:
+            if issued_token_id is not None:
+                http.service.token_authority.discard(issued_token_id)
+            raise
         save_config(config)
-        save_env_value("OCCULT_ADMIN_KEY", admin_key)
-        save_env_value("OCCULT_API_KEY", token)
     finally:
         http.close()
 
@@ -169,8 +178,15 @@ def _api_base_url() -> str:
     config = load_gateway_config()
     api_server = config.platforms.get(Platform.API_SERVER)
     extra = api_server.extra if api_server is not None else {}
+    if not isinstance(extra, dict):
+        raise OccultCLIError("platforms.api_server.extra must be a mapping")
     host = str(extra.get("host", "127.0.0.1"))
-    port = int(extra.get("port", 8642))
+    try:
+        port = int(extra.get("port", 8642))
+    except (TypeError, ValueError):
+        raise OccultCLIError(
+            "platforms.api_server.extra.port must be an integer"
+        ) from None
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"http://{host}:{port}"

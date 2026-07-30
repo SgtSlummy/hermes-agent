@@ -7,8 +7,10 @@ import sqlite3
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from threading import Lock, RLock
+from threading import RLock
 from typing import Any
+
+from .locking import ExactKeyLockPool
 
 
 class InvocationIdempotencyError(ValueError):
@@ -28,7 +30,7 @@ class SQLiteInvocationResultStore:
         )
         self._conn.row_factory = sqlite3.Row
         self._db_lock = RLock()
-        self._key_locks = tuple(Lock() for _ in range(64))
+        self._key_locks = ExactKeyLockPool()
         self._conn.executescript(
             """
             PRAGMA journal_mode=WAL;
@@ -49,12 +51,11 @@ class SQLiteInvocationResultStore:
         idempotency_key: str,
         request_fingerprint: str,
         callback: Callable[[], Mapping[str, Any]],
+        *,
+        on_replay: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         lock_key = (owner_token_id, idempotency_key)
-        lock = self._key_locks[
-            hash(lock_key) % len(self._key_locks)
-        ]
-        with lock:
+        with self._key_locks.acquire(lock_key):
             with self._db_lock:
                 row = self._conn.execute(
                     """
@@ -69,7 +70,10 @@ class SQLiteInvocationResultStore:
                     raise InvocationIdempotencyError(
                         "idempotency key was reused with different input"
                     )
-                return dict(json.loads(str(row["result_json"])))
+                result = dict(json.loads(str(row["result_json"])))
+                if on_replay is not None:
+                    on_replay(result)
+                return result
 
             result = dict(callback())
             encoded = json.dumps(result, sort_keys=True, separators=(",", ":"))

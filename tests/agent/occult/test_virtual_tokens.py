@@ -38,6 +38,23 @@ def test_token_is_returned_once_and_status_is_secret_free():
         authority.issue(_policy())
 
 
+def test_unexposed_token_can_be_discarded_without_persistent_orphan(tmp_path):
+    path = tmp_path / "virtual_tokens.db"
+    store = SQLiteVirtualTokenStore(path)
+    authority = VirtualTokenAuthority(clock=lambda: 100.0, store=store)
+    plaintext = authority.issue(_policy())
+
+    authority.discard("client-1")
+
+    assert authority.recognizes(plaintext) is False
+    assert authority.statuses() == ()
+    store.close()
+    restarted_store = SQLiteVirtualTokenStore(path)
+    restarted = VirtualTokenAuthority(clock=lambda: 100.0, store=restarted_store)
+    assert restarted.statuses() == ()
+    restarted_store.close()
+
+
 def test_scope_rate_expiry_and_revocation_are_enforced():
     now = [100.0]
     authority = VirtualTokenAuthority(clock=lambda: now[0])

@@ -4642,6 +4642,69 @@ def _check_non_ascii_credential(key: str, value: str) -> str:
     return sanitized
 
 
+def save_env_values(values: Dict[str, str]) -> None:
+    """Atomically save or update multiple values in ~/.hermes/.env."""
+
+    if is_managed():
+        managed_error("set environment values")
+        return
+    sanitized_values: Dict[str, str] = {}
+    for key, value in values.items():
+        if not _ENV_VAR_NAME_RE.match(key):
+            raise ValueError(f"Invalid environment variable name: {key!r}")
+        clean = value.replace("\n", "").replace("\r", "")
+        sanitized_values[key] = _check_non_ascii_credential(key, clean)
+
+    ensure_hermes_home()
+    env_path = get_env_path()
+    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
+    write_kw = {"encoding": "utf-8"}
+    lines = []
+    if env_path.exists():
+        with open(env_path, **read_kw) as f:
+            lines = _sanitize_env_lines(f.readlines())
+
+    for key, value in sanitized_values.items():
+        for index, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                lines[index] = f"{key}={value}\n"
+                break
+        else:
+            if lines and not lines[-1].endswith("\n"):
+                lines[-1] += "\n"
+            lines.append(f"{key}={value}\n")
+
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(env_path.parent), suffix=".tmp", prefix=".env_"
+    )
+    original_mode = None
+    if env_path.exists():
+        try:
+            original_mode = stat.S_IMODE(env_path.stat().st_mode)
+        except OSError:
+            pass
+    try:
+        with os.fdopen(fd, "w", **write_kw) as f:
+            f.writelines(lines)
+            f.flush()
+            os.fsync(f.fileno())
+        atomic_replace(tmp_path, env_path)
+        if original_mode is not None:
+            try:
+                os.chmod(env_path, original_mode)
+            except OSError:
+                pass
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    _secure_file(env_path)
+    os.environ.update(sanitized_values)
+    invalidate_env_cache()
+
+
 def save_env_value(key: str, value: str):
     """Save or update a value in ~/.hermes/.env."""
     if is_managed():

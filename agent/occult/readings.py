@@ -22,6 +22,8 @@ from typing import Any, Callable, Mapping, Sequence
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 from hermes_constants import get_hermes_home
 
+from .locking import ExactKeyLockPool
+
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _LEGACY_OWNER = "legacy-unclaimed"
 _TERMINAL_TYPES = frozenset({
@@ -124,7 +126,7 @@ class ReadingStore:
         )
         self._conn.row_factory = sqlite3.Row
         self._lock = RLock()
-        self._execution_locks = tuple(RLock() for _ in range(64))
+        self._execution_locks = ExactKeyLockPool()
         self._conn.executescript(
             """
             PRAGMA journal_mode=WAL;
@@ -175,13 +177,34 @@ class ReadingStore:
                 route_summary_json TEXT NOT NULL,
                 created_at REAL NOT NULL
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS one_terminal_reading_event
-            ON reading_events(reading_id)
-            WHERE event_type IN (
-                'reading.cancelled', 'reading.completed', 'reading.failed'
-            );
             """
         )
+        with self._transaction():
+            self._conn.execute(
+                """
+                DELETE FROM reading_events
+                WHERE event_type IN (
+                    'reading.cancelled', 'reading.completed', 'reading.failed'
+                )
+                AND rowid NOT IN (
+                    SELECT MIN(rowid)
+                    FROM reading_events
+                    WHERE event_type IN (
+                        'reading.cancelled', 'reading.completed', 'reading.failed'
+                    )
+                    GROUP BY reading_id
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS one_terminal_reading_event
+                ON reading_events(reading_id)
+                WHERE event_type IN (
+                    'reading.cancelled', 'reading.completed', 'reading.failed'
+                )
+                """
+            )
         columns = {
             str(row["name"])
             for row in self._conn.execute("PRAGMA table_info(readings)").fetchall()
@@ -317,7 +340,7 @@ class ReadingStore:
         *,
         maximum_nodes: int | None = None,
     ) -> dict[str, Any]:
-        with self._execution_lock(reading_id):
+        with self._execution_locks.acquire(reading_id):
             return self._run_unlocked(
                 reading_id,
                 executor,
@@ -403,6 +426,7 @@ class ReadingStore:
                 reading = self._reading(reading_id)
                 if reading["state"] in {"cancelled", "completed", "failed"}:
                     return self.status(reading_id)
+                self._cache_node_result(request.idempotency_key, result)
                 artifact_reference = "artifact_" + uuid.uuid4().hex
                 self._conn.execute(
                     """
@@ -446,7 +470,7 @@ class ReadingStore:
         *,
         maximum_nodes: int | None = None,
     ) -> dict[str, Any]:
-        with self._execution_lock(reading_id):
+        with self._execution_locks.acquire(reading_id):
             with self._transaction():
                 reading = self._reading(reading_id)
                 if reading["state"] in {"cancelled", "completed", "failed"}:
@@ -587,27 +611,28 @@ class ReadingStore:
             reading = self._reading(reading_id)
             if reading["state"] in {"cancelled", "completed", "failed"}:
                 return False
-            self._conn.execute(
-                """
-                INSERT OR IGNORE INTO reading_node_results (
-                    idempotency_key, artifact_json,
-                    route_summary_json, created_at
-                ) VALUES (?, ?, ?, ?)
-                """,
-                (
-                    idempotency_key,
-                    json.dumps(result.artifact, sort_keys=True),
-                    json.dumps(result.route_summary, sort_keys=True),
-                    time.time(),
-                ),
-            )
+            self._cache_node_result(idempotency_key, result)
             return True
 
-    def _execution_lock(self, reading_id: str) -> RLock:
-        return self._execution_locks[
-            int(hashlib.sha256(reading_id.encode("utf-8")).hexdigest(), 16)
-            % len(self._execution_locks)
-        ]
+    def _cache_node_result(
+        self,
+        idempotency_key: str,
+        result: CouncilNodeResult,
+    ) -> None:
+        self._conn.execute(
+            """
+            INSERT OR IGNORE INTO reading_node_results (
+                idempotency_key, artifact_json,
+                route_summary_json, created_at
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (
+                idempotency_key,
+                json.dumps(result.artifact, sort_keys=True),
+                json.dumps(result.route_summary, sort_keys=True),
+                time.time(),
+            ),
+        )
 
     def _node_request(self, reading_id: str, node: sqlite3.Row) -> CouncilNodeRequest:
         dependencies = json.loads(node["dependencies_json"])
