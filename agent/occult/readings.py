@@ -832,9 +832,13 @@ class ReadingStore:
         ).fetchall()
         for row in expired:
             reading_id = str(row["reading_id"])
+            result_prefix = f"{reading_id}:"
             self._conn.execute(
-                "DELETE FROM reading_node_results WHERE idempotency_key LIKE ?",
-                (f"{reading_id}:%",),
+                """
+                DELETE FROM reading_node_results
+                WHERE substr(idempotency_key, 1, ?) = ?
+                """,
+                (len(result_prefix), result_prefix),
             )
             self._conn.execute(
                 "DELETE FROM reading_events WHERE reading_id = ?",

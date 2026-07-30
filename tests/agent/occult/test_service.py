@@ -439,6 +439,48 @@ async def test_http_surface_requires_virtual_token_and_runs_real_operations(
 
 
 @pytest.mark.asyncio
+async def test_reading_creation_consumes_virtual_token_rate_limit(tmp_path: Path):
+    service, token, _seen = _service(requests_per_minute=1)
+    readings = ReadingStore(tmp_path / "readings.db")
+    app = Application()
+    OccultHTTPAdapter(service, readings).register(app)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def payload(key: str):
+        return {
+            "contract_version": "1.0.0",
+            "idempotency_key": key,
+            "spread_id": "occult.spread.rate-limited-create",
+            "nodes": [
+                {
+                    "node_id": "build",
+                    "agent_id": "occult.major.magician",
+                    "task": "Build.",
+                }
+            ],
+        }
+
+    async with TestClient(TestServer(app)) as client:
+        created = await client.post(
+            "/v1/occult/readings",
+            headers=headers,
+            json=payload("first"),
+        )
+        limited = await client.post(
+            "/v1/occult/readings",
+            headers=headers,
+            json=payload("second"),
+        )
+        body = await limited.json()
+
+    assert created.status == 202
+    assert limited.status == 429
+    assert body["error"]["retryable"] is True
+    assert body["error"]["redacted"] is True
+    readings.close()
+
+
+@pytest.mark.asyncio
 async def test_retryable_reading_failure_returns_503_and_remains_pending(
     tmp_path: Path,
 ):

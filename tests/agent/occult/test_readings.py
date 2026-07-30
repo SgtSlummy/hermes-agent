@@ -134,6 +134,34 @@ def test_reading_capacity_bounds_new_durable_plans(tmp_path: Path):
         )
 
 
+def test_expired_terminal_readings_are_pruned_before_capacity_check(tmp_path: Path):
+    store = ReadingStore(
+        tmp_path / "readings.db",
+        retention_seconds=1,
+        maximum_readings=1,
+    )
+    first = store.create(
+        _plan(),
+        idempotency_key="first",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+    store.cancel(first)
+    store._conn.execute(
+        "UPDATE readings SET updated_at = 0 WHERE reading_id = ?",
+        (first,),
+    )
+
+    second = store.create(
+        _plan(),
+        idempotency_key="second",
+        contract_version=OCCULT_CONTRACT_VERSION,
+    )
+
+    assert second != first
+    with pytest.raises(ReadingError, match="unknown reading"):
+        store.status(first)
+
+
 def test_three_node_reading_resumes_without_reexecuting_completed_node(
     tmp_path: Path,
 ):
