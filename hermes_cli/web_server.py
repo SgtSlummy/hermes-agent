@@ -15,6 +15,7 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -638,6 +639,136 @@ async def get_status():
         "gateway_updated_at": gateway_updated_at,
         "active_sessions": active_sessions,
     }
+
+
+# ---------------------------------------------------------------------------
+# Occult dashboard bridge.
+#
+# The browser receives only normalized registry and reading data. The
+# router-issued virtual token remains in the dashboard process environment and
+# is never returned to the SPA.
+# ---------------------------------------------------------------------------
+
+_OCCULT_READING_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _occult_dashboard_enabled() -> bool:
+    config = load_config()
+    return cfg_get(config, "occult", "enabled", default=False) is True
+
+
+def _occult_dashboard_request(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    from hermes_cli.occult import _request
+
+    return _request(method, path, payload)
+
+
+def _validated_occult_reading_id(reading_id: str) -> str:
+    value = reading_id.strip()
+    if not _OCCULT_READING_ID_PATTERN.fullmatch(value):
+        raise HTTPException(status_code=400, detail="Invalid reading ID")
+    return urllib.parse.quote(value, safe="")
+
+
+def _require_occult_dashboard_ready() -> None:
+    if not _occult_dashboard_enabled():
+        raise HTTPException(status_code=409, detail="Occult is disabled")
+    if not os.getenv("OCCULT_API_KEY", "").strip():
+        raise HTTPException(
+            status_code=409,
+            detail="Occult virtual token is not configured",
+        )
+
+
+async def _run_occult_dashboard_request(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    try:
+        return await asyncio.to_thread(
+            _occult_dashboard_request,
+            method,
+            path,
+            payload,
+        )
+    except Exception as exc:
+        _log.warning("Occult dashboard request failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="Occult API request failed",
+        ) from None
+
+
+@app.get("/api/occult/status")
+async def get_occult_dashboard_status():
+    enabled = _occult_dashboard_enabled()
+    configured = bool(os.getenv("OCCULT_API_KEY", "").strip())
+    if not enabled or not configured:
+        return {
+            "enabled": enabled,
+            "configured": configured,
+            "connected": False,
+            "agents": [],
+            "routes": [],
+            "decks": [],
+            "pairings": [],
+        }
+
+    try:
+        agents, routes, decks, pairings = await asyncio.gather(
+            _run_occult_dashboard_request("GET", "/v1/occult/major-arcana"),
+            _run_occult_dashboard_request("GET", "/v1/occult/minor-arcana"),
+            _run_occult_dashboard_request("GET", "/v1/occult/decks"),
+            _run_occult_dashboard_request("GET", "/v1/occult/pairings"),
+        )
+    except HTTPException:
+        return {
+            "enabled": True,
+            "configured": True,
+            "connected": False,
+            "agents": [],
+            "routes": [],
+            "decks": [],
+            "pairings": [],
+            "error": "Occult API is unavailable",
+        }
+
+    return {
+        "enabled": True,
+        "configured": True,
+        "connected": True,
+        "agents": agents.get("data", []),
+        "routes": routes.get("data", []),
+        "decks": decks.get("data", []),
+        "pairings": pairings.get("data", []),
+    }
+
+
+@app.get("/api/occult/readings/{reading_id}")
+async def get_occult_dashboard_reading(reading_id: str):
+    _require_occult_dashboard_ready()
+    encoded_id = _validated_occult_reading_id(reading_id)
+    return await _run_occult_dashboard_request(
+        "GET",
+        f"/v1/occult/readings/{encoded_id}",
+    )
+
+
+@app.post("/api/occult/readings/{reading_id}/{action}")
+async def control_occult_dashboard_reading(reading_id: str, action: str):
+    _require_occult_dashboard_ready()
+    if action not in {"resume", "cancel"}:
+        raise HTTPException(status_code=404, detail="Unknown reading action")
+    encoded_id = _validated_occult_reading_id(reading_id)
+    return await _run_occult_dashboard_request(
+        "POST",
+        f"/v1/occult/readings/{encoded_id}/{action}",
+    )
 
 
 # ---------------------------------------------------------------------------

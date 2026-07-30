@@ -63,6 +63,20 @@ async function getSessionToken(): Promise<string> {
 
 export const api = {
   getStatus: () => fetchJSON<StatusResponse>("/api/status"),
+  getOccultStatus: () =>
+    fetchJSON<OccultDashboardStatus>("/api/occult/status"),
+  getOccultReading: (readingId: string) =>
+    fetchJSON<OccultReadingStatus>(
+      `/api/occult/readings/${encodeURIComponent(readingId)}`,
+    ),
+  controlOccultReading: (
+    readingId: string,
+    action: "resume" | "cancel",
+  ) =>
+    fetchJSON<OccultReadingStatus>(
+      `/api/occult/readings/${encodeURIComponent(readingId)}/${action}`,
+      { method: "POST" },
+    ),
   getSessions: (limit = 20, offset = 0) =>
     fetchJSON<PaginatedSessions>(`/api/sessions?limit=${limit}&offset=${offset}`),
   getSessionMessages: (id: string) =>
@@ -379,6 +393,59 @@ export interface StatusResponse {
   latest_config_version: number;
   release_date: string;
   version: string;
+}
+
+export interface OccultAgent {
+  agent_id: string;
+  name: string;
+  version?: string;
+  arcana_number?: number;
+  capabilities?: string[];
+}
+
+export interface OccultRoute {
+  card_id: string;
+  provider_id?: string;
+  model_id?: string;
+  capabilities?: string[];
+  local?: boolean;
+  free?: boolean;
+  privacy?: string;
+  trust_state?: string;
+}
+
+export interface OccultDeck {
+  deck_id: string;
+  version?: string;
+  active?: boolean;
+  allowed_agent_ids?: string[];
+  allowed_card_ids?: string[];
+}
+
+export interface OccultPairing {
+  agent_id: string;
+  card_id?: string;
+  provider_id?: string;
+  model_id?: string;
+}
+
+export interface OccultDashboardStatus {
+  enabled: boolean;
+  configured: boolean;
+  connected: boolean;
+  agents: OccultAgent[];
+  routes: OccultRoute[];
+  decks: OccultDeck[];
+  pairings: OccultPairing[];
+  error?: string;
+}
+
+export interface OccultReadingStatus {
+  reading_id?: string;
+  spread_id?: string;
+  state?: string;
+  nodes?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
 }
 
 export interface SessionInfo {
