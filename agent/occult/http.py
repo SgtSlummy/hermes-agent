@@ -86,6 +86,12 @@ class OccultHTTPAdapter:
     ) -> web.StreamResponse:
         return await OccultOpenAIAdapter(self.service).chat_completions(request)
 
+    async def handle_openai_responses(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+        return await OccultOpenAIAdapter(self.service).responses(request)
+
     async def _agents(self, request: web.Request) -> web.Response:
         return await self._call(
             request, lambda token, _payload: {"data": self.service.agents(token)}

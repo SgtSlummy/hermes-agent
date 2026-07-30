@@ -2075,6 +2075,11 @@ class APIServerAdapter(BasePlatformAdapter):
 
     async def _handle_responses(self, request: "web.Request") -> "web.Response":
         """POST /v1/responses — OpenAI Responses API format."""
+        if (
+            self._occult_http is not None
+            and self._occult_http.handles_openai_request(request)
+        ):
+            return await self._occult_http.handle_openai_responses(request)
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err

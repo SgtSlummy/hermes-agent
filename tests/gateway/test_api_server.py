@@ -387,6 +387,23 @@ class TestAuth:
         assert response.status == 200
         occult.handle_openai_chat.assert_awaited_once_with(request)
 
+    @pytest.mark.asyncio
+    async def test_responses_dispatches_occult_token_before_gateway_auth(self):
+        adapter = _make_adapter(api_key="gateway-key")
+        occult = MagicMock()
+        occult.handles_openai_request.return_value = True
+        occult.handle_openai_responses = AsyncMock(
+            return_value=web.json_response({"id": "resp_occult"})
+        )
+        adapter.attach_occult_http(occult)
+        request = MagicMock()
+        request.headers = {"Authorization": "Bearer occult_client"}
+
+        response = await adapter._handle_responses(request)
+
+        assert response.status == 200
+        occult.handle_openai_responses.assert_awaited_once_with(request)
+
 
 # ---------------------------------------------------------------------------
 # Helpers for HTTP tests
