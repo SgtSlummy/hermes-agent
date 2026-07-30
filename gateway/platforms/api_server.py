@@ -916,6 +916,11 @@ class APIServerAdapter(BasePlatformAdapter):
 
     async def _handle_models(self, request: "web.Request") -> "web.Response":
         """GET /v1/models — return hermes-agent as an available model."""
+        if (
+            self._occult_http is not None
+            and self._occult_http.handles_openai_request(request)
+        ):
+            return await self._occult_http.handle_openai_models(request)
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -996,6 +1001,11 @@ class APIServerAdapter(BasePlatformAdapter):
 
     async def _handle_chat_completions(self, request: "web.Request") -> "web.Response":
         """POST /v1/chat/completions — OpenAI Chat Completions format."""
+        if (
+            self._occult_http is not None
+            and self._occult_http.handles_openai_request(request)
+        ):
+            return await self._occult_http.handle_openai_chat(request)
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -2065,6 +2075,11 @@ class APIServerAdapter(BasePlatformAdapter):
 
     async def _handle_responses(self, request: "web.Request") -> "web.Response":
         """POST /v1/responses — OpenAI Responses API format."""
+        if (
+            self._occult_http is not None
+            and self._occult_http.handles_openai_request(request)
+        ):
+            return await self._occult_http.handle_openai_responses(request)
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -3393,7 +3408,10 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/v1/runs/{run_id}/approval", self._handle_run_approval)
             self._app.router.add_post("/v1/runs/{run_id}/stop", self._handle_stop_run)
             if self._occult_http is not None:
-                self._occult_http.register(self._app)
+                self._occult_http.register(
+                    self._app,
+                    include_openai_compat=False,
+                )
             # Start background sweep to clean up orphaned (unconsumed) run streams
             sweep_task = asyncio.create_task(self._sweep_orphaned_runs())
             try:
