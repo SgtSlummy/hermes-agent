@@ -3,7 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_cli.occult import OccultCLIError, cmd_occult, run_tui_occult_command
+from hermes_cli.occult import (
+    OccultCLIError,
+    _api_base_url,
+    cmd_occult,
+    run_tui_occult_command,
+)
 
 
 class _Response:
@@ -27,6 +32,22 @@ def test_occult_cli_requires_virtual_token(monkeypatch):
     monkeypatch.delenv("OCCULT_API_KEY", raising=False)
     with pytest.raises(OccultCLIError, match="required"):
         cmd_occult(SimpleNamespace(occult_action="agents"))
+
+
+def test_occult_api_url_comes_from_api_server_config(monkeypatch):
+    monkeypatch.delenv("OCCULT_API_URL", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.config.load_config",
+        lambda: {
+            "platforms": {
+                "api_server": {
+                    "extra": {"host": "::1", "port": 9443},
+                }
+            }
+        },
+    )
+
+    assert _api_base_url() == "http://[::1]:9443"
 
 
 def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):

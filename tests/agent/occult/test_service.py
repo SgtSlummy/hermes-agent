@@ -236,7 +236,7 @@ async def test_http_surface_requires_virtual_token_and_runs_real_operations(
     service, token, seen = _service()
     readings = ReadingStore(tmp_path / "readings.db")
 
-    def execute(request):
+    def execute(_token, request):
         return CouncilNodeResult(
             artifact={"node": request.node_id},
             route_summary={"card_id": "minor.pentacles.ace.local.test"},

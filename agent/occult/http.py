@@ -31,7 +31,9 @@ from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
 class OccultHTTPAdapter:
     service: OccultService
     readings: ReadingStore
-    reading_executor: Callable[[CouncilNodeRequest], CouncilNodeResult] | None = None
+    reading_executor: (
+        Callable[[str, CouncilNodeRequest], CouncilNodeResult] | None
+    ) = None
     admin_key_digest: bytes | None = None
 
     def close(self) -> None:
@@ -428,8 +430,12 @@ class OccultHTTPAdapter:
             return self.readings.events(reading_id)
         if operation == "cancel":
             return self.readings.cancel(reading_id)
-        if operation == "resume" and self.reading_executor is not None:
-            return self.readings.resume(reading_id, self.reading_executor)
+        executor = self.reading_executor
+        if operation == "resume" and executor is not None:
+            return self.readings.resume(
+                reading_id,
+                lambda request: executor(token, request),
+            )
         raise ReadingError("unsupported reading operation")
 
     def _admin_authorized(self, request: web.Request) -> bool:

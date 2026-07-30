@@ -1670,6 +1670,23 @@ REQUIRED_ENV_VARS = {}
 
 # Optional environment variables that enhance functionality
 OPTIONAL_ENV_VARS = {
+    # ── Occult local API credentials ─────────────────────────────────────
+    "OCCULT_ADMIN_KEY": {
+        "description": "Occult local administration key",
+        "prompt": "Occult administration key",
+        "url": None,
+        "password": True,
+        "category": "occult",
+        "advanced": True,
+    },
+    "OCCULT_API_KEY": {
+        "description": "Occult local virtual API key",
+        "prompt": "Occult virtual API key",
+        "url": None,
+        "password": True,
+        "category": "occult",
+        "advanced": True,
+    },
     # ── Provider (handled in provider selection, not shown in checklists) ──
     "NOUS_BASE_URL": {
         "description": "Nous Portal base URL override",

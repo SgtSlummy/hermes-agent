@@ -430,6 +430,13 @@ class TestSanitizeEnvLines:
             assert "OPENAI_BASE_URL=https://api.openai.com/v1" in lines
             assert "MESSAGING_CWD=/tmp" in lines
 
+    def test_occult_credentials_are_split_when_concatenated(self):
+        lines = ["OCCULT_ADMIN_KEY=adminOCCULT_API_KEY=client\n"]
+        assert _sanitize_env_lines(lines) == [
+            "OCCULT_ADMIN_KEY=admin\n",
+            "OCCULT_API_KEY=client\n",
+        ]
+
     def test_sanitize_env_file_returns_fix_count(self, tmp_path):
         """sanitize_env_file reports how many entries were fixed."""
         env_file = tmp_path / ".env"
@@ -485,6 +492,12 @@ class TestOptionalEnvVarsRegistry:
         for vars_list in ENV_VARS_BY_VERSION.values():
             all_vars.extend(vars_list)
         assert "TAVILY_API_KEY" in all_vars
+
+    def test_occult_credentials_are_registered_as_passwords(self):
+        from hermes_cli.config import OPTIONAL_ENV_VARS
+
+        for key in ("OCCULT_ADMIN_KEY", "OCCULT_API_KEY"):
+            assert OPTIONAL_ENV_VARS[key]["password"] is True
 
 
 class TestAnthropicTokenMigration:

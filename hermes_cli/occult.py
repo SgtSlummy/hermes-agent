@@ -23,6 +23,7 @@ from agent.occult.runtime import (
     build_occult_http,
     discover_ollama_models,
     normalize_loopback_openai_url,
+    validate_ollama_chat_model,
 )
 from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
 
@@ -60,6 +61,10 @@ def initialize_occult(
     selected_model = str(model or models[0]).strip()
     if selected_model not in models:
         raise OccultCLIError(f"model is not installed in Ollama: {selected_model}")
+    try:
+        validate_ollama_chat_model(canonical_url, selected_model)
+    except OccultRuntimeError as exc:
+        raise OccultCLIError(str(exc)) from None
 
     config = dict(read_raw_config() or {})
     occult = dict(config.get("occult") or {})
@@ -126,7 +131,6 @@ def initialize_occult(
         save_config(config)
         save_env_value("OCCULT_ADMIN_KEY", admin_key)
         save_env_value("OCCULT_API_KEY", token)
-        save_env_value("OCCULT_API_URL", "http://127.0.0.1:8642")
     finally:
         http.close()
 
@@ -144,8 +148,29 @@ def initialize_occult(
     }
 
 
+def _api_base_url() -> str:
+    """Resolve the Occult endpoint from config, with a legacy env override."""
+
+    override = os.getenv("OCCULT_API_URL", "").strip()
+    if override:
+        return override.rstrip("/")
+    from hermes_cli.config import load_config
+
+    config = load_config()
+    platforms = config.get("platforms") if isinstance(config, dict) else None
+    api_server = (
+        platforms.get("api_server") if isinstance(platforms, dict) else None
+    )
+    extra = api_server.get("extra") if isinstance(api_server, dict) else None
+    host = str(extra.get("host", "127.0.0.1")) if isinstance(extra, dict) else "127.0.0.1"
+    port = int(extra.get("port", 8642)) if isinstance(extra, dict) else 8642
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
+
+
 def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
-    base_url = os.getenv("OCCULT_API_URL", "http://127.0.0.1:8642").rstrip("/")
+    base_url = _api_base_url()
     token = os.getenv("OCCULT_API_KEY", "").strip()
     if not token:
         raise OccultCLIError("OCCULT_API_KEY is required")
@@ -180,7 +205,7 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
 def _admin_request(
     method: str, path: str, payload: dict[str, Any] | None = None
 ) -> Any:
-    base_url = os.getenv("OCCULT_API_URL", "http://127.0.0.1:8642").rstrip("/")
+    base_url = _api_base_url()
     admin_key = os.getenv("OCCULT_ADMIN_KEY", "").strip()
     if not admin_key:
         raise OccultCLIError("OCCULT_ADMIN_KEY is required")
@@ -213,7 +238,7 @@ def _admin_request(
 
 
 def _stream_events(reading_id: str) -> Iterator[dict[str, Any]]:
-    base_url = os.getenv("OCCULT_API_URL", "http://127.0.0.1:8642").rstrip("/")
+    base_url = _api_base_url()
     token = os.getenv("OCCULT_API_KEY", "").strip()
     if not token:
         raise OccultCLIError("OCCULT_API_KEY is required")

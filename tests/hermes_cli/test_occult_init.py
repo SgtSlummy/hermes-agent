@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import yaml
+import pytest
 
-from hermes_cli.occult import initialize_occult
+from agent.occult.runtime import OccultRuntimeError
+from hermes_cli.occult import OccultCLIError, initialize_occult
 
 
 def test_occult_init_creates_local_profile_without_returning_secrets(
@@ -17,6 +19,10 @@ def test_occult_init_creates_local_profile_without_returning_secrets(
         "hermes_cli.occult.discover_ollama_models",
         lambda _url: ("qwen2.5:3b",),
     )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model: None,
+    )
 
     result = initialize_occult(model="qwen2.5:3b")
 
@@ -27,6 +33,7 @@ def test_occult_init_creates_local_profile_without_returning_secrets(
     env_text = (home / ".env").read_text(encoding="utf-8")
     assert "OCCULT_ADMIN_KEY=occult_admin_" in env_text
     assert "OCCULT_API_KEY=occult_" in env_text
+    assert "OCCULT_API_URL=" not in env_text
     assert "occult_admin_" not in str(result)
     assert not any(
         isinstance(value, str) and value.startswith(("occult_", "occult_admin_"))
@@ -43,9 +50,40 @@ def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):
         "hermes_cli.occult.discover_ollama_models",
         lambda _url: ("qwen2.5:3b",),
     )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model: None,
+    )
 
     first = initialize_occult(model="qwen2.5:3b")
     second = initialize_occult(model="qwen2.5:3b")
 
     assert first["token_created"] is True
     assert second["token_created"] is False
+
+
+def test_occult_init_rejects_non_chat_model_before_writing(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("embedding-only",),
+    )
+
+    def reject_chat(_url, _model):
+        raise OccultRuntimeError(
+            "Ollama model does not support chat completions: embedding-only"
+        )
+
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        reject_chat,
+    )
+
+    with pytest.raises(OccultCLIError, match="does not support chat"):
+        initialize_occult(model="embedding-only")
+
+    assert not (home / "config.yaml").exists()

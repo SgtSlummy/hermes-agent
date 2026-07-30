@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from agent.occult.readings import ReadingNode, ReadingPlan
 from agent.occult.runtime import (
     STARTER_AGENT_IDS,
     STARTER_CARD_ID,
@@ -96,7 +97,7 @@ def test_real_runtime_path_composes_agent_and_invokes_local_adapter(
         captured["payload"] = json.loads(request.data.decode())
         return Response()
 
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("agent.occult.runtime._open_local_url", fake_urlopen)
     http = build_occult_http(_config(), home=tmp_path)
     assert http is not None
     token = http.service.token_authority.issue(
@@ -137,3 +138,92 @@ def test_real_runtime_path_composes_agent_and_invokes_local_adapter(
     assert "The Magician" in message
     assert "# Task\nBuild the test." in message
     http.close()
+
+
+def test_runtime_executes_reading_nodes_through_occult_service(
+    tmp_path: Path,
+    monkeypatch,
+):
+    responses = iter(("built", "audited"))
+    captured: list[dict[str, object]] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps({
+                "choices": [{"message": {"content": next(responses)}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+            }).encode()
+
+    def fake_open(request, *, timeout):
+        captured.append(json.loads(request.data.decode()))
+        return Response()
+
+    monkeypatch.setattr("agent.occult.runtime._open_local_url", fake_open)
+    http = build_occult_http(_config(), home=tmp_path)
+    assert http is not None
+    token = http.service.token_authority.issue(
+        VirtualTokenPolicy(
+            token_id="reading-local",
+            allowed_agent_ids=frozenset({
+                "occult.major.magician",
+                "occult.major.justice",
+            }),
+            allowed_card_ids=frozenset({STARTER_CARD_ID}),
+        )
+    )
+    reading_id = http.readings.create(
+        ReadingPlan(
+            spread_id="occult.spread.runtime",
+            nodes=(
+                ReadingNode("build", "occult.major.magician", "Build."),
+                ReadingNode(
+                    "audit",
+                    "occult.major.justice",
+                    "Audit.",
+                    depends_on=("build",),
+                ),
+            ),
+        ),
+        idempotency_key="runtime-reading",
+        contract_version="1.0.0",
+    )
+
+    status = http._authorized_reading(token, reading_id, "resume")
+
+    assert status["state"] == "completed"
+    assert len(captured) == 2
+    audit_message = captured[1]["messages"][0]["content"]
+    assert "# Dependency artifact" in audit_message
+    assert "built" in audit_message
+    http.close()
+
+
+def test_local_provider_requests_ignore_ambient_proxies(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class Opener:
+        def open(self, request, *, timeout):
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            return object()
+
+    def fake_build_opener(handler):
+        captured["proxies"] = handler.proxies
+        return Opener()
+
+    monkeypatch.setattr("urllib.request.build_opener", fake_build_opener)
+    from agent.occult.runtime import _open_local_url
+
+    _open_local_url(
+        urllib.request.Request("http://127.0.0.1:11434/v1/models"),
+        timeout=1,
+    )
+
+    assert captured["proxies"] == {}
+    assert captured["url"] == "http://127.0.0.1:11434/v1/models"

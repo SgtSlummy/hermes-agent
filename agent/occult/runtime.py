@@ -8,6 +8,7 @@ the caller must explicitly pass configuration with ``occult.enabled: true``.
 from __future__ import annotations
 
 import base64
+import hashlib
 import ipaddress
 import json
 import os
@@ -33,7 +34,7 @@ from agent.occult.mythos import (
     ProviderFailure,
 )
 from agent.occult.pairing import RuntimePolicy
-from agent.occult.readings import ReadingStore
+from agent.occult.readings import CouncilNodeRequest, CouncilNodeResult, ReadingStore
 from agent.occult.service import OccultService
 from agent.occult.tarot_packages import SystemPackagePolicy, TarotPackageManager
 from agent.occult.virtual_tokens import SQLiteVirtualTokenStore, VirtualTokenAuthority
@@ -53,6 +54,17 @@ DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 
 class OccultRuntimeError(RuntimeError):
     """Safe-to-surface runtime assembly or local-provider failure."""
+
+
+def _open_local_url(
+    request: urllib.request.Request,
+    *,
+    timeout: float,
+):
+    """Open a loopback request without consulting ambient proxy settings."""
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return opener.open(request, timeout=timeout)
 
 
 def normalize_loopback_openai_url(value: str) -> str:
@@ -98,7 +110,7 @@ def discover_ollama_models(
         headers={"Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with _open_local_url(request, timeout=timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, ValueError, urllib.error.URLError):
         raise OccultRuntimeError(
@@ -117,6 +129,53 @@ def discover_ollama_models(
             "Ollama has no models; run 'ollama pull qwen2.5:3b' and retry"
         )
     return tuple(models)
+
+
+def validate_ollama_chat_model(
+    base_url: str,
+    model_id: str,
+    *,
+    timeout_seconds: float = 30.0,
+) -> None:
+    """Verify that an installed Ollama model accepts chat completions."""
+
+    canonical = normalize_loopback_openai_url(base_url)
+    selected_model = str(model_id or "").strip()
+    if not selected_model:
+        raise OccultRuntimeError("local chat model is required")
+    body = json.dumps(
+        {
+            "model": selected_model,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "max_tokens": 1,
+            "stream": False,
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        canonical + "/chat/completions",
+        data=body,
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with _open_local_url(request, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        choices = payload.get("choices") if isinstance(payload, Mapping) else None
+        if (
+            not isinstance(choices, list)
+            or not choices
+            or not isinstance(choices[0], Mapping)
+            or not isinstance(choices[0].get("message"), Mapping)
+        ):
+            raise ValueError
+    except (OSError, ValueError, urllib.error.URLError):
+        raise OccultRuntimeError(
+            f"Ollama model does not support chat completions: {selected_model}"
+        ) from None
 
 
 def _ollama_handler(
@@ -148,7 +207,7 @@ def _ollama_handler(
             },
         )
         try:
-            with urllib.request.urlopen(
+            with _open_local_url(
                 outbound,
                 timeout=timeout_seconds,
             ) as response:
@@ -180,6 +239,60 @@ def _ollama_handler(
         )
 
     return invoke
+
+
+def _reading_executor(
+    service: OccultService,
+    readings: ReadingStore,
+):
+    """Adapt persisted Council nodes into authenticated Occult invocations."""
+
+    def execute(
+        plaintext_token: str,
+        request: CouncilNodeRequest,
+    ) -> CouncilNodeResult:
+        sections = [request.task]
+        for reference in request.input_artifact_references:
+            artifact = readings.artifact(reference)
+            sections.append(
+                "# Dependency artifact\n"
+                + json.dumps(artifact, sort_keys=True, separators=(",", ":"))
+            )
+        digest = hashlib.sha256(request.idempotency_key.encode("utf-8")).hexdigest()
+        result = service.invoke(
+            plaintext_token,
+            {
+                "contract_version": request.contract_version,
+                "invocation_id": f"inv_reading_{digest[:24]}",
+                "idempotency_key": request.idempotency_key,
+                "agent_id": request.agent_id,
+                "orientation": "upright",
+                "input": {"message": "\n\n".join(sections)},
+                "required_capabilities": ["text"],
+                "routing": {
+                    "mode": "local_only",
+                    "free_only": True,
+                    "local_only": True,
+                    "maximum_fallbacks": 0,
+                    "maximum_cost_usd": 0,
+                },
+                "deck_id": STARTER_DECK_ID,
+                "spread_id": request.reading_id,
+                "metadata": {
+                    "reading_id": request.reading_id,
+                    "node_id": request.node_id,
+                },
+            },
+        )
+        return CouncilNodeResult(
+            artifact={
+                "content": result["output"],
+                "media_type": "text/plain",
+            },
+            route_summary=result["route"],
+        )
+
+    return execute
 
 
 def _starter_root() -> Path:
@@ -340,11 +453,12 @@ def build_occult_http(
         deck_registry=deck_registry,
     )
     readings = ReadingStore(root / "readings.db")
-    env = environ or os.environ
+    env = os.environ if environ is None else environ
     admin_key = str(env.get("OCCULT_ADMIN_KEY", "")).strip()
     return OccultHTTPAdapter(
         service=service,
         readings=readings,
+        reading_executor=_reading_executor(service, readings),
         admin_key_digest=(
             OccultHTTPAdapter.digest_admin_key(admin_key) if admin_key else None
         ),
@@ -360,4 +474,5 @@ __all__ = [
     "build_occult_http",
     "discover_ollama_models",
     "normalize_loopback_openai_url",
+    "validate_ollama_chat_model",
 ]
