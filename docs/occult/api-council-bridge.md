@@ -241,6 +241,31 @@ control is added, so existing keyboard navigation, narrow-terminal layout,
 and reduced-motion behavior apply unchanged. The TUI process must inherit
 `OCCULT_API_URL` and `OCCULT_API_KEY`.
 
+## Dashboard controls
+
+The Hermes dashboard includes an **Occult** inspector at `/occult` when this
+code is installed. It uses the same `occult.enabled` feature gate and the same
+server-side `OCCULT_API_URL` and `OCCULT_API_KEY` values as the CLI.
+
+The browser never receives the virtual token. Authenticated dashboard proxy
+endpoints return only:
+
+- allowed Major Arcana agents;
+- allowed Minor Arcana routes;
+- installed decks;
+- compatible pairings; and
+- a requested reading's redacted status.
+
+Operators can inspect, resume, or cancel a known reading ID. Cancellation uses
+an explicit confirmation dialog. The dashboard deliberately does not add a
+second transcript or prompt composer; the embedded Hermes TUI remains the
+primary chat surface.
+
+When the feature gate is disabled, the token is absent, or the Occult API
+cannot be reached, the page remains inert and shows the required setup state.
+Provider credentials, router virtual tokens, and raw upstream responses are
+never returned to the browser.
+
 ## Stream recovery
 
 If an operator loses the stream:

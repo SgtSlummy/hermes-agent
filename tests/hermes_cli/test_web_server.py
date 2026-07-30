@@ -191,6 +191,114 @@ class TestWebServerEndpoints:
         assert resp.json()["gateway_state"] == "startup_failed"
         assert resp.json()["gateway_platforms"] == {}
 
+    def test_occult_dashboard_status_is_inert_when_disabled(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(
+            web_server,
+            "load_config",
+            lambda: {"occult": {"enabled": False}},
+        )
+        monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+        proxy = MagicMock()
+        monkeypatch.setattr(web_server, "_occult_dashboard_request", proxy)
+
+        resp = self.client.get("/api/occult/status")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "enabled": False,
+            "configured": False,
+            "connected": False,
+            "agents": [],
+            "routes": [],
+            "decks": [],
+            "pairings": [],
+        }
+        proxy.assert_not_called()
+
+    def test_occult_dashboard_status_aggregates_without_exposing_token(
+        self,
+        monkeypatch,
+    ):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(
+            web_server,
+            "load_config",
+            lambda: {"occult": {"enabled": True}},
+        )
+        monkeypatch.setenv("OCCULT_API_KEY", "occult_dashboard_private")
+        responses = {
+            "/v1/occult/major-arcana": {
+                "data": [{"agent_id": "occult.major.magician", "name": "The Magician"}]
+            },
+            "/v1/occult/minor-arcana": {
+                "data": [{"card_id": "minor.pentacles.ace.local.test"}]
+            },
+            "/v1/occult/decks": {
+                "data": [{"deck_id": "occult.deck.development"}]
+            },
+            "/v1/occult/pairings": {
+                "data": [{"agent_id": "occult.major.magician"}]
+            },
+        }
+
+        def proxy(method, path, payload=None):
+            assert method == "GET"
+            assert payload is None
+            return responses[path]
+
+        monkeypatch.setattr(web_server, "_occult_dashboard_request", proxy)
+
+        resp = self.client.get("/api/occult/status")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["connected"] is True
+        assert data["agents"][0]["name"] == "The Magician"
+        assert data["routes"][0]["card_id"].startswith("minor.")
+        assert "occult_dashboard_private" not in resp.text
+
+    def test_occult_dashboard_reading_controls_are_bounded(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        monkeypatch.setattr(
+            web_server,
+            "load_config",
+            lambda: {"occult": {"enabled": True}},
+        )
+        monkeypatch.setenv("OCCULT_API_KEY", "occult_dashboard_private")
+        calls = []
+
+        def proxy(method, path, payload=None):
+            calls.append((method, path, payload))
+            return {"reading_id": "reading:test", "state": "completed"}
+
+        monkeypatch.setattr(web_server, "_occult_dashboard_request", proxy)
+
+        status = self.client.get("/api/occult/readings/reading:test")
+        resumed = self.client.post("/api/occult/readings/reading:test/resume")
+        rejected = self.client.post("/api/occult/readings/reading:test/delete")
+        invalid = self.client.get("/api/occult/readings/not%20valid")
+
+        assert status.status_code == 200
+        assert resumed.status_code == 200
+        assert rejected.status_code == 404
+        assert invalid.status_code == 400
+        assert calls == [
+            ("GET", "/v1/occult/readings/reading%3Atest", None),
+            ("POST", "/v1/occult/readings/reading%3Atest/resume", None),
+        ]
+
+    def test_occult_dashboard_requires_dashboard_session_token(self):
+        from starlette.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        response = TestClient(app).get("/api/occult/status")
+
+        assert response.status_code == 401
+
     def test_get_config_schema(self):
         resp = self.client.get("/api/config/schema")
         assert resp.status_code == 200

@@ -67,6 +67,7 @@ import ProfilesPage from "@/pages/ProfilesPage";
 import SkillsPage from "@/pages/SkillsPage";
 import PluginsPage from "@/pages/PluginsPage";
 import ChatPage from "@/pages/ChatPage";
+import OccultPage from "@/pages/OccultPage";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { useI18n } from "@/i18n";
@@ -110,6 +111,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/sessions": SessionsPage,
   "/analytics": AnalyticsPage,
   "/models": ModelsPage,
+  "/occult": OccultPage,
   "/logs": LogsPage,
   "/cron": CronPage,
   "/skills": SkillsPage,
@@ -147,6 +149,7 @@ const BUILTIN_NAV_REST: NavItem[] = [
     label: "Models",
     icon: Cpu,
   },
+  { path: "/occult", label: "Occult", icon: Sparkles },
   { path: "/logs", labelKey: "logs", label: "Logs", icon: FileText },
   { path: "/cron", labelKey: "cron", label: "Cron", icon: Clock },
   { path: "/skills", labelKey: "skills", label: "Skills", icon: Package },
