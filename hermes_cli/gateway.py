@@ -2122,11 +2122,16 @@ def _build_service_path_dirs(project_root: Path | None = None) -> list[str]:
 
     hermes_home = get_hermes_home()
     hermes_node = hermes_home / "node" / "bin"
-    if hermes_node.is_dir():
-        candidates.append(str(hermes_node))
     hermes_nm = hermes_home / "node_modules" / ".bin"
-    if hermes_nm.is_dir():
-        candidates.append(str(hermes_nm))
+    for candidate in (hermes_node, hermes_nm):
+        try:
+            if candidate.is_dir():
+                candidates.append(str(candidate))
+        except OSError:
+            # System-unit generation can run under sudo while targeting a
+            # different user. Do not fail merely because the caller cannot
+            # inspect the calling user's private Hermes directories.
+            continue
 
     return candidates
 

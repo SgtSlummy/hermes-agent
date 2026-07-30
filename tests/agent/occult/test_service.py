@@ -123,6 +123,8 @@ class _PackageManager:
 
 def _service(
     agent_ids: tuple[str, ...] = ("occult.major.magician",),
+    *,
+    maximum_concurrent_requests: int = 8,
 ):
     seen_messages: list[str] = []
 
@@ -130,7 +132,10 @@ def _service(
         seen_messages.append(request.message)
         return AdapterResponse("completed", input_tokens=10, output_tokens=2)
 
-    router = MythosRouter(adapters={"mock": MockProviderAdapter(invoke)})
+    router = MythosRouter(
+        adapters={"mock": MockProviderAdapter(invoke)},
+        maximum_concurrent_requests=maximum_concurrent_requests,
+    )
     route = MinorArcanaDescriptor(
         card_id="minor.pentacles.ace.local.test",
         provider_id="local-test",
@@ -570,6 +575,38 @@ async def test_http_bridge_returns_strict_redacted_failure_profile(tmp_path: Pat
             "Occult contract version mismatch: expected '1.0.0', received '2.0.0'"
         ),
         "retryable": False,
+        "redacted": True,
+    }
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_http_bridge_maps_capacity_pressure_to_retryable_503(tmp_path: Path):
+    service, token, seen = _service(maximum_concurrent_requests=1)
+    app = Application()
+    OccultHTTPAdapter(
+        service,
+        ReadingStore(tmp_path / "readings.db"),
+    ).register(app)
+    assert service.router._capacity.acquire(timeout=0)
+    try:
+        async with TestClient(TestServer(app)) as client:
+            response = await client.post(
+                "/v1/occult/invoke",
+                headers={"Authorization": f"Bearer {token}"},
+                json=_invocation(),
+            )
+            result = await response.json()
+    finally:
+        service.router._capacity.release()
+
+    assert response.status == 503
+    assert result["status"] == "failed"
+    assert result["error"] == {
+        "contract_version": "1.0.0",
+        "code": "OCCULT_CAPACITY_EXHAUSTED",
+        "message": "Occult provider capacity is temporarily exhausted",
+        "retryable": True,
         "redacted": True,
     }
     assert seen == []

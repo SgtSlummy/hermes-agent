@@ -22,6 +22,20 @@ def _make_hermes_tree(root: Path) -> None:
     (root / "memory_store.db").write_bytes(b"fake-sqlite")
     (root / "hermes_state.db").write_bytes(b"fake-state")
 
+    # Occult runtime state
+    occult = root / "occult"
+    occult.mkdir(exist_ok=True)
+    with sqlite3.connect(occult / "readings.db") as connection:
+        connection.execute(
+            "CREATE TABLE readings (id TEXT PRIMARY KEY, status TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO readings (id, status) VALUES (?, ?)",
+            ("reading-001", "completed"),
+        )
+    (occult / "mythos-state.json").write_text('{"routes": []}\n')
+    (occult / "decks.json").write_text('{"decks": []}\n')
+
     # Sessions
     (root / "sessions").mkdir(exist_ok=True)
     (root / "sessions" / "abc123.json").write_text("{}")
@@ -178,6 +192,10 @@ class TestBackup:
             assert "logs/agent.log" in names
             # Skins
             assert "skins/cyber.yaml" in names
+            # Occult runtime state
+            assert "occult/readings.db" in names
+            assert "occult/mythos-state.json" in names
+            assert "occult/decks.json" in names
 
     def test_excludes_hermes_agent(self, tmp_path, monkeypatch):
         """Backup does NOT include hermes-agent/ directory."""
@@ -535,6 +553,19 @@ class TestRoundTrip:
         assert (dst_home / "profiles" / "coder" / "config.yaml").exists()
         assert (dst_home / "sessions" / "abc123.json").exists()
         assert (dst_home / "logs" / "agent.log").exists()
+        assert json.loads((dst_home / "occult" / "mythos-state.json").read_text()) == {
+            "routes": []
+        }
+        assert json.loads((dst_home / "occult" / "decks.json").read_text()) == {
+            "decks": []
+        }
+        with sqlite3.connect(dst_home / "occult" / "readings.db") as connection:
+            restored = connection.execute(
+                "SELECT id, status FROM readings"
+            ).fetchall()
+        assert restored == [("reading-001", "completed")]
+        assert not (dst_home / "occult" / "readings.db-wal").exists()
+        assert not (dst_home / "occult" / "readings.db-shm").exists()
 
         # hermes-agent should NOT be present
         assert not (dst_home / "hermes-agent").exists()

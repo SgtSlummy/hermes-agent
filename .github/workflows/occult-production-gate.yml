@@ -1,0 +1,261 @@
+name: Occult production gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "agent/occult/**"
+      - "scripts/occult_release.py"
+      - "tests/agent/occult/**"
+      - "docs/occult/**"
+      - ".github/workflows/occult-production-gate.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "web/**"
+      - "ui-tui/**"
+      - "website/**"
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - "flake.nix"
+      - "flake.lock"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version recorded in immutable metadata
+        required: true
+        default: "0.0.0-preview"
+        type: string
+      channel:
+        description: Stable requires production-environment approval and Sigstore
+        required: true
+        default: preview
+        type: choice
+        options: [nightly, preview, stable]
+      council_ref:
+        description: Reviewed Agents Council ref compatible with this release
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: occult-production-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_CHANNEL: ${{ inputs.channel || 'preview' }}
+  RELEASE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+  RELEASE_VERSION: ${{ inputs.version || format('pr-{0}', github.event.pull_request.number) }}
+
+jobs:
+  platform:
+    name: Python package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - name: Install pinned development dependencies
+        run: uv sync --frozen --extra dev --extra homeassistant
+      - name: Verify Occult runtime and release controls
+        run: uv run pytest tests/agent/occult tests/hermes_cli/test_backup.py -q
+        env:
+          OPENAI_API_KEY: ""
+          OPENROUTER_API_KEY: ""
+          NOUS_API_KEY: ""
+      - name: Build wheel and source distribution
+        run: uv build --sdist --wheel
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hermes-platform-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: error
+
+  council:
+    name: Hermes and Agents Council interoperability
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Hermes
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: hermes
+      - name: Checkout Agents Council
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: SgtSlummy/agents-council
+          ref: ${{ inputs.council_ref || 'main' }}
+          persist-credentials: false
+          path: council
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.9"
+      - name: Verify Council
+        working-directory: council
+        run: |
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun test
+      - name: Verify live Hermes-to-Council transport
+        working-directory: hermes
+        env:
+          AGENTS_COUNCIL_ROOT: ${{ github.workspace }}/council
+          OPENAI_API_KEY: ""
+          OPENROUTER_API_KEY: ""
+          NOUS_API_KEY: ""
+        run: |
+          uv sync --frozen --extra dev --extra homeassistant
+          uv run pytest tests/agent/occult/test_council_transport_e2e.py -q
+
+  nix:
+    name: Nix package
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/nix-setup
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - run: nix flake check --print-build-logs
+      - run: nix build --out-link result --print-build-logs
+      - name: Package immutable Nix output
+        run: tar --sort=name --mtime="@${SOURCE_DATE_EPOCH:-0}" -chzf nix-package.tar.gz result
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hermes-nix
+          path: nix-package.tar.gz
+          if-no-files-found: error
+
+  stage:
+    name: Assemble immutable release
+    needs: [platform, council, nix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Install pinned Python dependencies
+        # The Occult package exports its aiohttp adapter; the existing
+        # homeassistant extra is the smallest pinned aiohttp dependency set.
+        run: uv sync --frozen --extra homeassistant
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: hermes-platform-*
+          path: compiled/platforms
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: hermes-nix
+          path: compiled/nix
+      - name: Build dashboard, TUI, and documentation
+        run: |
+          npm ci --prefix web
+          (cd web && npm audit --omit=dev --audit-level=critical)
+          npm run build --prefix web
+          npm ci --prefix ui-tui
+          (cd ui-tui && npm audit --omit=dev --audit-level=critical)
+          npm run build --prefix ui-tui/packages/hermes-ink
+          npm run type-check --prefix ui-tui
+          npm test --prefix ui-tui
+          npm run build --prefix ui-tui
+          npm ci --prefix website
+          (cd website && npm audit --omit=dev --audit-level=critical)
+          uv run --frozen npm run prebuild --prefix website
+          npm run typecheck --prefix website
+          npm run build --prefix website
+          mkdir -p compiled/dashboard compiled/tui compiled/docs
+          cp -R hermes_cli/web_dist/. compiled/dashboard/
+          cp ui-tui/dist/entry.js compiled/tui/entry.js
+          cp -R website/build/. compiled/docs/
+      - name: Build OCI container from pinned source
+        run: docker buildx build --output type=oci,dest=compiled/hermes-occult.oci.tar .
+      - name: Assemble and verify staged bytes
+        run: |
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$RELEASE_COMMIT")"
+          export SOURCE_DATE_EPOCH
+          uv run --frozen python scripts/occult_release.py assemble \
+            --artifacts compiled \
+            --output staged \
+            --version "$RELEASE_VERSION" \
+            --commit "$RELEASE_COMMIT" \
+            --channel "$RELEASE_CHANNEL"
+          uv run --frozen python scripts/occult_release.py verify staged --allow-unsigned
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: occult-staged-${{ env.RELEASE_COMMIT }}
+          path: staged/
+          if-no-files-found: error
+          retention-days: 30
+
+  promote:
+    name: Sign and promote exact staged bytes
+    if: github.event_name == 'workflow_dispatch' && inputs.channel == 'stable'
+    needs: stage
+    runs-on: ubuntu-latest
+    environment: occult-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - name: Install pinned Python dependencies
+        run: uv sync --frozen
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: occult-staged-${{ env.RELEASE_COMMIT }}
+          path: staged
+      - name: Sign and cryptographically verify the checksum manifest
+        uses: sigstore/gh-action-sigstore-python@f514d46b907ebcd5bedc05145c03b69c1edd8b46 # v3.0.0
+        with:
+          inputs: staged/SHA256SUMS.txt
+          verify: true
+          verify-cert-identity: >-
+            https://github.com/SgtSlummy/hermes-agent/.github/workflows/occult-production-gate.yml@${{ github.ref }}
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
+      - name: Verify and promote without rebuilding
+        run: |
+          uv run --frozen python scripts/occult_release.py verify staged --require-signature
+          uv run --frozen python scripts/occult_release.py promote staged promoted
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: occult-stable-${{ env.RELEASE_VERSION }}-${{ env.RELEASE_COMMIT }}
+          path: promoted/
+          if-no-files-found: error
+          retention-days: 90

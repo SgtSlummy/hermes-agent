@@ -42,7 +42,7 @@ Point any OpenAI-compatible client at `http://localhost:8642/v1`:
 ```bash
 # Test with curl
 curl http://localhost:8642/v1/chat/completions \
-  -H "Authorization: Bearer change-me-local-dev" \
+  -H "Authorization: Bearer <local-dev-token>" \
   -H "Content-Type: application/json" \
   -d '{"model": "hermes-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```

@@ -124,7 +124,7 @@ Edit `~/.openviking/ov.conf`:
     "provider": "openai",
     "model": "Hermes-4-70B",
     "api_base": "http://127.0.0.1:8645/v1",
-    "api_key": "unused-proxy-attaches-real-creds"
+    "api_key": "<proxy-managed>"
   }
 }
 ```

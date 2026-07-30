@@ -103,7 +103,7 @@ The legacy `hermes honcho setup` command still works (it now redirects to `herme
 
 ```json
 {
-  "apiKey": "your-key-from-app.honcho.dev",
+  "apiKey": "<key-from-app.honcho.dev>",
   "hosts": {
     "hermes": {
       "enabled": true,
