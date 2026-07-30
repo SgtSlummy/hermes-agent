@@ -24,17 +24,22 @@ class ExactKeyLockPool:
 
     @contextmanager
     def acquire(self, key: Hashable) -> Iterator[None]:
+        """Serialize one key; callers must not reacquire it on the same thread."""
+
         with self._guard:
             entry = self._entries.get(key)
             if entry is None:
                 entry = _LockEntry(Lock())
                 self._entries[key] = entry
             entry.references += 1
-        entry.lock.acquire()
+        acquired = False
         try:
+            entry.lock.acquire()
+            acquired = True
             yield
         finally:
-            entry.lock.release()
+            if acquired:
+                entry.lock.release()
             with self._guard:
                 entry.references -= 1
                 if entry.references == 0:

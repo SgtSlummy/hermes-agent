@@ -305,6 +305,44 @@ def test_durable_invocation_results_have_bounded_retention(tmp_path: Path):
     assert calls == [0, 1, 2]
 
 
+def test_idempotency_identity_horizon_expires_keys_explicitly(
+    tmp_path: Path,
+    monkeypatch,
+):
+    now = [100.0]
+    monkeypatch.setattr("agent.occult.idempotency.time.time", lambda: now[0])
+    store = SQLiteInvocationResultStore(
+        tmp_path / "invocations.db",
+        retention_seconds=10,
+        identity_retention_seconds=20,
+    )
+    calls = []
+    store.run(
+        "client",
+        "old-key",
+        "old-fingerprint",
+        lambda: calls.append("old") or {"value": "old"},
+    )
+
+    now[0] = 121.0
+    store.run(
+        "client",
+        "prune-trigger",
+        "trigger-fingerprint",
+        lambda: calls.append("trigger") or {"value": "trigger"},
+    )
+    reused = store.run(
+        "client",
+        "old-key",
+        "new-fingerprint",
+        lambda: calls.append("reused") or {"value": "reused"},
+    )
+    store.close()
+
+    assert reused == {"value": "reused"}
+    assert calls == ["old", "trigger", "reused"]
+
+
 @pytest.mark.asyncio
 async def test_http_surface_requires_virtual_token_and_runs_real_operations(
     tmp_path: Path,
@@ -432,6 +470,7 @@ async def test_retryable_reading_failure_returns_503_and_remains_pending(
     assert response.status == 503
     assert body["error"]["retryable"] is True
     assert readings.status(reading_id)["state"] == "pending"
+    readings.close()
 
 
 @pytest.mark.asyncio

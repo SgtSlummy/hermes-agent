@@ -32,6 +32,13 @@ class OccultCLIError(RuntimeError):
     pass
 
 
+class _NoOccultRedirect(urllib.request.HTTPRedirectHandler):
+    """Fail closed instead of forwarding local credentials to redirects."""
+
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
 def initialize_occult(
     *,
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
@@ -236,7 +243,10 @@ def _client_timeout_seconds() -> float:
 def _open_occult_url(request: urllib.request.Request, *, timeout: float):
     """Open an Occult request without exposing credentials to ambient proxies."""
 
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoOccultRedirect(),
+    )
     return opener.open(request, timeout=timeout)
 
 

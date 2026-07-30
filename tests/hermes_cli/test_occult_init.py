@@ -8,6 +8,11 @@ from agent.occult.runtime import OccultRuntimeError
 from hermes_cli.occult import OccultCLIError, initialize_occult
 
 
+@pytest.fixture(autouse=True)
+def _isolate_path_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+
 def test_occult_init_creates_local_profile_without_returning_secrets(
     tmp_path: Path,
     monkeypatch,

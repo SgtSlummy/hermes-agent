@@ -55,6 +55,17 @@ def test_unexposed_token_can_be_discarded_without_persistent_orphan(tmp_path):
     restarted_store.close()
 
 
+def test_revoked_token_cannot_be_discarded_from_gateway_recognition():
+    authority = VirtualTokenAuthority(clock=lambda: 100.0)
+    plaintext = authority.issue(_policy())
+    authority.revoke("client-1")
+
+    with pytest.raises(VirtualTokenError, match="revoked.*cannot be discarded"):
+        authority.discard("client-1")
+
+    assert authority.recognizes(plaintext) is True
+
+
 def test_scope_rate_expiry_and_revocation_are_enforced():
     now = [100.0]
     authority = VirtualTokenAuthority(clock=lambda: now[0])

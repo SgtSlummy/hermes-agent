@@ -428,6 +428,8 @@ class VirtualTokenAuthority:
             state = self._tokens.get(token_id)
             if state is None:
                 raise VirtualTokenError("unknown virtual token")
+            if state.revoked:
+                raise VirtualTokenError("revoked virtual token cannot be discarded")
             if state.calls or state.committed_cost_usd or state.reserved_cost_usd:
                 raise VirtualTokenError("active virtual token cannot be discarded")
             if self.store is not None:

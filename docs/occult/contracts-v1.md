@@ -76,6 +76,11 @@ contain provider and model identifiers, but never their authentication data.
 - Each invocation supplies an `idempotency_key`.
 - Repeating the same key and semantic request must return the existing reading
   or invocation result; reuse with different content must fail.
+- Invocation result bodies are retained for seven days by default. Their
+  token-scoped key fingerprints remain protected for four times the configured
+  result-retention window. After that explicit identity horizon, a key is
+  expired and may execute again; clients requiring longer deduplication must
+  issue a fresh key or configure a longer horizon.
 - Event sequences are contiguous and strictly increasing within one reading.
 - An event stream belongs to exactly one reading.
 - A completed stream ends in exactly one of `reading.completed`,

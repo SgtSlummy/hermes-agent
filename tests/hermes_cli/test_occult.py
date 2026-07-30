@@ -1,5 +1,6 @@
 import json
 import urllib.request
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,11 @@ from hermes_cli.occult import (
     cmd_occult,
     run_tui_occult_command,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_path_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
 
 class _Response:
@@ -98,8 +104,17 @@ def test_occult_transport_disables_ambient_proxies(monkeypatch):
             seen["timeout"] = timeout
             return _Response({"ok": True})
 
-    def build_opener(handler):
-        seen["proxies"] = handler.proxies
+    def build_opener(*handlers):
+        proxy_handler = next(
+            handler
+            for handler in handlers
+            if isinstance(handler, urllib.request.ProxyHandler)
+        )
+        seen["proxies"] = proxy_handler.proxies
+        seen["redirects_disabled"] = any(
+            handler.__class__.__name__ == "_NoOccultRedirect"
+            for handler in handlers
+        )
         return Opener()
 
     monkeypatch.setattr("urllib.request.build_opener", build_opener)
@@ -112,6 +127,7 @@ def test_occult_transport_disables_ambient_proxies(monkeypatch):
         "url": "http://127.0.0.1:8642/v1/occult/decks",
         "timeout": 9,
         "proxies": {},
+        "redirects_disabled": True,
     }
 
 

@@ -25,14 +25,22 @@ class SQLiteInvocationResultStore:
         path: Path,
         *,
         retention_seconds: float = 7 * 24 * 60 * 60,
+        identity_retention_seconds: float | None = None,
         maximum_entries: int = 10_000,
     ) -> None:
         if retention_seconds <= 0:
             raise ValueError("retention_seconds must be positive")
+        if identity_retention_seconds is None:
+            identity_retention_seconds = retention_seconds * 4
+        if identity_retention_seconds <= retention_seconds:
+            raise ValueError(
+                "identity_retention_seconds must exceed retention_seconds"
+            )
         if maximum_entries <= 0:
             raise ValueError("maximum_entries must be positive")
         self.path = path
         self.retention_seconds = float(retention_seconds)
+        self.identity_retention_seconds = float(identity_retention_seconds)
         self.maximum_entries = int(maximum_entries)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
@@ -167,6 +175,10 @@ class SQLiteInvocationResultStore:
         self._conn.execute(
             "DELETE FROM invocation_results WHERE created_at < ?",
             (now - self.retention_seconds,),
+        )
+        self._conn.execute(
+            "DELETE FROM invocation_identities WHERE created_at < ?",
+            (now - self.identity_retention_seconds,),
         )
         self._conn.execute(
             """

@@ -23,6 +23,7 @@ import sys
 import tempfile
 import threading
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -93,6 +94,18 @@ _RAW_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
 # calls read_raw_config. Also covers mutation of the module-level cache
 # dicts above.
 _CONFIG_LOCK = threading.RLock()
+_ENV_WRITE_LOCK = threading.RLock()
+
+
+def _serialized_env_write(function):
+    """Hold one process-wide lock across every .env read-modify-write."""
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _ENV_WRITE_LOCK:
+            return function(*args, **kwargs)
+
+    return wrapped
 # Env var names written to .env that aren't in OPTIONAL_ENV_VARS
 # (managed by setup/provider flows directly).
 _EXTRA_ENV_KEYS = frozenset({
@@ -4575,6 +4588,7 @@ def _sanitize_env_lines(lines: list) -> list:
     return sanitized
 
 
+@_serialized_env_write
 def sanitize_env_file() -> int:
     """Read, sanitize, and rewrite ~/.hermes/.env in place.
 
@@ -4661,6 +4675,7 @@ def _check_non_ascii_credential(key: str, value: str) -> str:
     return sanitized
 
 
+@_serialized_env_write
 def save_env_values(values: Dict[str, str]) -> None:
     """Atomically save or update multiple values in ~/.hermes/.env."""
 
@@ -4724,6 +4739,7 @@ def save_env_values(values: Dict[str, str]) -> None:
     invalidate_env_cache()
 
 
+@_serialized_env_write
 def save_env_value(key: str, value: str):
     """Save or update a value in ~/.hermes/.env."""
     if is_managed():
@@ -4795,6 +4811,7 @@ def save_env_value(key: str, value: str):
     invalidate_env_cache()
 
 
+@_serialized_env_write
 def remove_env_value(key: str) -> bool:
     """Remove a key from ~/.hermes/.env and os.environ.
 

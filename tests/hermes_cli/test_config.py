@@ -2,9 +2,11 @@
 
 import os
 from pathlib import Path
+from threading import Event, Thread
 from unittest.mock import patch, MagicMock
 
 import yaml
+import hermes_cli.config as config_module
 
 from hermes_cli.config import (
     DEFAULT_CONFIG,
@@ -205,6 +207,51 @@ class TestSaveEnvValueSecure:
             assert env_values["OCCULT_API_KEY"] == "token-value"
             assert os.environ["OCCULT_ADMIN_KEY"] == "admin-value"
             assert os.environ["OCCULT_API_KEY"] == "token-value"
+
+    def test_env_writers_serialize_the_entire_read_modify_write(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        first_replace_entered = Event()
+        release_first_replace = Event()
+        original_atomic_replace = config_module.atomic_replace
+        replace_calls = [0]
+
+        def controlled_atomic_replace(source, destination):
+            replace_calls[0] += 1
+            if replace_calls[0] == 1:
+                first_replace_entered.set()
+                assert release_first_replace.wait(timeout=5)
+            return original_atomic_replace(source, destination)
+
+        monkeypatch.setattr(
+            config_module,
+            "atomic_replace",
+            controlled_atomic_replace,
+        )
+        with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}, clear=False):
+            first = Thread(
+                target=save_env_values,
+                args=({"OCCULT_ADMIN_KEY": "admin-value"},),
+            )
+            second = Thread(
+                target=save_env_value,
+                args=("OCCULT_API_KEY", "token-value"),
+            )
+            first.start()
+            assert first_replace_entered.wait(timeout=5)
+            second.start()
+            assert second.is_alive()
+            release_first_replace.set()
+            first.join(timeout=5)
+            second.join(timeout=5)
+
+            assert not first.is_alive()
+            assert not second.is_alive()
+            env_values = load_env()
+            assert env_values["OCCULT_ADMIN_KEY"] == "admin-value"
+            assert env_values["OCCULT_API_KEY"] == "token-value"
 
     def test_save_env_value_writes_without_stdout(self, tmp_path, capsys):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
