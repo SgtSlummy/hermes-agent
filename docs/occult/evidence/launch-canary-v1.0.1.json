@@ -6,12 +6,13 @@
     "disabled_before_initialization": "passed",
     "explicit_local_initialization": "passed",
     "gateway_restart": "passed",
+    "rollback_previous_checksummed_releases": "passed",
     "temporary_secret_cleanup": "passed",
     "versions": "passed",
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-07-31T02:21:24.531004Z",
+  "generated_at": "2026-07-31T02:30:44.301762Z",
   "overall_status": "passed",
   "platform": {
     "architecture": "x86_64",

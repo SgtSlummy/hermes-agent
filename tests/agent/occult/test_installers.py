@@ -8,6 +8,9 @@ MANIFEST = ROOT / "scripts" / "occult-install-manifest.json"
 POWERSHELL = ROOT / "scripts" / "install-occult.ps1"
 SHELL = ROOT / "scripts" / "install-occult.sh"
 CANARY = ROOT / "scripts" / "run-occult-launch-canary.py"
+CANARY_EVIDENCE = (
+    ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.1.json"
+)
 QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
 
@@ -163,3 +166,20 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "council_result.stdout + council_result.stderr" in text
     assert "TemporaryDirectory" in text
     assert "command output, prompts, tokens" in text.lower()
+
+
+def test_launch_canary_evidence_is_redacted_and_includes_rollback():
+    evidence = json.loads(_text(CANARY_EVIDENCE))
+    serialized = json.dumps(evidence, sort_keys=True).lower()
+
+    assert evidence["overall_status"] == "passed"
+    assert evidence["contains_secrets"] is False
+    assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
+    for forbidden in (
+        "authorization",
+        "api_key",
+        "occult_api_key",
+        "signed_url",
+        "bearer ",
+    ):
+        assert forbidden not in serialized
