@@ -178,6 +178,10 @@ def test_remote_occult_transport_preserves_ambient_proxies(monkeypatch):
 
 def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
+    monkeypatch.setattr(
+        "hermes_cli.occult.cli_config.read_raw_config",
+        lambda: {"occult": {"enabled": True, "local_model": "qwen2.5:3b"}},
+    )
     seen = []
 
     def urlopen(request, timeout):
@@ -196,6 +200,48 @@ def test_occult_status_uses_authenticated_real_endpoints(monkeypatch, capsys):
     assert all(
         headers["Authorization"] == "Bearer occult_private" for _, headers, _ in seen
     )
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        (
+            {},
+            {
+                "initialized": False,
+                "enabled": False,
+                "model": None,
+                "next": "run 'hermes tarot init --model qwen2.5:3b'",
+            },
+        ),
+        (
+            {"occult": {"enabled": False, "local_model": "qwen2.5:3b"}},
+            {
+                "initialized": True,
+                "enabled": False,
+                "model": "qwen2.5:3b",
+                "next": (
+                    "enable occult.enabled explicitly and restart the Hermes gateway"
+                ),
+            },
+        ),
+    ],
+)
+def test_occult_status_reports_inactive_local_state_without_token(
+    monkeypatch, capsys, config, expected
+):
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.occult.cli_config.read_raw_config", lambda: config
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult._request",
+        lambda *_args, **_kwargs: pytest.fail("inactive status must not call the API"),
+    )
+
+    cmd_occult(SimpleNamespace(occult_action="status"))
+
+    assert json.loads(capsys.readouterr().out) == expected
 
 
 def test_occult_invoke_builds_versioned_contract(monkeypatch, capsys):

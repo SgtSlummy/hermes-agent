@@ -269,6 +269,34 @@ def _client_timeout_seconds() -> float:
     return provider_timeout + 30
 
 
+def _local_occult_status() -> dict[str, Any]:
+    """Report activation state without requiring the local API to be running."""
+
+    try:
+        config = cli_config.read_raw_config() or {}
+    except (OSError, TypeError, ValueError) as exc:
+        raise OccultCLIError(f"could not read Tarot Router configuration: {exc}") from None
+    occult = config.get("occult")
+    if occult is not None and not isinstance(occult, dict):
+        raise OccultCLIError("occult configuration must be an object")
+    settings = occult or {}
+    model = str(settings.get("local_model") or "").strip()
+    initialized = bool(model)
+    enabled = initialized and settings.get("enabled") is True
+    result: dict[str, Any] = {
+        "initialized": initialized,
+        "enabled": enabled,
+        "model": model or None,
+    }
+    if not initialized:
+        result["next"] = "run 'hermes tarot init --model qwen2.5:3b'"
+    elif not enabled:
+        result["next"] = (
+            "enable occult.enabled explicitly and restart the Hermes gateway"
+        )
+    return result
+
+
 def _open_occult_url(request: urllib.request.Request, *, timeout: float):
     """Open an Occult request without redirects or loopback proxy exposure."""
 
@@ -496,10 +524,14 @@ def cmd_occult(args) -> None:
             "POST", f"/v1/occult/admin/tokens/{args.token_id}/revoke"
         )
     elif action == "status":
-        result = {
-            "agents": _request("GET", "/v1/occult/major-arcana")["data"],
-            "routes": _request("GET", "/v1/occult/minor-arcana")["data"],
-        }
+        local_status = _local_occult_status()
+        if not local_status["initialized"] or not local_status["enabled"]:
+            result = local_status
+        else:
+            result = {
+                "agents": _request("GET", "/v1/occult/major-arcana")["data"],
+                "routes": _request("GET", "/v1/occult/minor-arcana")["data"],
+            }
     elif action == "agents":
         result = _request("GET", "/v1/occult/major-arcana")
     elif action == "routes":

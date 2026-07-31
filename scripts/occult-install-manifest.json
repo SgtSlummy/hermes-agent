@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "occult_release_version": "1.0.4",
+  "occult_release_version": "1.0.5",
   "hermes_cli_version": "0.14.0",
   "hermes_wheel_asset": "hermes_agent-0.14.0-py3-none-any.whl",
   "hermes_requirements_asset": "occult-requirements.lock",
