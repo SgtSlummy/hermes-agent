@@ -163,7 +163,7 @@ export default function OccultPage() {
       <ConfirmDialog
         open={cancelOpen}
         title="Cancel reading?"
-        description="This sends a real cancellation request to the Occult runtime. Completed nodes remain recorded."
+        description="This sends a real cancellation request to Tarot Router. Completed nodes remain recorded."
         confirmLabel="Cancel reading"
         destructive
         loading={readingBusy}
@@ -176,7 +176,7 @@ export default function OccultPage() {
           <div className="mb-2 flex items-center gap-2 text-primary">
             <Sparkles className="h-5 w-5" />
             <span className="font-courier text-[11px] uppercase tracking-[0.2em]">
-              Occult System
+              Tarot Router
             </span>
           </div>
           <h1 className="font-expanded text-2xl font-bold uppercase tracking-[0.06em]">
@@ -203,7 +203,7 @@ export default function OccultPage() {
       {!status.enabled || !status.configured || !status.connected ? (
         <Card>
           <CardHeader>
-            <CardTitle>Finish Occult setup</CardTitle>
+            <CardTitle>Finish Tarot Router setup</CardTitle>
             <CardDescription>
               The dashboard remains inert until both the feature gate and a
               router-issued virtual token are present.
@@ -216,7 +216,9 @@ export default function OccultPage() {
                   Feature gate
                 </div>
                 <div className="mt-1 text-muted-foreground">
-                  {status.enabled ? "Enabled" : "Set occult.enabled to true."}
+                  {status.enabled
+                    ? "Enabled"
+                    : "Set the v1 compatibility key occult.enabled to true."}
                 </div>
               </div>
               <div className="border border-border p-3">
@@ -240,7 +242,7 @@ export default function OccultPage() {
       ) : (
         <>
           <section
-            aria-label="Occult registry summary"
+            aria-label="Tarot Router registry summary"
             className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
           >
             {summaryCards.map(({ label, count, icon: Icon }) => (

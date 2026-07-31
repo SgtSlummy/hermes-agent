@@ -1,4 +1,4 @@
-# Signed GitHub-first installer for the Occult System local public release.
+# Signed GitHub-first installer for the Tarot Router local public release.
 #
 # Download this script from the matching Hermes GitHub release before running
 # it. Piping the script directly to Invoke-Expression is intentionally rejected
@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "1.0.3",
+    [string]$Version = "1.0.4",
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
     [switch]$SkipCouncil,
@@ -275,7 +275,7 @@ if ($normalizedVersion.StartsWith("v")) {
     $normalizedVersion = $normalizedVersion.Substring(1)
 }
 if ($normalizedVersion -notmatch '^\d+\.\d+\.\d+$') {
-    Fail "--version must be a semantic version such as 1.0.3"
+    Fail "--version must be a semantic version such as 1.0.4"
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     Fail "--model cannot be empty"

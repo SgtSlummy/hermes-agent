@@ -2177,6 +2177,33 @@ def test_commands_catalog_includes_tui_mouse_command():
     assert "/mouse" in tui_pairs
 
 
+def test_commands_catalog_exposes_tarot_router_and_occult_compatibility_alias():
+    resp = server.handle_request(
+        {"id": "1", "method": "commands.catalog", "params": {}}
+    )
+
+    pairs = dict(resp["result"]["pairs"])
+    assert "/tarot" in pairs
+    assert pairs["/occult"] == "Compatibility alias for /tarot"
+
+
+def test_tarot_and_occult_tui_commands_share_dispatch(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.occult.run_tui_tarot_command",
+        lambda argument: f"tarot:{argument}",
+    )
+
+    for name in ("tarot", "occult"):
+        resp = server.handle_request(
+            {
+                "id": name,
+                "method": "command.dispatch",
+                "params": {"name": name, "arg": "status"},
+            }
+        )
+        assert resp["result"] == {"type": "exec", "output": "tarot:status"}
+
+
 def test_commands_catalog_filters_gateway_only_commands_and_keeps_status_visible():
     resp = server.handle_request(
         {"id": "1", "method": "commands.catalog", "params": {}}

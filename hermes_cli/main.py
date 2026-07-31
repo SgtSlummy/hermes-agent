@@ -9612,7 +9612,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "occult",
         "model", "pairing", "plugins", "postinstall", "profile", "proxy", "sessions", "setup",
-        "skills", "slack", "status", "tools", "uninstall", "update",
+        "skills", "slack", "status", "tarot", "tools", "uninstall", "update",
         "version", "webhook", "whatsapp", "chat",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
@@ -10284,11 +10284,12 @@ def main():
     status_parser.set_defaults(func=cmd_status)
 
     # =========================================================================
-    # occult command
+    # Tarot Router command (``occult`` remains the v1 compatibility alias)
     # =========================================================================
     occult_parser = subparsers.add_parser(
-        "occult",
-        help="Initialize, inspect, and invoke the local-first Occult runtime",
+        "tarot",
+        aliases=["occult"],
+        help="Initialize, inspect, and invoke the local-first Tarot Router",
     )
     occult_subparsers = occult_parser.add_subparsers(dest="occult_action")
     occult_init = occult_subparsers.add_parser(
@@ -10307,7 +10308,7 @@ def main():
     occult_subparsers.add_parser("status", help="Show active agents and routes")
     occult_subparsers.add_parser("agents", help="List permitted Major Arcana")
     occult_subparsers.add_parser("routes", help="List permitted Minor Arcana")
-    occult_subparsers.add_parser("decks", help="List permitted Occult decks")
+    occult_subparsers.add_parser("decks", help="List permitted Tarot Router decks")
     occult_pairings = occult_subparsers.add_parser(
         "pairings", help="List compatible Major and Minor Arcana pairings"
     )
@@ -10337,7 +10338,7 @@ def main():
     )
     occult_token_revoke.add_argument("token_id")
     occult_invoke = occult_subparsers.add_parser(
-        "invoke", help="Run a validated Occult invocation"
+        "invoke", help="Run a validated Tarot Router invocation"
     )
     occult_invoke.add_argument("--agent", required=True)
     occult_invoke.add_argument("--message", required=True)

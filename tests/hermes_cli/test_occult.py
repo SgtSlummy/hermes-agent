@@ -12,6 +12,7 @@ from hermes_cli.occult import (
     _open_occult_url,
     cmd_occult,
     run_tui_occult_command,
+    run_tui_tarot_command,
 )
 
 
@@ -300,6 +301,16 @@ def test_tui_occult_command_defaults_to_status(monkeypatch):
 
     monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
     assert json.loads(run_tui_occult_command("")) == {"agents": [], "routes": []}
+
+
+def test_tui_tarot_and_occult_commands_share_the_v1_transport(monkeypatch):
+    monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
+
+    def urlopen(request, timeout):
+        return _Response({"data": []})
+
+    monkeypatch.setattr("hermes_cli.occult._open_occult_url", urlopen)
+    assert run_tui_tarot_command("agents") == run_tui_occult_command("agents")
 
 
 def test_occult_token_issue_uses_separate_admin_credential(monkeypatch, capsys):

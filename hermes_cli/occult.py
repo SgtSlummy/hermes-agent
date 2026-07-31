@@ -1,4 +1,4 @@
-"""Thin CLI client for an explicitly enabled Occult HTTP surface."""
+"""Thin CLI client for the explicitly enabled Tarot Router HTTP surface."""
 
 from __future__ import annotations
 
@@ -46,18 +46,18 @@ def initialize_occult(
     base_url: str | None = None,
     model: str | None = None,
 ) -> dict[str, Any]:
-    """Initialize a secure local-only Occult profile and starter deck."""
+    """Initialize a secure local-only Tarot Router profile and starter deck."""
 
     if cli_config.is_managed():
         raise OccultCLIError(
-            "Occult initialization is unavailable in managed mode; "
+            "Tarot Router initialization is unavailable in managed mode; "
             "ask the system administrator to configure the profile"
         )
     try:
         config = dict(cli_config.read_raw_config_strict())
     except ValueError as exc:
         raise OccultCLIError(
-            f"Occult initialization refused to overwrite existing configuration: {exc}"
+            f"Tarot Router initialization refused to overwrite existing configuration: {exc}"
         ) from None
     configured_occult = config.get("occult")
     if configured_occult is not None and not isinstance(configured_occult, dict):
@@ -164,7 +164,7 @@ def initialize_occult(
     except OccultRuntimeError as exc:
         raise OccultCLIError(str(exc)) from None
     if http is None:
-        raise OccultCLIError("Occult runtime did not enable")
+        raise OccultCLIError("Tarot Router runtime did not enable")
 
     token = credential("OCCULT_API_KEY")
     token_created = False
@@ -225,7 +225,7 @@ def initialize_occult(
         "token_created": token_created,
         "config_path": str(cli_config.get_config_path()),
         "secrets_path": str(cli_config.get_env_path()),
-        "next": "restart the Hermes gateway, then run 'hermes occult status'",
+        "next": "restart the Hermes gateway, then run 'hermes tarot status'",
     }
 
 
@@ -319,9 +319,9 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
             message = error.get("error", {}).get("message", "request failed")
         except Exception:
             message = "request failed"
-        raise OccultCLIError(f"Occult API error {exc.code}: {message}") from None
+        raise OccultCLIError(f"Tarot Router API error {exc.code}: {message}") from None
     except (OSError, ValueError) as exc:
-        raise OccultCLIError(f"Occult API unavailable: {exc}") from None
+        raise OccultCLIError(f"Tarot Router API unavailable: {exc}") from None
 
 
 def _admin_request(
@@ -354,9 +354,9 @@ def _admin_request(
             message = error.get("error", {}).get("message", "request failed")
         except Exception:
             message = "request failed"
-        raise OccultCLIError(f"Occult API error {exc.code}: {message}") from None
+        raise OccultCLIError(f"Tarot Router API error {exc.code}: {message}") from None
     except (OSError, ValueError) as exc:
-        raise OccultCLIError(f"Occult API unavailable: {exc}") from None
+        raise OccultCLIError(f"Tarot Router API unavailable: {exc}") from None
 
 
 def _stream_events(reading_id: str) -> Iterator[dict[str, Any]]:
@@ -387,9 +387,9 @@ def _stream_events(reading_id: str) -> Iterator[dict[str, Any]]:
             message = error.get("error", {}).get("message", "request failed")
         except Exception:
             message = "request failed"
-        raise OccultCLIError(f"Occult API error {exc.code}: {message}") from None
+        raise OccultCLIError(f"Tarot Router API error {exc.code}: {message}") from None
     except (OSError, ValueError) as exc:
-        raise OccultCLIError(f"Occult API unavailable: {exc}") from None
+        raise OccultCLIError(f"Tarot Router API unavailable: {exc}") from None
 
 
 def _reading_request(action: str, reading_id: str) -> Any:
@@ -403,38 +403,38 @@ def _reading_request(action: str, reading_id: str) -> Any:
     return _request(method, f"/v1/occult/readings/{reading_id}{suffix}")
 
 
-def run_tui_occult_command(argument: str) -> str:
-    """Run a bounded Occult inspector/control from the existing TUI composer."""
+def run_tui_tarot_command(argument: str) -> str:
+    """Run a bounded Tarot Router inspector/control from the TUI composer."""
 
     try:
         parts = shlex.split(argument)
     except ValueError as exc:
-        raise OccultCLIError(f"invalid Occult command: {exc}") from None
+        raise OccultCLIError(f"invalid Tarot Router command: {exc}") from None
     if not parts:
         parts = ["status"]
     action = parts[0].lower()
     if action == "status":
         if len(parts) != 1:
-            raise OccultCLIError("usage: /occult status")
+            raise OccultCLIError("usage: /tarot status")
         result = {
             "agents": _request("GET", "/v1/occult/major-arcana")["data"],
             "routes": _request("GET", "/v1/occult/minor-arcana")["data"],
         }
     elif action == "agents":
         if len(parts) != 1:
-            raise OccultCLIError("usage: /occult agents")
+            raise OccultCLIError("usage: /tarot agents")
         result = _request("GET", "/v1/occult/major-arcana")
     elif action == "routes":
         if len(parts) != 1:
-            raise OccultCLIError("usage: /occult routes")
+            raise OccultCLIError("usage: /tarot routes")
         result = _request("GET", "/v1/occult/minor-arcana")
     elif action == "decks":
         if len(parts) != 1:
-            raise OccultCLIError("usage: /occult decks")
+            raise OccultCLIError("usage: /tarot decks")
         result = _request("GET", "/v1/occult/decks")
     elif action == "pairings":
         if len(parts) > 2:
-            raise OccultCLIError("usage: /occult pairings [agent-id]")
+            raise OccultCLIError("usage: /tarot pairings [agent-id]")
         suffix = (
             "?agent_id=" + urllib.parse.quote(parts[1], safe="")
             if len(parts) == 2
@@ -443,7 +443,7 @@ def run_tui_occult_command(argument: str) -> str:
         result = _request("GET", "/v1/occult/pairings" + suffix)
     elif action == "deck-validate":
         if len(parts) != 2:
-            raise OccultCLIError("usage: /occult deck-validate <deck-id>")
+            raise OccultCLIError("usage: /tarot deck-validate <deck-id>")
         deck_id = urllib.parse.quote(parts[1], safe="")
         result = _request("GET", f"/v1/occult/decks/{deck_id}/validate")
     elif action in {
@@ -453,15 +453,21 @@ def run_tui_occult_command(argument: str) -> str:
         "reading-cancel",
     }:
         if len(parts) != 2:
-            raise OccultCLIError(f"usage: /occult {action} <reading-id>")
+            raise OccultCLIError(f"usage: /tarot {action} <reading-id>")
         result = _reading_request(action, parts[1])
     else:
         raise OccultCLIError(
-            "usage: /occult "
+            "usage: /tarot "
             "[status|agents|routes|decks|pairings|deck-validate|reading-status|"
             "reading-events|reading-resume|reading-cancel]"
         )
     return json.dumps(result, indent=2, sort_keys=True)
+
+
+def run_tui_occult_command(argument: str) -> str:
+    """Compatibility alias for the v1 ``/occult`` command."""
+
+    return run_tui_tarot_command(argument)
 
 
 def cmd_occult(args) -> None:
@@ -542,7 +548,7 @@ def cmd_occult(args) -> None:
     }:
         result = _reading_request(action, args.reading_id)
     else:
-        raise OccultCLIError("an Occult action is required")
+        raise OccultCLIError("a Tarot Router action is required")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
@@ -551,4 +557,5 @@ __all__ = [
     "cmd_occult",
     "initialize_occult",
     "run_tui_occult_command",
+    "run_tui_tarot_command",
 ]
