@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -28,6 +29,12 @@ def test_occult_production_workflow_is_valid_yaml_and_sha_pinned():
 
 def test_occult_production_workflow_preserves_release_invariants():
     text = _workflow_text()
+    payload = yaml.load(text, Loader=yaml.BaseLoader)
+    promote_job = payload["jobs"]["promote"]
+    promote_condition = " ".join(promote_job["if"].split())
+    promote_runs = "\n".join(
+        step["run"] for step in promote_job["steps"] if "run" in step
+    )
 
     for expected in (
         "ubuntu-latest, macos-latest, windows-latest",
@@ -56,8 +63,6 @@ def test_occult_production_workflow_preserves_release_invariants():
         "OCCULT-INSTALL-SHA256SUMS.txt",
         "canary_report_sha256",
         'test "$COUNCIL_REF" = "$EXPECTED_COUNCIL_REF"',
-        'CANARY="docs/occult/evidence/launch-canary-v${VERSION}.json"',
-        'test "$GITHUB_REF" = "refs/heads/main"',
         "git -C council rev-parse HEAD",
         "uv export",
         'SOURCE_DATE_EPOCH: "0"',
@@ -65,7 +70,6 @@ def test_occult_production_workflow_preserves_release_invariants():
         "--format requirements-txt",
         "occult-requirements.lock",
         "verify_canary_artifact hermes_wheel",
-        "verify_canary_artifact",
         "council_windows_x64",
         "gh release download",
         "--latest=false",
@@ -75,6 +79,17 @@ def test_occult_production_workflow_preserves_release_invariants():
         "gzip -n",
     ):
         assert expected in text
+    assert "github.ref == 'refs/heads/main'" in promote_condition
+    assert re.search(
+        r'(?m)^\s*VERSION\s*=\s*["\']?\$\{RELEASE_VERSION#v\}["\']?\s*$',
+        promote_runs,
+    )
+    assert re.search(
+        r'(?m)^\s*CANARY\s*=\s*["\']?'
+        r"docs/occult/evidence/launch-canary-v\$\{VERSION\}\.json"
+        r'["\']?\s*$',
+        promote_runs,
+    )
     stage = text.split("  stage:", 1)[1].split("\n  promote:", 1)[0]
     assert "include-hidden-files: true" in stage
     promote = text.split("  promote:", 1)[1]

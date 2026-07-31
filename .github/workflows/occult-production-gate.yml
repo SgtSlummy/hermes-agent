@@ -255,7 +255,10 @@ jobs:
 
   promote:
     name: Sign and promote exact staged bytes
-    if: github.event_name == 'workflow_dispatch' && inputs.channel == 'stable'
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.channel == 'stable' &&
+      github.ref == 'refs/heads/main'
     needs: stage
     runs-on: ubuntu-latest
     environment: occult-production
@@ -366,7 +369,7 @@ jobs:
             --format requirements-txt \
             --output-file install-assets/occult-requirements.lock
           jq -e \
-            --arg version "$RELEASE_VERSION" \
+            --arg version "$VERSION" \
             --arg wheel "$WHEEL_NAME" \
             --arg council "$EXPECTED_COUNCIL_REF" \
             --arg sigstore_lock_sha "$(
