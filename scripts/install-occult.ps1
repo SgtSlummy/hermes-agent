@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "1.0.2",
+    [string]$Version = "1.0.3",
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
     [switch]$SkipCouncil,
@@ -275,7 +275,7 @@ if ($normalizedVersion.StartsWith("v")) {
     $normalizedVersion = $normalizedVersion.Substring(1)
 }
 if ($normalizedVersion -notmatch '^\d+\.\d+\.\d+$') {
-    Fail "--version must be a semantic version such as 1.0.2"
+    Fail "--version must be a semantic version such as 1.0.3"
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     Fail "--model cannot be empty"
@@ -544,7 +544,13 @@ initialized = isinstance(occult, dict) and bool(occult.get("local_model"))
 enabled = initialized and occult.get("enabled") is True
 print(json.dumps({"initialized": initialized, "enabled": enabled}))
 '@
-    $stateJson = (& $venvPython -c $stateScript | Out-String).Trim()
+    # Windows PowerShell 5 can strip embedded quotes from native `-c`
+    # arguments. Execute an installer-owned temporary file so the state probe
+    # reaches Python byte-for-byte.
+    $stateScriptPath = Join-Path $temporaryRoot "inspect-occult-state.py"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($stateScriptPath, $stateScript, $utf8NoBom)
+    $stateJson = (& $venvPython $stateScriptPath | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {
         Fail "could not inspect the preserved Occult initialization state"
     }

@@ -11,7 +11,7 @@ MANIFEST = ROOT / "scripts" / "occult-install-manifest.json"
 POWERSHELL = ROOT / "scripts" / "install-occult.ps1"
 SHELL = ROOT / "scripts" / "install-occult.sh"
 CANARY = ROOT / "scripts" / "run-occult-launch-canary.py"
-CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.2.json"
+CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.3.json"
 QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
 
@@ -101,6 +101,10 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert '"council.new-" + [Guid]::NewGuid().ToString("N") + ".exe"' in text
     assert "hermes.exe.new-" not in text
     assert "council.exe.new-" not in text
+    assert '$stateScriptPath = Join-Path $temporaryRoot "inspect-occult-state.py"' in text
+    assert "[System.IO.File]::WriteAllText" in text
+    assert "& $venvPython $stateScriptPath" in text
+    assert "& $venvPython -c $stateScript" not in text
     assert "Existing Occult initialization was preserved" in text
     assert "occult_enabled = $enabled" in text
     assert text.index("Assert-SigstoreIdentity") < text.index(
