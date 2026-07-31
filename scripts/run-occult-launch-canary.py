@@ -30,7 +30,7 @@ from typing import Any
 
 
 HERMES_CLI_VERSION = "0.14.0"
-HERMES_RELEASE = "v1.0.4"
+HERMES_RELEASE = "v1.0.5"
 COUNCIL_VERSION = "0.5.5"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
@@ -53,7 +53,7 @@ class CanaryFailure(RuntimeError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the redacted Tarot Router v1.0.4 Windows launch canary."
+        description="Run the redacted Tarot Router v1.0.5 Windows launch canary."
     )
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)
@@ -663,7 +663,7 @@ def main() -> int:
     gateway: subprocess.Popen[bytes] | None = None
     gateway_log: Any | None = None
     with tempfile.TemporaryDirectory(
-        prefix="tarot-router-v104-canary-",
+        prefix="tarot-router-v105-canary-",
         ignore_cleanup_errors=True,
     ) as temporary:
         root = Path(temporary)
@@ -715,12 +715,22 @@ def main() -> int:
         checks["versions"] = "passed"
 
         disabled_status = run(
-            [str(hermes), "occult", "status"],
+            [str(hermes), "tarot", "status"],
             env=env,
             timeout=args.timeout_seconds,
-            expect_success=False,
         )
         observed_outputs.append(disabled_status.stdout + disabled_status.stderr)
+        disabled_state = load_json_output(
+            disabled_status.stdout,
+            "pre-initialization Tarot Router status",
+        )
+        if (
+            disabled_state.get("initialized") is not False
+            or disabled_state.get("enabled") is not False
+        ):
+            raise CanaryFailure(
+                "Tarot Router did not report a safe pre-initialization state"
+            )
         if (primary_home / "occult").exists():
             raise CanaryFailure("Occult activated before explicit initialization")
         checks["disabled_before_initialization"] = "passed"
