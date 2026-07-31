@@ -1,0 +1,65 @@
+{
+  "checks": {
+    "audit_redaction": "passed",
+    "backup_restore": "passed",
+    "candidate_artifact_installation": "passed",
+    "council_pause_restart_resume": "passed",
+    "council_source_provenance": "passed",
+    "default_model_binding": "passed",
+    "disabled_before_initialization": "passed",
+    "explicit_local_initialization": "passed",
+    "gateway_restart": "passed",
+    "rollback_previous_checksummed_releases": "passed",
+    "temporary_secret_cleanup": "passed",
+    "versions": "passed",
+    "zero_cost_major_arcana_invocation": "passed"
+  },
+  "contains_secrets": false,
+  "generated_at": "2026-07-31T05:41:42.797698Z",
+  "overall_status": "passed",
+  "platform": {
+    "architecture": "x86_64",
+    "os": "Windows"
+  },
+  "release": {
+    "agents_council": "0.5.2",
+    "council_commit": "453676402fb3b3183aca6eccf64067ac4e86a4de",
+    "council_state_schema": 3,
+    "hermes": "v1.0.2",
+    "hermes_cli": "0.14.0",
+    "ollama_model": "qwen2.5:3b",
+    "runtime_contract": "1.0.0"
+  },
+  "release_artifacts": {
+    "council_windows_x64": {
+      "name": "agents-council-windows-x64.tar.gz",
+      "sha256": "638b8b044d4334468ef299fddd1db6f8901a271a605fbdd48cbfb3e78af1b934"
+    },
+    "hermes_requirements_lock": {
+      "name": "occult-requirements.lock",
+      "sha256": "1dc68369d1ab9744d5a752fe227f2da1c6d829be6ee70296757c0fa542eb78ef"
+    },
+    "hermes_wheel": {
+      "name": "hermes_agent-0.14.0-py3-none-any.whl",
+      "sha256": "8bf1af5acc71f44e9eb2cbae0b596fb3188446e513e24bee031552b78edc70c3"
+    },
+    "install_manifest": {
+      "name": "occult-install-manifest.json",
+      "sha256": "d8c246fc819ceb92cc809497a266b58a49da773f919c685f8f33137353e6fd3a"
+    },
+    "installer_posix": {
+      "name": "install-occult.sh",
+      "sha256": "db0aa60d23e958cf24884369fc64b99099187e4bf9e5256d277cbbaa701832d6"
+    },
+    "installer_powershell": {
+      "name": "install-occult.ps1",
+      "sha256": "599bb93a297a3755ef256a13db3ccb397256242f8645f6f11d60edf271096660"
+    },
+    "sigstore_requirements_lock": {
+      "name": "occult-sigstore-requirements.lock",
+      "sha256": "bcb33aef02d914b025ad423450250d9ffaf22a727d600d58d4cce5d746836b04"
+    }
+  },
+  "schema_version": "1.0.0",
+  "scope": "pre-release Windows x64 candidate canary"
+}

@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "1.0.1",
+    [string]$Version = "1.0.2",
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
     [switch]$SkipCouncil,
@@ -275,7 +275,7 @@ if ($normalizedVersion.StartsWith("v")) {
     $normalizedVersion = $normalizedVersion.Substring(1)
 }
 if ($normalizedVersion -notmatch '^\d+\.\d+\.\d+$') {
-    Fail "--version must be a semantic version such as 1.0.1"
+    Fail "--version must be a semantic version such as 1.0.2"
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     Fail "--model cannot be empty"
@@ -468,7 +468,9 @@ try {
         Fail "Hermes installed without creating hermes.exe"
     }
     $hermesExecutable = Join-Path $binRoot "hermes.exe"
-    $hermesStagedExecutable = Join-Path $binRoot "hermes.exe.new-$environmentId"
+    # Keep .exe as the final suffix so Windows PowerShell recognizes the
+    # staged command as an executable before it is atomically activated.
+    $hermesStagedExecutable = Join-Path $binRoot "hermes.new-$environmentId.exe"
     Copy-Item `
         -LiteralPath $venvHermesExecutable `
         -Destination $hermesStagedExecutable `
@@ -503,7 +505,7 @@ try {
         }
         $councilStagedExecutable = Join-Path `
             $binRoot `
-            ("council.exe.new-" + [Guid]::NewGuid().ToString("N"))
+            ("council.new-" + [Guid]::NewGuid().ToString("N") + ".exe")
         Copy-Item `
             -LiteralPath $packagedCouncil `
             -Destination $councilStagedExecutable `

@@ -11,7 +11,7 @@ MANIFEST = ROOT / "scripts" / "occult-install-manifest.json"
 POWERSHELL = ROOT / "scripts" / "install-occult.ps1"
 SHELL = ROOT / "scripts" / "install-occult.sh"
 CANARY = ROOT / "scripts" / "run-occult-launch-canary.py"
-CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.1.json"
+CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.2.json"
 QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
 
@@ -97,7 +97,10 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "hermes_requirements_asset" in text
     assert "hermes-environments" in text
     assert '"--clear"' not in text
-    assert "hermes.exe.new-" in text
+    assert '"hermes.new-$environmentId.exe"' in text
+    assert '"council.new-" + [Guid]::NewGuid().ToString("N") + ".exe"' in text
+    assert "hermes.exe.new-" not in text
+    assert "council.exe.new-" not in text
     assert "Existing Occult initialization was preserved" in text
     assert "occult_enabled = $enabled" in text
     assert text.index("Assert-SigstoreIdentity") < text.index(
@@ -237,6 +240,9 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
     manifest = json.loads(_text(MANIFEST))
+    assert evidence["release"]["hermes"] == (
+        f"v{manifest['occult_release_version']}"
+    )
     assert evidence["release"]["ollama_model"] == manifest["ollama_model"]
     assert evidence["release"]["council_commit"] == manifest["council"]["commit_sha"]
     assert set(evidence["release_artifacts"]) == {
