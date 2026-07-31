@@ -36,16 +36,16 @@ zero-dollar request ceiling.
 ## Clean local installation
 
 Use the signed GitHub-first installer in
-[`docs/occult/quickstart.md`](quickstart.md). It verifies the exact Hermes and
+[`docs/tarot-router/quickstart.md`](../tarot-router/quickstart.md). It verifies the exact Hermes and
 Council GitHub Actions Sigstore identities and selected asset checksums before
-installing per-user. Occult remains disabled unless local initialization is
+installing per-user. Tarot Router remains disabled unless local initialization is
 explicitly requested.
 
 Install Ollama and pull at least one chat model, then run:
 
 ```text
 ollama pull qwen2.5:3b
-hermes occult init --model qwen2.5:3b
+hermes tarot init --model qwen2.5:3b
 hermes gateway restart
 hermes occult status
 ```

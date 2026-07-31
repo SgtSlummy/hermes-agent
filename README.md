@@ -77,16 +77,16 @@ hermes update       # Update to the latest version
 hermes doctor       # Diagnose any issues
 ```
 
-### Occult local-first quick start
+### Tarot Router local-first quick start
 
-Occult combines signed Major Arcana agents with a local Minor Arcana model
-through Mythos routing. It is disabled by default and requires no cloud
-provider key.
+Tarot Router combines signed Major Arcana agents with local or authorized
+Minor Arcana model routes through the Mythos engine. It is disabled by default
+and requires no cloud-provider key for the local starter route.
 
 Install the signed GitHub release per-user, verify it, and initialize Ollama
 only when you are ready. The canonical instructions for Windows, Linux, and
 macOS are in the
-[Occult local public v1 quickstart](docs/occult/quickstart.md).
+[Tarot Router local public v1 quickstart](docs/tarot-router/quickstart.md).
 
 📖 **[Full documentation →](https://hermes-agent.nousresearch.com/docs/)**
 

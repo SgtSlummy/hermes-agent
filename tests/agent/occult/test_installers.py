@@ -12,7 +12,8 @@ POWERSHELL = ROOT / "scripts" / "install-occult.ps1"
 SHELL = ROOT / "scripts" / "install-occult.sh"
 CANARY = ROOT / "scripts" / "run-occult-launch-canary.py"
 CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.3.json"
-QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
+QUICKSTART = ROOT / "docs" / "tarot-router" / "quickstart.md"
+LEGACY_QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
 
 
@@ -174,24 +175,28 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert "agents-council@latest" not in text
 
 
-def test_quickstart_is_the_single_public_occult_entrypoint():
+def test_quickstart_is_the_single_public_tarot_router_entrypoint():
     quickstart = _text(QUICKSTART)
+    legacy_quickstart = _text(LEGACY_QUICKSTART)
     readme = _text(README)
     release_version = json.loads(_text(MANIFEST))["occult_release_version"]
 
-    assert "Occult local public v1 quickstart" in quickstart
+    assert "Tarot Router local public v1 quickstart" in quickstart
     assert f"releases/download/v{release_version}/install-occult.ps1" in quickstart
     assert f"releases/download/v{release_version}/install-occult.sh" in quickstart
     for topic in (
         "Initialize local Ollama explicitly",
         "First zero-cost Major Arcana invocation",
         "First Agents Council reading",
-        "Disable Occult",
+        "Disable Tarot Router",
         "Backup and restore",
         "Roll back to the previous checksummed releases",
     ):
         assert topic in quickstart
-    assert "[Occult local public v1 quickstart](docs/occult/quickstart.md)" in readme
+    assert "[Tarot Router local public v1 quickstart](docs/tarot-router/quickstart.md)" in readme
+    assert "../tarot-router/quickstart.md" in legacy_quickstart
+    assert "hermes tarot init" in quickstart
+    assert "hermes occult init" not in quickstart
     assert "agents-council.com" not in quickstart
     assert "agents-council@latest" not in quickstart
     assert 'sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local' in quickstart
