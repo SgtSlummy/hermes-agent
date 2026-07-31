@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the redacted Windows Occult launch canary.
+"""Run the redacted Windows Tarot Router launch canary.
 
 The canary intentionally records only pass/fail facts and public version
 metadata. Command output, prompts, tokens, local paths, and response text stay
@@ -30,17 +30,17 @@ from typing import Any
 
 
 HERMES_CLI_VERSION = "0.14.0"
-HERMES_RELEASE = "v1.0.3"
-COUNCIL_VERSION = "0.5.2"
+HERMES_RELEASE = "v1.0.4"
+COUNCIL_VERSION = "0.5.4"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
 PREVIOUS_HERMES_CLI_VERSION = "0.14.0"
 PREVIOUS_HERMES_WHEEL_SHA256 = (
-    "9c5621f70171ffb965f64e19d789813fe024b6b32c6f03e3269a530a2a8b3a71"
+    "8bf1af5acc71f44e9eb2cbae0b596fb3188446e513e24bee031552b78edc70c3"
 )
-PREVIOUS_COUNCIL_VERSION = "0.5.1"
+PREVIOUS_COUNCIL_VERSION = "0.5.2"
 PREVIOUS_COUNCIL_ARCHIVE_SHA256 = (
-    "22a7c585a65680c7e99d8236bb4038f8c70e9ec7922c0759b42620546aaf9eec"
+    "638b8b044d4334468ef299fddd1db6f8901a271a605fbdd48cbfb3e78af1b934"
 )
 STARTER_CARD_ID = "minor.pentacles.ace.ollama.local"
 SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
@@ -53,7 +53,7 @@ class CanaryFailure(RuntimeError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the redacted Occult v1.0.3 Windows launch canary."
+        description="Run the redacted Tarot Router v1.0.4 Windows launch canary."
     )
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)
@@ -663,7 +663,7 @@ def main() -> int:
     gateway: subprocess.Popen[bytes] | None = None
     gateway_log: Any | None = None
     with tempfile.TemporaryDirectory(
-        prefix="occult-v101-canary-",
+        prefix="tarot-router-v104-canary-",
         ignore_cleanup_errors=True,
     ) as temporary:
         root = Path(temporary)
@@ -986,7 +986,7 @@ def main() -> int:
         raise CanaryFailure("report contains a signed URL")
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(encoded, encoding="utf-8", newline="\n")
-    print(f"Occult launch canary passed; redacted report: {args.report}")
+    print(f"Tarot Router launch canary passed; redacted report: {args.report}")
     return 0
 
 
@@ -994,5 +994,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except CanaryFailure as exc:
-        print(f"Occult launch canary failed safely: {exc}", file=sys.stderr)
+        print(f"Tarot Router launch canary failed safely: {exc}", file=sys.stderr)
         raise SystemExit(1) from None

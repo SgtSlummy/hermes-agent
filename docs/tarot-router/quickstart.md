@@ -1,8 +1,8 @@
 # Tarot Router local public v1 quickstart
 
 This is the authoritative installation and first-run guide for the local
-Tarot Router release. It installs the signed Hermes `v1.0.3` GitHub release
-and the signed Agents Council `v0.5.2` GitHub release without administrator
+Tarot Router release. It installs the signed Hermes `v1.0.4` GitHub release
+and the signed Agents Council `v0.5.4` GitHub release without administrator
 rights. Tarot Router remains disabled until you explicitly initialize a local
 Ollama model.
 
@@ -32,10 +32,10 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "611073f99f3d6d4638faf0009cf54c6bee47e094049b1e6946fe42427e7ea4ab"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.3/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "5ea47992b4dc721615049f042a37cd8e188764fb584f15f03b190e31d7e98939"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.4/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
 ```
 
-This literal checksum is pinned in the immutable `v1.0.3` quickstart and
+This literal checksum is pinned in the immutable `v1.0.4` quickstart and
 authenticates the installer before PowerShell executes it. The installer then
 verifies the signed release manifest, dependency lock, wheel, and Council asset.
 
@@ -66,8 +66,8 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="1b0e9c7074420482fbf173e6974232e8320604a05c299e37fa10127b52bf2c79"
-  curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.3/install-occult.sh"
+  expected="2bd175a85df57e42697fd0f330b09bed7f2a1106f16728e7e3b3d8afc209d10b"
+  curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.4/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
   else
@@ -92,7 +92,7 @@ The installer creates per-user command links in
 Available options:
 
 ```text
---version 1.0.3
+--version 1.0.4
 --install-root /path/owned/by/you
 --initialize-local
 --skip-council
@@ -121,10 +121,10 @@ cat "${XDG_DATA_HOME:-$HOME/.local/share}/occult/occult-install-receipt.json"
 
 These commands assume the normal installation. If you used `-SkipCouncil` or
 `--skip-council`, omit `council --version`. The receipt identifies Occult
-release `1.0.3` (the stable v1 metadata name), Hermes CLI package `0.14.0`,
+release `1.0.4` (the stable v1 metadata name), Hermes CLI package `0.14.0`,
 contract `1.0.0`, Council state schema `3`, and `occult_initialized: false`.
 A normal installation also records
-Council `v0.5.2` and its archive hash; a skipped Council installation records
+Council `v0.5.4` and its archive hash; a skipped Council installation records
 `null` for both fields. The Hermes package and the Occult release have separate
 version lines by design.
 
@@ -268,7 +268,7 @@ The previous immutable releases are:
 - Agents Council `v0.5.1`
 
 Download them from their GitHub release pages, verify their published checksum
-files before extraction, disable Occult, and retain the `v1.0.3` receipt and
+files before extraction, disable Tarot Router, and retain the `v1.0.4` receipt and
 backup. The Hermes `v1.0.0` universal archive contains its platform wheel; use
 that wheel to replace the `uv` tool environment under the same install root.
 Replace Council with the matching `v0.5.1` platform archive.

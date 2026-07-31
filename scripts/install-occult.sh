@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Signed GitHub-first installer for the Occult System local public release.
+# Signed GitHub-first installer for the Tarot Router local public release.
 #
 # Download this file from the matching Hermes GitHub release before running it.
 # Pipe-to-shell execution is rejected because the running file is compared with
@@ -7,7 +7,7 @@
 
 set -eu
 
-version="1.0.3"
+version="1.0.4"
 install_root="${XDG_DATA_HOME:-$HOME/.local/share}/occult"
 initialize_local=0
 skip_council=0
@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 Usage: install-occult.sh [options]
 
-  --version VERSION       Occult GitHub release (default: 1.0.3)
+  --version VERSION       Tarot Router GitHub release (default: 1.0.4)
   --install-root PATH     Per-user installation root
   --initialize-local      Explicitly pull the approved Ollama model and enable Occult
   --skip-council          Verify and install Hermes without Agents Council
@@ -83,12 +83,12 @@ case "$version" in
 esac
 case "$version" in
   *[!0-9.]*)
-    fail "--version must be a semantic version such as 1.0.3"
+    fail "--version must be a semantic version such as 1.0.4"
     ;;
 esac
 printf '%s\n' "$version" |
   awk -F. 'NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { ok=1 } END { exit(ok ? 0 : 1) }' ||
-  fail "--version must be a semantic version such as 1.0.3"
+  fail "--version must be a semantic version such as 1.0.4"
 [ -n "$model" ] || fail "--model cannot be empty"
 [ -f "$0" ] || fail "download the script to a file before running it; direct pipe-to-shell is not supported"
 
