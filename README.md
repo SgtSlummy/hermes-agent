@@ -83,20 +83,10 @@ Occult combines signed Major Arcana agents with a local Minor Arcana model
 through Mythos routing. It is disabled by default and requires no cloud
 provider key.
 
-```bash
-pip install "hermes-agent[occult]"
-ollama pull qwen2.5:3b
-hermes occult init --model qwen2.5:3b
-hermes gateway restart
-hermes occult status
-```
-
-Initialization installs five signed starter agents, creates the zero-cost
-starter deck, and stores scoped local API tokens under the active Hermes
-profile. Tokens are never printed. The API remains bound to
-`http://127.0.0.1:8642`; use `hermes occult invoke` for a direct canary.
-See [Occult production operations](docs/occult/production-operations.md) for
-assembly, release, backup, rollback, and update procedures.
+Install the signed GitHub release per-user, verify it, and initialize Ollama
+only when you are ready. The canonical instructions for Windows, Linux, and
+macOS are in the
+[Occult local public v1 quickstart](docs/occult/quickstart.md).
 
 📖 **[Full documentation →](https://hermes-agent.nousresearch.com/docs/)**
 

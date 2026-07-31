@@ -1,2 +1,11 @@
 # Auto-generated files — collapse diffs and exclude from language stats
 web/package-lock.json linguist-generated=true
+
+# Security-sensitive Occult release inputs are hashed byte-for-byte. Keep their
+# checked-out representation identical on Windows, macOS, and Linux.
+scripts/install-occult.ps1 text eol=lf
+scripts/install-occult.sh text eol=lf
+scripts/occult-install-manifest.json text eol=lf
+scripts/occult-sigstore-requirements.in text eol=lf
+scripts/occult-sigstore-requirements.lock text eol=lf
+docs/occult/evidence/*.json text eol=lf

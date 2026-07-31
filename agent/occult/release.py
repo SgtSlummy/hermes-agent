@@ -17,6 +17,7 @@ from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 
 CHECKSUM_FILE = "SHA256SUMS.txt"
 COMPATIBILITY_FILE = "occult-compatibility.json"
+INSTALL_MANIFEST_FILE = "occult-install-manifest.json"
 MANIFEST_FILE = "occult-release-manifest.json"
 MIGRATIONS_FILE = "occult-migrations.json"
 PROVENANCE_FILE = "occult-provenance.intoto.jsonl"
@@ -87,13 +88,20 @@ def assemble_release(
         os.utime(destination, (source_date_epoch, source_date_epoch))
         copied.append(_file_descriptor(output_root, destination))
 
+    install_manifest = _load_install_manifest(source_root)
+    council = install_manifest["council"]
+    council_release_tag = council["release_tag"]
     generated_at = datetime.fromtimestamp(source_date_epoch, UTC).isoformat()
     compatibility = {
         "schema_version": "1.0.0",
         "release_version": version,
         "channel": channel,
         "occult_contract_versions": [OCCULT_CONTRACT_VERSION],
-        "agents_council": {"minimum_version": "0.4.0"},
+        "agents_council": {
+            "minimum_version": council_release_tag.removeprefix("v"),
+            "release_tag": council_release_tag,
+            "commit_sha": council["commit_sha"],
+        },
         "feature_gate": {"config": "occult.enabled", "default": False},
         "default_policy": {
             "local_first": True,
@@ -285,6 +293,13 @@ def _dependency_inventory(
             if name and version:
                 packages.add(("library", str(name), str(version)))
         materials.append(_material(source_root, lock))
+    for release_input in (
+        source_root / "scripts" / INSTALL_MANIFEST_FILE,
+        source_root / "scripts" / "occult-sigstore-requirements.in",
+        source_root / "scripts" / "occult-sigstore-requirements.lock",
+    ):
+        if release_input.is_file():
+            materials.append(_material(source_root, release_input))
     components = [
         {
             "type": kind,
@@ -322,6 +337,46 @@ def _validate_release_identity(
         or source_date_epoch < 0
     ):
         raise OccultReleaseError("SOURCE_DATE_EPOCH must be non-negative")
+
+
+def _load_install_manifest(source_root: Path) -> dict[str, Any]:
+    """Load and validate the install metadata used by release assembly."""
+
+    manifest = _load_json_object(source_root / "scripts" / INSTALL_MANIFEST_FILE)
+    council = manifest.get("council")
+    if not isinstance(council, dict):
+        raise OccultReleaseError("install manifest must define Council metadata")
+    release_tag = council.get("release_tag")
+    commit_sha = council.get("commit_sha")
+    if not isinstance(release_tag, str) or not re.fullmatch(
+        r"v\d+\.\d+\.\d+",
+        release_tag,
+    ):
+        raise OccultReleaseError("install manifest Council tag is invalid")
+    if not isinstance(commit_sha, str) or not re.fullmatch(
+        r"[0-9a-f]{40}",
+        commit_sha,
+    ):
+        raise OccultReleaseError("install manifest Council commit is invalid")
+    if council.get("contract_version") != OCCULT_CONTRACT_VERSION:
+        raise OccultReleaseError("install manifest contract version is incompatible")
+    sigstore_asset = manifest.get("sigstore_requirements_asset")
+    sigstore_sha256 = manifest.get("sigstore_requirements_sha256")
+    if (
+        not isinstance(sigstore_asset, str)
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", sigstore_asset)
+        or ".." in sigstore_asset
+    ):
+        raise OccultReleaseError("install manifest Sigstore lock asset is invalid")
+    if not isinstance(sigstore_sha256, str) or not re.fullmatch(
+        r"[0-9a-f]{64}",
+        sigstore_sha256,
+    ):
+        raise OccultReleaseError("install manifest Sigstore lock hash is invalid")
+    sigstore_lock = source_root / "scripts" / sigstore_asset
+    if not sigstore_lock.is_file() or _sha256(sigstore_lock) != sigstore_sha256:
+        raise OccultReleaseError("install manifest Sigstore lock hash is inconsistent")
+    return manifest
 
 
 def _assert_safe_artifact(path: Path, relative: str) -> None:

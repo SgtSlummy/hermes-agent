@@ -7,6 +7,7 @@ import pytest
 from agent.occult.release import (
     CHECKSUM_FILE,
     COMPATIBILITY_FILE,
+    INSTALL_MANIFEST_FILE,
     MANIFEST_FILE,
     MIGRATIONS_FILE,
     PROVENANCE_FILE,
@@ -20,6 +21,7 @@ from agent.occult.release import (
 
 COMMIT_SHA = "a" * 40
 SOURCE_DATE_EPOCH = 1_700_000_000
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _write_source_locks(root: Path) -> None:
@@ -41,6 +43,17 @@ def _write_source_locks(root: Path) -> None:
             }),
             encoding="utf-8",
         )
+    scripts = root / "scripts"
+    scripts.mkdir()
+    (scripts / INSTALL_MANIFEST_FILE).write_text(
+        (ROOT / "scripts" / INSTALL_MANIFEST_FILE).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    for name in (
+        "occult-sigstore-requirements.in",
+        "occult-sigstore-requirements.lock",
+    ):
+        (scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
 
 
 def _assembly_roots(tmp_path: Path) -> tuple[Path, Path]:
@@ -115,6 +128,15 @@ def test_release_assembly_is_deterministic_and_policy_safe(tmp_path: Path):
         "maximum_cost_usd": 0,
     }
     assert compatibility["platforms"] == ["linux", "macos", "windows"]
+    install_manifest = json.loads(
+        (source / "scripts" / INSTALL_MANIFEST_FILE).read_text(encoding="utf-8")
+    )
+    council = install_manifest["council"]
+    assert compatibility["agents_council"] == {
+        "minimum_version": council["release_tag"].removeprefix("v"),
+        "release_tag": council["release_tag"],
+        "commit_sha": council["commit_sha"],
+    }
     migration = json.loads((first / MIGRATIONS_FILE).read_text())
     assert migration["rollback_supported"] is True
     assert migration["rollback_requires_backup_restore"] == ["readings-sqlite"]
@@ -135,6 +157,20 @@ def test_release_assembly_is_deterministic_and_policy_safe(tmp_path: Path):
     assert {subject["name"] for subject in provenance["subject"]} == {
         item["path"] for item in manifest["artifacts"]
     }
+    materials = {
+        material["uri"]: material["digest"]["sha256"]
+        for material in provenance["predicate"]["buildDefinition"][
+            "resolvedDependencies"
+        ]
+    }
+    for name in (
+        f"scripts/{INSTALL_MANIFEST_FILE}",
+        "scripts/occult-sigstore-requirements.in",
+        "scripts/occult-sigstore-requirements.lock",
+    ):
+        assert (
+            materials[name] == hashlib.sha256((source / name).read_bytes()).hexdigest()
+        )
     assert (first / CHECKSUM_FILE).is_file()
     assert (first / MANIFEST_FILE).is_file()
 
