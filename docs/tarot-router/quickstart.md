@@ -2,7 +2,7 @@
 
 This is the authoritative installation and first-run guide for the local
 Tarot Router release. It installs the signed Hermes `v1.0.4` GitHub release
-and the signed Agents Council `v0.5.4` GitHub release without administrator
+and the signed Agents Council `v0.5.5` GitHub release without administrator
 rights. Tarot Router remains disabled until you explicitly initialize a local
 Ollama model.
 
@@ -124,7 +124,7 @@ These commands assume the normal installation. If you used `-SkipCouncil` or
 release `1.0.4` (the stable v1 metadata name), Hermes CLI package `0.14.0`,
 contract `1.0.0`, Council state schema `3`, and `occult_initialized: false`.
 A normal installation also records
-Council `v0.5.4` and its archive hash; a skipped Council installation records
+Council `v0.5.5` and its archive hash; a skipped Council installation records
 `null` for both fields. The Hermes package and the Occult release have separate
 version lines by design.
 

@@ -15,15 +15,15 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-07-31T20:54:15.953530Z",
+  "generated_at": "2026-07-31T21:22:22.948542Z",
   "overall_status": "passed",
   "platform": {
     "architecture": "x86_64",
     "os": "Windows"
   },
   "release": {
-    "agents_council": "0.5.4",
-    "council_commit": "bda5a702ff8c6d39e19de3b2c6be1cbada396090",
+    "agents_council": "0.5.5",
+    "council_commit": "7966ccc9d65a400bdd184c13669a23919f606da3",
     "council_state_schema": 3,
     "hermes": "v1.0.4",
     "hermes_cli": "0.14.0",
@@ -33,7 +33,7 @@
   "release_artifacts": {
     "council_windows_x64": {
       "name": "agents-council-windows-x64.tar.gz",
-      "sha256": "7d1ce9501d5ab7aaf7f1cedb2544c7d7937fd7ea848eb5d921762a9985765d6e"
+      "sha256": "de0de3c141b250367f9c2865621e3a0325ae31a86b675269bbc3febe3848b6f0"
     },
     "hermes_requirements_lock": {
       "name": "occult-requirements.lock",
@@ -45,7 +45,7 @@
     },
     "install_manifest": {
       "name": "occult-install-manifest.json",
-      "sha256": "dbb31d6f7c39df6becc5465021872872dd0cda39b95fc6f3c7d00a41ae8ac271"
+      "sha256": "a09ad636dfdd61216794f7e194758d4a4187f507a6305282e23fac2be617817a"
     },
     "installer_posix": {
       "name": "install-occult.sh",

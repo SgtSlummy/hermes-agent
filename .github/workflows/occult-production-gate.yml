@@ -48,7 +48,7 @@ on:
       council_ref:
         description: Reviewed Agents Council ref compatible with this release
         required: true
-        default: v0.5.4
+        default: v0.5.5
         type: string
       canary_report_sha256:
         description: SHA-256 of the reviewed redacted local launch canary report
@@ -127,7 +127,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: SgtSlummy/agents-council
-          ref: ${{ inputs.council_ref || 'v0.5.4' }}
+          ref: ${{ inputs.council_ref || 'v0.5.5' }}
           persist-credentials: false
           path: council
       - name: Verify reviewed Council commit
