@@ -23,6 +23,8 @@ $BootstrapUvVersion = "0.11.28"
 $BootstrapUvWindowsAsset = "uv-x86_64-pc-windows-msvc.zip"
 $BootstrapUvWindowsSha256 = "0a23463216d09c6a72ff80ef5dc5a795f07dc1575cb84d24596c2f124a441b7b"
 $PinnedSigstoreVersion = "4.5.0"
+$SigstoreRequirementsAsset = "occult-sigstore-requirements.lock"
+$SigstoreRequirementsSha256 = "bcb33aef02d914b025ad423450250d9ffaf22a727d600d58d4cce5d746836b04"
 $ExpectedIssuer = "https://token.actions.githubusercontent.com"
 
 function Write-Step {
@@ -179,21 +181,63 @@ function Resolve-Uv {
     return $uv.FullName
 }
 
-function Assert-SigstoreIdentity {
+function New-SigstoreVerifier {
     param(
         [Parameter(Mandatory = $true)][string]$Uv,
-        [Parameter(Mandatory = $true)][string]$SigstoreVersion,
+        [Parameter(Mandatory = $true)][string]$TemporaryRoot,
+        [Parameter(Mandatory = $true)][string]$ReleaseBase
+    )
+    $requirements = Join-Path $TemporaryRoot $SigstoreRequirementsAsset
+    Download-Asset `
+        -Url "$ReleaseBase/$SigstoreRequirementsAsset" `
+        -Destination $requirements `
+        -Label "the pinned Sigstore dependency lock"
+    $requirementsHash = (
+        Get-FileHash -LiteralPath $requirements -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    if ($requirementsHash -ne $SigstoreRequirementsSha256) {
+        Fail "SHA-256 verification failed for the pinned Sigstore dependency lock"
+    }
+    $verifierVenv = Join-Path $TemporaryRoot "sigstore-verifier"
+    Invoke-Checked `
+        -Executable $Uv `
+        -Arguments @(
+            "venv",
+            "--no-config",
+            "--python", "3.11",
+            $verifierVenv
+        ) `
+        -FailureMessage "Sigstore verifier environment creation failed"
+    $verifierPython = Join-Path $verifierVenv "Scripts\python.exe"
+    Invoke-Checked `
+        -Executable $Uv `
+        -Arguments @(
+            "pip", "sync",
+            "--no-config",
+            "--python", $verifierPython,
+            "--require-hashes",
+            $requirements
+        ) `
+        -FailureMessage "Sigstore verifier dependency installation failed"
+    $sigstore = Join-Path $verifierVenv "Scripts\sigstore.exe"
+    if (-not (Test-Path -LiteralPath $sigstore -PathType Leaf)) {
+        Fail "the hash-locked verifier did not create sigstore.exe"
+    }
+    return $sigstore
+}
+
+function Assert-SigstoreIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string]$Sigstore,
         [Parameter(Mandatory = $true)][string]$Subject,
         [Parameter(Mandatory = $true)][string]$Bundle,
         [Parameter(Mandatory = $true)][string]$Identity
     )
     Write-Step "Verifying Sigstore identity for $(Split-Path -Leaf $Subject)"
     Invoke-Checked `
-        -Executable $Uv `
+        -Executable $Sigstore `
         -Arguments @(
-            "tool", "run",
-            "--from", "sigstore==$SigstoreVersion",
-            "sigstore", "verify", "identity",
+            "verify", "identity",
             $Subject,
             "--bundle", $Bundle,
             "--offline",
@@ -253,6 +297,10 @@ New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 
 try {
     $uv = Resolve-Uv -TemporaryRoot $temporaryRoot
+    $sigstore = New-SigstoreVerifier `
+        -Uv $uv `
+        -TemporaryRoot $temporaryRoot `
+        -ReleaseBase $hermesReleaseBase
     $installChecksums = Join-Path $temporaryRoot "OCCULT-INSTALL-SHA256SUMS.txt"
     $installBundle = "$installChecksums.sigstore.json"
     Download-Asset `
@@ -264,8 +312,7 @@ try {
         -Destination $installBundle `
         -Label "the Hermes Sigstore bundle"
     Assert-SigstoreIdentity `
-        -Uv $uv `
-        -SigstoreVersion $PinnedSigstoreVersion `
+        -Sigstore $sigstore `
         -Subject $installChecksums `
         -Bundle $installBundle `
         -Identity "https://github.com/$HermesRepository/.github/workflows/occult-production-gate.yml@refs/heads/main"
@@ -291,6 +338,12 @@ try {
     }
     if ($manifest.sigstore_python_version -ne $PinnedSigstoreVersion) {
         Fail "the signed manifest does not match the pinned Sigstore verifier"
+    }
+    if (
+        $manifest.sigstore_requirements_asset -ne $SigstoreRequirementsAsset -or
+        $manifest.sigstore_requirements_sha256 -ne $SigstoreRequirementsSha256
+    ) {
+        Fail "the signed manifest does not match the hash-locked Sigstore dependency set"
     }
 
     $signedScript = Join-Path $temporaryRoot "install-occult.ps1"
@@ -352,8 +405,7 @@ try {
             -Destination $councilBundle `
             -Label "the Council Sigstore bundle"
         Assert-SigstoreIdentity `
-            -Uv $uv `
-            -SigstoreVersion $PinnedSigstoreVersion `
+            -Sigstore $sigstore `
             -Subject $councilChecksums `
             -Bundle $councilBundle `
             -Identity "https://github.com/$CouncilRepository/.github/workflows/release.yml@refs/tags/$councilTag"
@@ -373,15 +425,17 @@ try {
     }
 
     $binRoot = Join-Path $resolvedInstallRoot "bin"
-    $hermesVenv = Join-Path $resolvedInstallRoot "hermes-venv"
+    $environmentId = "$normalizedVersion-" + [Guid]::NewGuid().ToString("N")
+    $hermesEnvironmentsRoot = Join-Path $resolvedInstallRoot "hermes-environments"
+    $hermesVenv = Join-Path $hermesEnvironmentsRoot $environmentId
     New-Item -ItemType Directory -Path $binRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $hermesEnvironmentsRoot -Force | Out-Null
     Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"
     Invoke-Checked `
         -Executable $uv `
         -Arguments @(
             "venv",
             "--no-config",
-            "--clear",
             "--python", "3.11",
             $hermesVenv
         ) `
@@ -414,17 +468,26 @@ try {
         Fail "Hermes installed without creating hermes.exe"
     }
     $hermesExecutable = Join-Path $binRoot "hermes.exe"
-    Copy-Item -LiteralPath $venvHermesExecutable -Destination $hermesExecutable -Force
-    $hermesVersionOutput = (& $hermesExecutable --version | Out-String).Trim()
+    $hermesStagedExecutable = Join-Path $binRoot "hermes.exe.new-$environmentId"
+    Copy-Item `
+        -LiteralPath $venvHermesExecutable `
+        -Destination $hermesStagedExecutable `
+        -Force
+    $hermesVersionOutput = (& $hermesStagedExecutable --version | Out-String).Trim()
     if ($hermesVersionOutput -notmatch [Regex]::Escape([string]$manifest.hermes_cli_version)) {
         Fail "Hermes executable version does not match signed release metadata"
     }
 
     $councilVersionOutput = $null
+    $councilEnvironment = $null
+    $councilStagedExecutable = $null
     if (-not $SkipCouncil) {
         $councilTag = [string]$manifest.council.release_tag
-        $councilRoot = Join-Path (Join-Path $resolvedInstallRoot "council") $councilTag
-        New-Item -ItemType Directory -Path $councilRoot -Force | Out-Null
+        $councilEnvironmentsRoot = Join-Path $resolvedInstallRoot "council-environments"
+        $councilEnvironment = Join-Path `
+            $councilEnvironmentsRoot `
+            ("$councilTag-" + [Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $councilEnvironment -Force | Out-Null
         $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
         if (-not $tar) {
             Fail "Windows tar.exe is required to install Agents Council"
@@ -432,22 +495,41 @@ try {
         Assert-SafeTarArchive -Tar $tar.Source -Archive $councilArchive
         Invoke-Checked `
             -Executable $tar.Source `
-            -Arguments @("-xzf", $councilArchive, "-C", $councilRoot) `
+            -Arguments @("-xzf", $councilArchive, "-C", $councilEnvironment) `
             -FailureMessage "Council archive extraction failed"
-        $packagedCouncil = Join-Path $councilRoot "cli\council.exe"
+        $packagedCouncil = Join-Path $councilEnvironment "cli\council.exe"
         if (-not (Test-Path -LiteralPath $packagedCouncil -PathType Leaf)) {
             Fail "the verified Council archive does not contain cli\council.exe"
         }
-        $councilExecutable = Join-Path $binRoot "council.exe"
-        Copy-Item -LiteralPath $packagedCouncil -Destination $councilExecutable -Force
-        $councilVersionOutput = (& $councilExecutable --version | Out-String).Trim()
+        $councilStagedExecutable = Join-Path `
+            $binRoot `
+            ("council.exe.new-" + [Guid]::NewGuid().ToString("N"))
+        Copy-Item `
+            -LiteralPath $packagedCouncil `
+            -Destination $councilStagedExecutable `
+            -Force
+        $councilVersionOutput = (
+            & $councilStagedExecutable --version | Out-String
+        ).Trim()
         if ($councilVersionOutput -notmatch [Regex]::Escape($councilTag.TrimStart("v"))) {
             Fail "Council executable version does not match signed release metadata"
         }
     }
 
+    Write-Step "Activating the fully staged local commands"
+    Move-Item `
+        -LiteralPath $hermesStagedExecutable `
+        -Destination $hermesExecutable `
+        -Force
+    if (-not $SkipCouncil) {
+        $councilExecutable = Join-Path $binRoot "council.exe"
+        Move-Item `
+            -LiteralPath $councilStagedExecutable `
+            -Destination $councilExecutable `
+            -Force
+    }
+
     Add-UserPath -Directory $binRoot
-    $initialized = $false
     if ($InitializeLocal) {
         $ollama = Get-Command ollama -ErrorAction SilentlyContinue
         if (-not $ollama) {
@@ -463,8 +545,24 @@ try {
             -Executable $hermesExecutable `
             -Arguments @("occult", "init", "--model", $Model) `
             -FailureMessage "hermes occult init failed"
-        $initialized = $true
     }
+
+    $stateScript = @'
+import json
+from hermes_cli import config
+raw = config.read_raw_config() or {}
+occult = raw.get("occult")
+initialized = isinstance(occult, dict) and bool(occult.get("local_model"))
+enabled = initialized and occult.get("enabled") is True
+print(json.dumps({"initialized": initialized, "enabled": enabled}))
+'@
+    $stateJson = (& $venvPython -c $stateScript | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Fail "could not inspect the preserved Occult initialization state"
+    }
+    $state = $stateJson | ConvertFrom-Json
+    $initialized = [bool]$state.initialized
+    $enabled = [bool]$state.enabled
 
     $receipt = [ordered]@{
         schema_version = "1.0.0"
@@ -474,12 +572,17 @@ try {
         hermes_wheel_sha256 = $wheelHash
         hermes_requirements = $requirementsAsset
         hermes_requirements_sha256 = $requirementsHash
+        sigstore_requirements = $SigstoreRequirementsAsset
+        sigstore_requirements_sha256 = $SigstoreRequirementsSha256
+        hermes_environment = $environmentId
         install_manifest_sha256 = $manifestHash
         council_release = if ($SkipCouncil) { $null } else { [string]$manifest.council.release_tag }
         council_archive_sha256 = $councilHash
+        council_environment = if ($SkipCouncil) { $null } else { Split-Path -Leaf $councilEnvironment }
         contract_version = [string]$manifest.council.contract_version
         council_state_schema = [int]$manifest.council.state_schema
         occult_initialized = $initialized
+        occult_enabled = $enabled
     }
     $receiptPath = Join-Path $resolvedInstallRoot "occult-install-receipt.json"
     $receiptTemporary = "$receiptPath.tmp"
@@ -492,7 +595,12 @@ try {
         Write-Host "Agents Council $councilVersionOutput"
     }
     if ($initialized) {
-        Write-Step "Local initialization completed explicitly with $Model"
+        if ($InitializeLocal) {
+            Write-Step "Local initialization completed explicitly with $Model"
+        } else {
+            $stateLabel = if ($enabled) { "enabled" } else { "disabled" }
+            Write-Step "Existing Occult initialization was preserved and remains $stateLabel"
+        }
     } else {
         Write-Step "Occult remains disabled. Run this installer again with -InitializeLocal when ready"
     }

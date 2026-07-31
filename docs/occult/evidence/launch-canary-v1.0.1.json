@@ -12,7 +12,7 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-07-31T03:10:12.890522Z",
+  "generated_at": "2026-07-31T03:59:37.368460Z",
   "overall_status": "passed",
   "platform": {
     "architecture": "x86_64",
@@ -24,6 +24,32 @@
     "hermes": "v1.0.1",
     "hermes_cli": "0.14.0",
     "runtime_contract": "1.0.0"
+  },
+  "release_artifacts": {
+    "council_windows_x64": {
+      "name": "agents-council-windows-x64.tar.gz",
+      "sha256": "638b8b044d4334468ef299fddd1db6f8901a271a605fbdd48cbfb3e78af1b934"
+    },
+    "hermes_requirements_lock": {
+      "name": "occult-requirements.lock",
+      "sha256": "1dc68369d1ab9744d5a752fe227f2da1c6d829be6ee70296757c0fa542eb78ef"
+    },
+    "hermes_wheel": {
+      "name": "hermes_agent-0.14.0-py3-none-any.whl",
+      "sha256": "68e35f421952507422796219ec07cbc027075eb15bd8b480607aca35643db74b"
+    },
+    "installer_posix": {
+      "name": "install-occult.sh",
+      "sha256": "7d7b3c586a95707cc2ccaf9b9a4de6a46ec09656e596e6b6a9fa87491ee175c3"
+    },
+    "installer_powershell": {
+      "name": "install-occult.ps1",
+      "sha256": "817969abc9a2d8302702ec168999377497954e892b78646aac1b9ed00f04a3b2"
+    },
+    "sigstore_requirements_lock": {
+      "name": "occult-sigstore-requirements.lock",
+      "sha256": "bcb33aef02d914b025ad423450250d9ffaf22a727d600d58d4cce5d746836b04"
+    }
   },
   "schema_version": "1.0.0",
   "scope": "pre-release Windows x64 candidate canary"

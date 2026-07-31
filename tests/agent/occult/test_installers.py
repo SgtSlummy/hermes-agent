@@ -42,6 +42,11 @@ def test_install_manifest_has_safe_cross_platform_release_metadata():
         for asset in council["assets"].values()
     )
     assert manifest["hermes_requirements_asset"].endswith(".lock")
+    assert manifest["sigstore_requirements_asset"].endswith(".lock")
+    assert re.fullmatch(
+        r"[0-9a-f]{64}",
+        manifest["sigstore_requirements_sha256"],
+    )
     assert ":" in manifest["ollama_model"]
     assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["sigstore_python_version"])
     assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["uv_version"])
@@ -70,7 +75,7 @@ def test_windows_installer_verifies_before_writing_application_files():
     ):
         assert option in text
     assert "sigstore verify identity" not in text
-    assert '"sigstore", "verify", "identity"' in text
+    assert '"verify", "identity"' in text
     assert '"--offline"' in text
     assert "Get-FileHash" in text
     assert "Invoke-WebRequest" in text
@@ -86,7 +91,15 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert '"--require-hashes"' in text
     assert '"--no-deps"' in text
     assert '"--no-index"' in text
+    assert '"tool", "run"' not in text
+    assert "New-SigstoreVerifier" in text
+    assert "$SigstoreRequirementsSha256" in text
     assert "hermes_requirements_asset" in text
+    assert "hermes-environments" in text
+    assert '"--clear"' not in text
+    assert "hermes.exe.new-" in text
+    assert "Existing Occult initialization was preserved" in text
+    assert "occult_enabled = $enabled" in text
     assert text.index("Assert-SigstoreIdentity") < text.index(
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
@@ -112,7 +125,7 @@ def test_unix_installer_verifies_before_writing_application_files():
         "--verify-only",
     ):
         assert option in text
-    assert "sigstore verify identity" in text
+    assert '"$sigstore_cmd" verify identity' in text
     assert "--offline" in text
     assert "verify_hash" in text
     assert "uv-x86_64-unknown-linux-gnu.tar.gz" in text
@@ -124,7 +137,14 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert "--require-hashes" in text
     assert "--no-deps" in text
     assert "--no-index" in text
+    assert "tool run" not in text
+    assert "sigstore_requirements_sha256" in text
     assert "hermes_requirements_asset" in text
+    assert "hermes-environments" in text
+    assert "--clear" not in text
+    assert "hermes.new.$$" in text
+    assert "Existing Occult initialization was preserved" in text
+    assert '"occult_enabled": $enabled' in text
     assert "grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$'" in text
     assert text.index("verify_sigstore") < text.index(
         'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
@@ -181,6 +201,16 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert '"contains_secrets": False' in text
     assert "OCCULT_E2E_HERMES_TOKEN" in text
     assert "council_result.stdout + council_result.stderr" in text
+    assert "--candidate-hermes-wheel" in text
+    assert "--candidate-council-archive" in text
+    assert "--sigstore-requirements-lock" in text
+    assert "release_artifacts" in text
+    assert "assert_redaction_surfaces" in text
+    assert 'root.glob("gateway-*.log")' in text
+    assert 'primary_home / "occult"' in text
+    assert "os.replace(staged, destination)" in text
+    assert "previous-after-rollback" in text
+    assert "candidate-restored" in text
     assert "TemporaryDirectory" in text
     assert "command output, prompts, tokens" in text.lower()
 
@@ -192,6 +222,18 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["overall_status"] == "passed"
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
+    assert set(evidence["release_artifacts"]) == {
+        "hermes_wheel",
+        "hermes_requirements_lock",
+        "sigstore_requirements_lock",
+        "installer_powershell",
+        "installer_posix",
+        "council_windows_x64",
+    }
+    assert all(
+        re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"])
+        for artifact in evidence["release_artifacts"].values()
+    )
     for forbidden in (
         "authorization",
         "api_key",

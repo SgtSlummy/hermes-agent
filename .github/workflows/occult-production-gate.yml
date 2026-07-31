@@ -11,6 +11,9 @@ on:
       - "scripts/install-occult.ps1"
       - "scripts/install-occult.sh"
       - "scripts/occult-install-manifest.json"
+      - "scripts/occult-sigstore-requirements.in"
+      - "scripts/occult-sigstore-requirements.lock"
+      - "scripts/run-occult-launch-canary.py"
       - "scripts/occult_release.py"
       - "tests/agent/occult/**"
       - "tests/gateway/test_occult_runtime_wiring.py"
@@ -100,6 +103,8 @@ jobs:
           OPENROUTER_API_KEY: ""
           NOUS_API_KEY: ""
       - name: Build wheel and source distribution
+        env:
+          SOURCE_DATE_EPOCH: "0"
         run: uv build --sdist --wheel
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -327,6 +332,7 @@ jobs:
         shell: bash
         env:
           CANARY_REPORT_SHA256: ${{ inputs.canary_report_sha256 }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p install-assets
@@ -349,27 +355,69 @@ jobs:
           cp scripts/install-occult.ps1 install-assets/
           cp scripts/install-occult.sh install-assets/
           cp scripts/occult-install-manifest.json install-assets/
+          cp scripts/occult-sigstore-requirements.lock install-assets/
           cp "$CANARY" install-assets/
           uv export \
             --frozen \
             --extra occult \
             --no-dev \
             --no-emit-project \
+            --no-header \
             --format requirements-txt \
             --output-file install-assets/occult-requirements.lock
           jq -e \
             --arg version "$RELEASE_VERSION" \
             --arg wheel "$WHEEL_NAME" \
             --arg council "$EXPECTED_COUNCIL_REF" \
+            --arg sigstore_lock_sha "$(
+              sha256sum scripts/occult-sigstore-requirements.lock | cut -d' ' -f1
+            )" \
             '.occult_release_version == $version
              and .hermes_wheel_asset == $wheel
              and .hermes_requirements_asset == "occult-requirements.lock"
+             and .sigstore_requirements_asset == "occult-sigstore-requirements.lock"
+             and .sigstore_requirements_sha256 == $sigstore_lock_sha
              and .council.release_tag == $council
              and .council.contract_version == "1.0.0"
              and .council.state_schema == 3' \
             install-assets/occult-install-manifest.json
           echo "$CANARY_REPORT_SHA256  install-assets/$CANARY_NAME" |
             sha256sum -c -
+          verify_canary_artifact() {
+            key="$1"
+            file="$2"
+            expected_name="$(jq -er --arg key "$key" \
+              '.release_artifacts[$key].name' "$CANARY")"
+            expected_sha="$(jq -er --arg key "$key" \
+              '.release_artifacts[$key].sha256' "$CANARY")"
+            test "$(basename "$file")" = "$expected_name"
+            echo "$expected_sha  $file" | sha256sum -c -
+          }
+          verify_canary_artifact hermes_wheel "install-assets/$WHEEL_NAME"
+          verify_canary_artifact \
+            hermes_requirements_lock \
+            install-assets/occult-requirements.lock
+          verify_canary_artifact \
+            sigstore_requirements_lock \
+            install-assets/occult-sigstore-requirements.lock
+          verify_canary_artifact \
+            installer_powershell \
+            install-assets/install-occult.ps1
+          verify_canary_artifact \
+            installer_posix \
+            install-assets/install-occult.sh
+          COUNCIL_ASSET="$(
+            jq -r '.council.assets["windows-x64"]' \
+              scripts/occult-install-manifest.json
+          )"
+          mkdir -p "$RUNNER_TEMP/council-canary-artifact"
+          gh release download "$EXPECTED_COUNCIL_REF" \
+            --repo SgtSlummy/agents-council \
+            --pattern "$COUNCIL_ASSET" \
+            --dir "$RUNNER_TEMP/council-canary-artifact"
+          verify_canary_artifact \
+            council_windows_x64 \
+            "$RUNNER_TEMP/council-canary-artifact/$COUNCIL_ASSET"
           (
             cd install-assets
             find . -maxdepth 1 -type f \

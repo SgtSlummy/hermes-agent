@@ -23,6 +23,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bun-executable", type=Path, required=True)
     parser.add_argument("--uv-executable", type=Path, required=True)
     parser.add_argument("--requirements-lock", type=Path, required=True)
+    parser.add_argument("--candidate-hermes-wheel", type=Path, required=True)
+    parser.add_argument("--candidate-council-archive", type=Path, required=True)
+    parser.add_argument("--installer-powershell", type=Path, required=True)
+    parser.add_argument("--installer-posix", type=Path, required=True)
+    parser.add_argument("--sigstore-requirements-lock", type=Path, required=True)
     parser.add_argument("--previous-hermes-wheel", type=Path, required=True)
     parser.add_argument("--previous-council-archive", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
@@ -113,12 +119,16 @@ def assert_directory(path: Path, label: str) -> Path:
     return resolved
 
 
-def assert_sha256(path: Path, expected: str, label: str) -> None:
+def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
-    if digest.hexdigest() != expected:
+    return digest.hexdigest()
+
+
+def assert_sha256(path: Path, expected: str, label: str) -> None:
+    if sha256_file(path) != expected:
         raise CanaryFailure(f"{label} checksum mismatch")
 
 
@@ -160,13 +170,13 @@ def rehearse_rollback(
     root: Path,
     uv: Path,
     requirements_lock: Path,
+    candidate_hermes_wheel: Path,
+    candidate_council_archive: Path,
     previous_hermes_wheel: Path,
     previous_council_archive: Path,
-    candidate_hermes: Path,
-    candidate_council: Path,
     env: dict[str, str],
     timeout: int,
-) -> None:
+) -> list[str]:
     assert_sha256(
         previous_hermes_wheel,
         PREVIOUS_HERMES_WHEEL_SHA256,
@@ -178,76 +188,156 @@ def rehearse_rollback(
         "previous Council archive",
     )
     rollback_root = root / "rollback-rehearsal"
-    rollback_venv = rollback_root / "hermes-venv"
-    run(
-        [
-            str(uv),
-            "venv",
-            "--no-config",
-            "--clear",
-            "--python",
-            "3.11",
-            str(rollback_venv),
-        ],
-        env=env,
-        timeout=timeout,
-    )
-    rollback_python = rollback_venv / "Scripts" / "python.exe"
-    run(
-        [
-            str(uv),
-            "pip",
-            "sync",
-            "--no-config",
-            "--python",
-            str(rollback_python),
-            "--require-hashes",
-            str(requirements_lock),
-        ],
-        env=env,
-        timeout=timeout * 3,
-    )
-    run(
-        [
-            str(uv),
-            "pip",
-            "install",
-            "--no-config",
-            "--python",
-            str(rollback_python),
-            "--no-deps",
-            "--no-index",
-            str(previous_hermes_wheel),
-        ],
-        env=env,
-        timeout=timeout,
-    )
-    previous_hermes = rollback_venv / "Scripts" / "hermes.exe"
+    environments = rollback_root / "hermes-environments"
+    bin_root = rollback_root / "bin"
+    environments.mkdir(parents=True)
+    bin_root.mkdir()
+
+    def install_hermes(name: str, wheel: Path) -> Path:
+        environment = environments / name
+        run(
+            [
+                str(uv),
+                "venv",
+                "--no-config",
+                "--python",
+                "3.11",
+                str(environment),
+            ],
+            env=env,
+            timeout=timeout,
+        )
+        environment_python = environment / "Scripts" / "python.exe"
+        run(
+            [
+                str(uv),
+                "pip",
+                "sync",
+                "--no-config",
+                "--python",
+                str(environment_python),
+                "--require-hashes",
+                str(requirements_lock),
+            ],
+            env=env,
+            timeout=timeout * 3,
+        )
+        run(
+            [
+                str(uv),
+                "pip",
+                "install",
+                "--no-config",
+                "--python",
+                str(environment_python),
+                "--no-deps",
+                "--no-index",
+                str(wheel),
+            ],
+            env=env,
+            timeout=timeout,
+        )
+        executable = environment / "Scripts" / "hermes.exe"
+        if not executable.is_file():
+            raise CanaryFailure("rollback Hermes environment is incomplete")
+        return executable
+
+    def activate(source: Path, destination: Path) -> None:
+        staged = destination.with_name(destination.name + ".new-" + uuid.uuid4().hex)
+        shutil.copy2(source, staged)
+        os.replace(staged, destination)
+
+    candidate_hermes = install_hermes("candidate", candidate_hermes_wheel)
+    previous_hermes = install_hermes("previous", previous_hermes_wheel)
     safe_public_version(
         run([str(previous_hermes), "--version"], env=env, timeout=timeout).stdout,
         PREVIOUS_HERMES_CLI_VERSION,
         "previous Hermes",
     )
 
-    previous_council_root = rollback_root / "council"
+    candidate_council_root = rollback_root / "council-environments" / "candidate"
+    previous_council_root = rollback_root / "council-environments" / "previous"
+    extract_regular_tar(candidate_council_archive, candidate_council_root)
     extract_regular_tar(previous_council_archive, previous_council_root)
+    candidate_council = candidate_council_root / "cli" / "council.exe"
     previous_council = previous_council_root / "cli" / "council.exe"
+    safe_public_version(
+        run([str(candidate_council), "--version"], env=env, timeout=timeout).stdout,
+        COUNCIL_VERSION,
+        "candidate Council",
+    )
     safe_public_version(
         run([str(previous_council), "--version"], env=env, timeout=timeout).stdout,
         PREVIOUS_COUNCIL_VERSION,
         "previous Council",
     )
 
-    safe_public_version(
-        run([str(candidate_hermes), "--version"], env=env, timeout=timeout).stdout,
+    active_hermes = bin_root / "hermes.exe"
+    active_council = bin_root / "council.exe"
+    observations: list[str] = []
+
+    def verify_active(
+        hermes_source: Path,
+        council_source: Path,
+        hermes_version: str,
+        council_version: str,
+        label: str,
+    ) -> None:
+        activate(hermes_source, active_hermes)
+        activate(council_source, active_council)
+        safe_public_version(
+            run([str(active_hermes), "--version"], env=env, timeout=timeout).stdout,
+            hermes_version,
+            f"{label} Hermes",
+        )
+        safe_public_version(
+            run([str(active_council), "--version"], env=env, timeout=timeout).stdout,
+            council_version,
+            f"{label} Council",
+        )
+        gateway, handle = start_gateway(
+            active_hermes,
+            env,
+            root / f"gateway-{label}.log",
+            timeout,
+        )
+        try:
+            status_result = run(
+                [str(active_hermes), "occult", "status"],
+                env=env,
+                timeout=timeout,
+            )
+            status = load_json_output(status_result.stdout, f"{label} Occult status")
+            if not status.get("agents") or not status.get("routes"):
+                raise CanaryFailure(
+                    f"{label} binaries could not read the existing Occult state"
+                )
+            observations.append(status_result.stdout + status_result.stderr)
+        finally:
+            stop_gateway(gateway, handle)
+
+    verify_active(
+        candidate_hermes,
+        candidate_council,
         HERMES_CLI_VERSION,
-        "restored Hermes",
-    )
-    safe_public_version(
-        run([str(candidate_council), "--version"], env=env, timeout=timeout).stdout,
         COUNCIL_VERSION,
-        "restored Council",
+        "candidate-before-rollback",
     )
+    verify_active(
+        previous_hermes,
+        previous_council,
+        PREVIOUS_HERMES_CLI_VERSION,
+        PREVIOUS_COUNCIL_VERSION,
+        "previous-after-rollback",
+    )
+    verify_active(
+        candidate_hermes,
+        candidate_council,
+        HERMES_CLI_VERSION,
+        COUNCIL_VERSION,
+        "candidate-restored",
+    )
+    return observations
 
 
 def safe_public_version(output: str, expected: str, label: str) -> str:
@@ -395,6 +485,42 @@ def assert_redacted(output: str, token: str) -> None:
         raise CanaryFailure("Council output exposed a signed URL")
 
 
+def assert_redaction_surfaces(
+    *,
+    text_surfaces: list[str],
+    file_surfaces: list[Path],
+    token: str,
+    prompt_marker: str,
+) -> None:
+    forbidden = (
+        (token.encode("utf-8"), "service token"),
+        (prompt_marker.encode("utf-8"), "prompt"),
+    )
+
+    def inspect(data: bytes, label: str) -> None:
+        lowered = data.lower()
+        for value, description in forbidden:
+            if value in data:
+                raise CanaryFailure(f"Hermes audit surface exposed a {description}")
+        if b"authorization:" in lowered or b"bearer " in lowered:
+            raise CanaryFailure("Hermes audit surface exposed authorization details")
+        decoded = data.decode("utf-8", errors="ignore")
+        if SIGNED_URL.search(decoded):
+            raise CanaryFailure("Hermes audit surface exposed a signed URL")
+
+    for index, output in enumerate(text_surfaces):
+        inspect(output.encode("utf-8"), f"command output {index}")
+    for surface in file_surfaces:
+        if surface.is_file():
+            inspect(surface.read_bytes(), surface.name)
+            continue
+        if not surface.is_dir():
+            continue
+        for path in sorted(surface.rglob("*")):
+            if path.is_file():
+                inspect(path.read_bytes(), path.name)
+
+
 def main() -> int:
     args = parse_args()
     if platform.system() != "Windows":
@@ -412,6 +538,23 @@ def main() -> int:
         args.requirements_lock,
         "Hermes requirements lock",
     )
+    candidate_hermes_wheel = assert_file(
+        args.candidate_hermes_wheel,
+        "candidate Hermes wheel",
+    )
+    candidate_council_archive = assert_file(
+        args.candidate_council_archive,
+        "candidate Council archive",
+    )
+    installer_powershell = assert_file(
+        args.installer_powershell,
+        "PowerShell installer",
+    )
+    installer_posix = assert_file(args.installer_posix, "POSIX installer")
+    sigstore_requirements_lock = assert_file(
+        args.sigstore_requirements_lock,
+        "Sigstore requirements lock",
+    )
     previous_hermes_wheel = assert_file(
         args.previous_hermes_wheel,
         "previous Hermes wheel",
@@ -427,6 +570,8 @@ def main() -> int:
     validate_ollama(args.ollama_base_url, args.model, args.timeout_seconds)
 
     checks: dict[str, str] = {}
+    observed_outputs: list[str] = []
+    prompt_marker = "OCCULT_CANARY_PRIVATE_PROMPT_" + uuid.uuid4().hex
     gateway: subprocess.Popen[bytes] | None = None
     gateway_log: Any | None = None
     with tempfile.TemporaryDirectory(
@@ -458,12 +603,13 @@ def main() -> int:
         )
         checks["versions"] = "passed"
 
-        run(
+        disabled_status = run(
             [str(hermes), "occult", "status"],
             env=env,
             timeout=args.timeout_seconds,
             expect_success=False,
         )
+        observed_outputs.append(disabled_status.stdout + disabled_status.stderr)
         if (primary_home / "occult").exists():
             raise CanaryFailure("Occult activated before explicit initialization")
         checks["disabled_before_initialization"] = "passed"
@@ -498,12 +644,14 @@ def main() -> int:
                 root / "gateway-first.log",
                 args.timeout_seconds,
             )
+            status_result = run(
+                [str(hermes), "occult", "status"],
+                env=env,
+                timeout=args.timeout_seconds,
+            )
+            observed_outputs.append(status_result.stdout + status_result.stderr)
             status = load_json_output(
-                run(
-                    [str(hermes), "occult", "status"],
-                    env=env,
-                    timeout=args.timeout_seconds,
-                ).stdout,
+                status_result.stdout,
                 "Occult status",
             )
             routes = status.get("routes", [])
@@ -516,24 +664,29 @@ def main() -> int:
             ):
                 raise CanaryFailure("zero-cost local route is unavailable")
 
+            invocation_result = run(
+                [
+                    str(hermes),
+                    "occult",
+                    "invoke",
+                    "--agent",
+                    "occult.major.magician",
+                    "--message",
+                    (
+                        "Respond with READY only. Do not repeat this marker: "
+                        + prompt_marker
+                    ),
+                    "--mode",
+                    "local_only",
+                    "--maximum-fallbacks",
+                    "0",
+                ],
+                env=env,
+                timeout=args.timeout_seconds,
+            )
+            observed_outputs.append(invocation_result.stdout + invocation_result.stderr)
             invocation = load_json_output(
-                run(
-                    [
-                        str(hermes),
-                        "occult",
-                        "invoke",
-                        "--agent",
-                        "occult.major.magician",
-                        "--message",
-                        "Return a concise local launch readiness confirmation.",
-                        "--mode",
-                        "local_only",
-                        "--maximum-fallbacks",
-                        "0",
-                    ],
-                    env=env,
-                    timeout=args.timeout_seconds,
-                ).stdout,
+                invocation_result.stdout,
                 "Occult invocation",
             )
             route = invocation.get("route_summary", {})
@@ -570,6 +723,7 @@ def main() -> int:
                 timeout=args.timeout_seconds * 3,
             )
             assert_redacted(council_result.stdout + council_result.stderr, token)
+            observed_outputs.append(council_result.stdout + council_result.stderr)
             council_evidence = load_json_output(council_result.stdout, "Council E2E")
             if (
                 council_evidence.get("contract_version") != CONTRACT_VERSION
@@ -579,7 +733,6 @@ def main() -> int:
                 raise CanaryFailure("Council reading recovery canary failed")
             checks["gateway_restart"] = "passed"
             checks["council_pause_restart_resume"] = "passed"
-            checks["audit_redaction"] = "passed"
         finally:
             if gateway is not None and gateway_log is not None:
                 stop_gateway(gateway, gateway_log)
@@ -611,12 +764,16 @@ def main() -> int:
                 root / "gateway-restored.log",
                 args.timeout_seconds,
             )
+            restored_status_result = run(
+                [str(hermes), "occult", "status"],
+                env=restore_env,
+                timeout=args.timeout_seconds,
+            )
+            observed_outputs.append(
+                restored_status_result.stdout + restored_status_result.stderr
+            )
             restored_status = load_json_output(
-                run(
-                    [str(hermes), "occult", "status"],
-                    env=restore_env,
-                    timeout=args.timeout_seconds,
-                ).stdout,
+                restored_status_result.stdout,
                 "restored Occult status",
             )
             if not restored_status.get("agents") or not restored_status.get("routes"):
@@ -626,18 +783,32 @@ def main() -> int:
             if gateway is not None and gateway_log is not None:
                 stop_gateway(gateway, gateway_log)
 
-        rehearse_rollback(
-            root=root,
-            uv=uv,
-            requirements_lock=requirements_lock,
-            previous_hermes_wheel=previous_hermes_wheel,
-            previous_council_archive=previous_council_archive,
-            candidate_hermes=hermes,
-            candidate_council=council,
-            env=env,
-            timeout=args.timeout_seconds,
+        observed_outputs.extend(
+            rehearse_rollback(
+                root=root,
+                uv=uv,
+                requirements_lock=requirements_lock,
+                candidate_hermes_wheel=candidate_hermes_wheel,
+                candidate_council_archive=candidate_council_archive,
+                previous_hermes_wheel=previous_hermes_wheel,
+                previous_council_archive=previous_council_archive,
+                env=env,
+                timeout=args.timeout_seconds,
+            )
         )
         checks["rollback_previous_checksummed_releases"] = "passed"
+
+        assert_redaction_surfaces(
+            text_surfaces=observed_outputs,
+            file_surfaces=[
+                primary_home / "occult",
+                restored_home / "occult",
+                *sorted(root.glob("gateway-*.log")),
+            ],
+            token=token,
+            prompt_marker=prompt_marker,
+        )
+        checks["audit_redaction"] = "passed"
 
     for _attempt in range(10):
         if not root.exists():
@@ -660,6 +831,32 @@ def main() -> int:
             "council_state_schema": COUNCIL_STATE_SCHEMA,
         },
         "platform": {"os": "Windows", "architecture": "x86_64"},
+        "release_artifacts": {
+            "hermes_wheel": {
+                "name": candidate_hermes_wheel.name,
+                "sha256": sha256_file(candidate_hermes_wheel),
+            },
+            "hermes_requirements_lock": {
+                "name": requirements_lock.name,
+                "sha256": sha256_file(requirements_lock),
+            },
+            "sigstore_requirements_lock": {
+                "name": sigstore_requirements_lock.name,
+                "sha256": sha256_file(sigstore_requirements_lock),
+            },
+            "installer_powershell": {
+                "name": installer_powershell.name,
+                "sha256": sha256_file(installer_powershell),
+            },
+            "installer_posix": {
+                "name": installer_posix.name,
+                "sha256": sha256_file(installer_posix),
+            },
+            "council_windows_x64": {
+                "name": candidate_council_archive.name,
+                "sha256": sha256_file(candidate_council_archive),
+            },
+        },
         "checks": checks,
         "overall_status": "passed",
         "contains_secrets": False,

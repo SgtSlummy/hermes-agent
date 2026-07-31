@@ -293,6 +293,13 @@ def _dependency_inventory(
             if name and version:
                 packages.add(("library", str(name), str(version)))
         materials.append(_material(source_root, lock))
+    for release_input in (
+        source_root / "scripts" / INSTALL_MANIFEST_FILE,
+        source_root / "scripts" / "occult-sigstore-requirements.in",
+        source_root / "scripts" / "occult-sigstore-requirements.lock",
+    ):
+        if release_input.is_file():
+            materials.append(_material(source_root, release_input))
     components = [
         {
             "type": kind,
@@ -353,6 +360,22 @@ def _load_install_manifest(source_root: Path) -> dict[str, Any]:
         raise OccultReleaseError("install manifest Council commit is invalid")
     if council.get("contract_version") != OCCULT_CONTRACT_VERSION:
         raise OccultReleaseError("install manifest contract version is incompatible")
+    sigstore_asset = manifest.get("sigstore_requirements_asset")
+    sigstore_sha256 = manifest.get("sigstore_requirements_sha256")
+    if (
+        not isinstance(sigstore_asset, str)
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", sigstore_asset)
+        or ".." in sigstore_asset
+    ):
+        raise OccultReleaseError("install manifest Sigstore lock asset is invalid")
+    if not isinstance(sigstore_sha256, str) or not re.fullmatch(
+        r"[0-9a-f]{64}",
+        sigstore_sha256,
+    ):
+        raise OccultReleaseError("install manifest Sigstore lock hash is invalid")
+    sigstore_lock = source_root / "scripts" / sigstore_asset
+    if not sigstore_lock.is_file() or _sha256(sigstore_lock) != sigstore_sha256:
+        raise OccultReleaseError("install manifest Sigstore lock hash is inconsistent")
     return manifest
 
 

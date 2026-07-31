@@ -49,6 +49,11 @@ def _write_source_locks(root: Path) -> None:
         (ROOT / "scripts" / INSTALL_MANIFEST_FILE).read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    for name in (
+        "occult-sigstore-requirements.in",
+        "occult-sigstore-requirements.lock",
+    ):
+        (scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
 
 
 def _assembly_roots(tmp_path: Path) -> tuple[Path, Path]:
@@ -152,6 +157,20 @@ def test_release_assembly_is_deterministic_and_policy_safe(tmp_path: Path):
     assert {subject["name"] for subject in provenance["subject"]} == {
         item["path"] for item in manifest["artifacts"]
     }
+    materials = {
+        material["uri"]: material["digest"]["sha256"]
+        for material in provenance["predicate"]["buildDefinition"][
+            "resolvedDependencies"
+        ]
+    }
+    for name in (
+        f"scripts/{INSTALL_MANIFEST_FILE}",
+        "scripts/occult-sigstore-requirements.in",
+        "scripts/occult-sigstore-requirements.lock",
+    ):
+        assert (
+            materials[name] == hashlib.sha256((source / name).read_bytes()).hexdigest()
+        )
     assert (first / CHECKSUM_FILE).is_file()
     assert (first / MANIFEST_FILE).is_file()
 
