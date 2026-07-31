@@ -4721,9 +4721,16 @@ def _(rid, params: dict) -> dict:
 
     if name in {"tarot", "occult"}:
         try:
-            from hermes_cli.occult import OccultCLIError, run_tui_tarot_command
+            from hermes_cli.occult import (
+                OccultCLIError,
+                run_tui_occult_command,
+                run_tui_tarot_command,
+            )
 
-            output = run_tui_tarot_command(arg)
+            command = (
+                run_tui_tarot_command if name == "tarot" else run_tui_occult_command
+            )
+            output = command(arg)
         except OccultCLIError as exc:
             return _err(rid, 5030, str(exc))
         except Exception:
