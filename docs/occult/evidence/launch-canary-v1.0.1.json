@@ -2,7 +2,10 @@
   "checks": {
     "audit_redaction": "passed",
     "backup_restore": "passed",
+    "candidate_artifact_installation": "passed",
     "council_pause_restart_resume": "passed",
+    "council_source_provenance": "passed",
+    "default_model_binding": "passed",
     "disabled_before_initialization": "passed",
     "explicit_local_initialization": "passed",
     "gateway_restart": "passed",
@@ -12,7 +15,7 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-07-31T04:19:17.166804Z",
+  "generated_at": "2026-07-31T04:55:51.575875Z",
   "overall_status": "passed",
   "platform": {
     "architecture": "x86_64",
@@ -20,9 +23,11 @@
   },
   "release": {
     "agents_council": "0.5.2",
+    "council_commit": "453676402fb3b3183aca6eccf64067ac4e86a4de",
     "council_state_schema": 3,
     "hermes": "v1.0.1",
     "hermes_cli": "0.14.0",
+    "ollama_model": "qwen2.5:3b",
     "runtime_contract": "1.0.0"
   },
   "release_artifacts": {
@@ -38,13 +43,17 @@
       "name": "hermes_agent-0.14.0-py3-none-any.whl",
       "sha256": "8bf1af5acc71f44e9eb2cbae0b596fb3188446e513e24bee031552b78edc70c3"
     },
+    "install_manifest": {
+      "name": "occult-install-manifest.json",
+      "sha256": "f9abe7625a08d67818cda8653211e8c77c9258f46d0f2bb031179034550ab0c3"
+    },
     "installer_posix": {
       "name": "install-occult.sh",
-      "sha256": "7d7b3c586a95707cc2ccaf9b9a4de6a46ec09656e596e6b6a9fa87491ee175c3"
+      "sha256": "255f9c5564cee2a61075a5bfe64ad6725de8f517047f6148278225ac314c35fe"
     },
     "installer_powershell": {
       "name": "install-occult.ps1",
-      "sha256": "817969abc9a2d8302702ec168999377497954e892b78646aac1b9ed00f04a3b2"
+      "sha256": "8a59484aa30ebb68b7abdf2cd61a58f74d58a9e47cc81de07750b9f93c37597b"
     },
     "sigstore_requirements_lock": {
       "name": "occult-sigstore-requirements.lock",

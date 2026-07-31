@@ -62,6 +62,7 @@ def test_occult_production_workflow_preserves_release_invariants():
         "scripts/occult-sigstore-requirements.lock",
         "OCCULT-INSTALL-SHA256SUMS.txt",
         "canary_report_sha256",
+        ".release.ollama_model == $model",
         'test "$COUNCIL_REF" = "$EXPECTED_COUNCIL_REF"',
         "git -C council rev-parse HEAD",
         "uv export",

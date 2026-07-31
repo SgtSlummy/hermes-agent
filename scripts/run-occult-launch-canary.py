@@ -55,11 +55,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the redacted Occult v1.0.1 Windows launch canary."
     )
-    parser.add_argument("--hermes-executable", type=Path, required=True)
-    parser.add_argument("--council-executable", type=Path, required=True)
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)
     parser.add_argument("--uv-executable", type=Path, required=True)
+    parser.add_argument("--install-manifest", type=Path, required=True)
     parser.add_argument("--requirements-lock", type=Path, required=True)
     parser.add_argument("--candidate-hermes-wheel", type=Path, required=True)
     parser.add_argument("--candidate-council-archive", type=Path, required=True)
@@ -73,7 +72,6 @@ def parse_args() -> argparse.Namespace:
         "--ollama-base-url",
         default="http://127.0.0.1:11434/v1",
     )
-    parser.add_argument("--model", default="qwen2.5:3b")
     parser.add_argument("--timeout-seconds", type=int, default=180)
     return parser.parse_args()
 
@@ -147,22 +145,147 @@ def extract_regular_tar(archive_path: Path, destination: Path) -> None:
                 or member.issym()
                 or member.islnk()
             ):
-                raise CanaryFailure("previous Council archive contains an unsafe path")
+                raise CanaryFailure("Council archive contains an unsafe path")
             target = destination.joinpath(*parts).resolve()
             if not target.is_relative_to(destination_root):
-                raise CanaryFailure("previous Council archive escapes its destination")
+                raise CanaryFailure("Council archive escapes its destination")
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue
             if not member.isfile():
-                raise CanaryFailure("previous Council archive contains a special file")
+                raise CanaryFailure("Council archive contains a special file")
             source = archive.extractfile(member)
             if source is None:
-                raise CanaryFailure("previous Council archive could not be read")
+                raise CanaryFailure("Council archive could not be read")
             target.parent.mkdir(parents=True, exist_ok=True)
             with source, target.open("wb") as output:
                 shutil.copyfileobj(source, output)
             target.chmod(member.mode & 0o777)
+
+
+def install_hermes_environment(
+    *,
+    environment: Path,
+    uv: Path,
+    requirements_lock: Path,
+    wheel: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> Path:
+    run(
+        [
+            str(uv),
+            "venv",
+            "--no-config",
+            "--python",
+            "3.11",
+            str(environment),
+        ],
+        env=env,
+        timeout=timeout,
+    )
+    environment_python = environment / "Scripts" / "python.exe"
+    run(
+        [
+            str(uv),
+            "pip",
+            "sync",
+            "--no-config",
+            "--python",
+            str(environment_python),
+            "--require-hashes",
+            str(requirements_lock),
+        ],
+        env=env,
+        timeout=timeout * 3,
+    )
+    run(
+        [
+            str(uv),
+            "pip",
+            "install",
+            "--no-config",
+            "--python",
+            str(environment_python),
+            "--no-deps",
+            "--no-index",
+            str(wheel),
+        ],
+        env=env,
+        timeout=timeout,
+    )
+    executable = environment / "Scripts" / "hermes.exe"
+    if not executable.is_file():
+        raise CanaryFailure("candidate Hermes environment is incomplete")
+    return executable
+
+
+def load_install_manifest(path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise CanaryFailure("install manifest is invalid") from None
+    if not isinstance(manifest, dict):
+        raise CanaryFailure("install manifest has the wrong shape")
+    council = manifest.get("council")
+    if not isinstance(council, dict):
+        raise CanaryFailure("install manifest Council metadata is missing")
+    if (
+        manifest.get("occult_release_version") != HERMES_RELEASE.removeprefix("v")
+        or manifest.get("hermes_cli_version") != HERMES_CLI_VERSION
+        or council.get("release_tag") != f"v{COUNCIL_VERSION}"
+        or council.get("contract_version") != CONTRACT_VERSION
+        or council.get("state_schema") != COUNCIL_STATE_SCHEMA
+    ):
+        raise CanaryFailure("install manifest release metadata is incompatible")
+    council_commit = council.get("commit_sha")
+    if not isinstance(council_commit, str) or not re.fullmatch(
+        r"[0-9a-f]{40}",
+        council_commit,
+    ):
+        raise CanaryFailure("install manifest Council commit is invalid")
+    model = manifest.get("ollama_model")
+    if not isinstance(model, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}",
+        model,
+    ):
+        raise CanaryFailure("install manifest Ollama model is invalid")
+    return manifest
+
+
+def validate_council_repository(
+    repository: Path,
+    expected_commit: str,
+    *,
+    env: dict[str, str],
+    timeout: int,
+) -> None:
+    git = shutil.which("git")
+    if git is None:
+        raise CanaryFailure("Git is required to verify the Council canary checkout")
+    head = run(
+        [git, "-C", str(repository), "rev-parse", "HEAD"],
+        env=env,
+        timeout=timeout,
+    ).stdout.strip()
+    if head != expected_commit:
+        raise CanaryFailure("Council canary checkout is not at the reviewed commit")
+    status = run(
+        [
+            git,
+            "-C",
+            str(repository),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        ],
+        env=env,
+        timeout=timeout,
+    ).stdout
+    if status.strip():
+        raise CanaryFailure("Council canary checkout contains local modifications")
+    if not (repository / "scripts" / "occultHermesE2E.ts").is_file():
+        raise CanaryFailure("Council cross-repository E2E script is missing")
 
 
 def rehearse_rollback(
@@ -193,62 +316,27 @@ def rehearse_rollback(
     environments.mkdir(parents=True)
     bin_root.mkdir()
 
-    def install_hermes(name: str, wheel: Path) -> Path:
-        environment = environments / name
-        run(
-            [
-                str(uv),
-                "venv",
-                "--no-config",
-                "--python",
-                "3.11",
-                str(environment),
-            ],
-            env=env,
-            timeout=timeout,
-        )
-        environment_python = environment / "Scripts" / "python.exe"
-        run(
-            [
-                str(uv),
-                "pip",
-                "sync",
-                "--no-config",
-                "--python",
-                str(environment_python),
-                "--require-hashes",
-                str(requirements_lock),
-            ],
-            env=env,
-            timeout=timeout * 3,
-        )
-        run(
-            [
-                str(uv),
-                "pip",
-                "install",
-                "--no-config",
-                "--python",
-                str(environment_python),
-                "--no-deps",
-                "--no-index",
-                str(wheel),
-            ],
-            env=env,
-            timeout=timeout,
-        )
-        executable = environment / "Scripts" / "hermes.exe"
-        if not executable.is_file():
-            raise CanaryFailure("rollback Hermes environment is incomplete")
-        return executable
-
     def activate(source: Path, destination: Path) -> None:
         staged = destination.with_name(destination.name + ".new-" + uuid.uuid4().hex)
         shutil.copy2(source, staged)
         os.replace(staged, destination)
 
-    candidate_hermes = install_hermes("candidate", candidate_hermes_wheel)
-    previous_hermes = install_hermes("previous", previous_hermes_wheel)
+    candidate_hermes = install_hermes_environment(
+        environment=environments / "candidate",
+        uv=uv,
+        requirements_lock=requirements_lock,
+        wheel=candidate_hermes_wheel,
+        env=env,
+        timeout=timeout,
+    )
+    previous_hermes = install_hermes_environment(
+        environment=environments / "previous",
+        uv=uv,
+        requirements_lock=requirements_lock,
+        wheel=previous_hermes_wheel,
+        env=env,
+        timeout=timeout,
+    )
     safe_public_version(
         run([str(previous_hermes), "--version"], env=env, timeout=timeout).stdout,
         PREVIOUS_HERMES_CLI_VERSION,
@@ -530,10 +618,12 @@ def main() -> int:
     if not 30 <= args.timeout_seconds <= 900:
         raise CanaryFailure("timeout must be from 30 to 900 seconds")
 
-    hermes = assert_file(args.hermes_executable, "Hermes executable")
-    council = assert_file(args.council_executable, "Council executable")
     bun = assert_file(args.bun_executable, "Bun executable")
     uv = assert_file(args.uv_executable, "uv executable")
+    install_manifest = assert_file(args.install_manifest, "install manifest")
+    manifest = load_install_manifest(install_manifest)
+    model = manifest["ollama_model"]
+    council_commit = manifest["council"]["commit_sha"]
     requirements_lock = assert_file(
         args.requirements_lock,
         "Hermes requirements lock",
@@ -564,10 +654,8 @@ def main() -> int:
         "previous Council archive",
     )
     council_repository = assert_directory(args.council_repository, "Council repository")
-    if not (council_repository / "scripts" / "occultHermesE2E.ts").is_file():
-        raise CanaryFailure("Council cross-repository E2E script is missing")
     assert_port_available("127.0.0.1", 8642)
-    validate_ollama(args.ollama_base_url, args.model, args.timeout_seconds)
+    validate_ollama(args.ollama_base_url, model, args.timeout_seconds)
 
     checks: dict[str, str] = {}
     observed_outputs: list[str] = []
@@ -590,6 +678,29 @@ def main() -> int:
             "NO_COLOR": "1",
             "PYTHONIOENCODING": "utf-8",
         })
+        validate_council_repository(
+            council_repository,
+            council_commit,
+            env=env,
+            timeout=args.timeout_seconds,
+        )
+        checks["council_source_provenance"] = "passed"
+
+        hermes = install_hermes_environment(
+            environment=root / "candidate-main-hermes",
+            uv=uv,
+            requirements_lock=requirements_lock,
+            wheel=candidate_hermes_wheel,
+            env=env,
+            timeout=args.timeout_seconds,
+        )
+        candidate_council_root = root / "candidate-main-council"
+        extract_regular_tar(candidate_council_archive, candidate_council_root)
+        council = assert_file(
+            candidate_council_root / "cli" / "council.exe",
+            "candidate Council executable",
+        )
+        checks["candidate_artifact_installation"] = "passed"
 
         hermes_version = safe_public_version(
             run([str(hermes), "--version"], env=env).stdout,
@@ -623,7 +734,7 @@ def main() -> int:
                     "--base-url",
                     args.ollama_base_url,
                     "--model",
-                    args.model,
+                    model,
                 ],
                 env=env,
                 timeout=args.timeout_seconds,
@@ -636,6 +747,7 @@ def main() -> int:
         if len(token) < 32:
             raise CanaryFailure("Occult service token was not generated")
         checks["explicit_local_initialization"] = "passed"
+        checks["default_model_binding"] = "passed"
 
         try:
             gateway, gateway_log = start_gateway(
@@ -802,7 +914,9 @@ def main() -> int:
             text_surfaces=observed_outputs,
             file_surfaces=[
                 primary_home / "occult",
+                primary_home / "logs",
                 restored_home / "occult",
+                restored_home / "logs",
                 *sorted(root.glob("gateway-*.log")),
             ],
             token=token,
@@ -829,9 +943,15 @@ def main() -> int:
             "agents_council": council_version,
             "runtime_contract": CONTRACT_VERSION,
             "council_state_schema": COUNCIL_STATE_SCHEMA,
+            "council_commit": council_commit,
+            "ollama_model": model,
         },
         "platform": {"os": "Windows", "architecture": "x86_64"},
         "release_artifacts": {
+            "install_manifest": {
+                "name": install_manifest.name,
+                "sha256": sha256_file(install_manifest),
+            },
             "hermes_wheel": {
                 "name": candidate_hermes_wheel.name,
                 "sha256": sha256_file(candidate_hermes_wheel),

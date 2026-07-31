@@ -467,28 +467,13 @@ if [ "$skip_council" -eq 0 ]; then
   esac
 fi
 
-step "Activating the fully staged local commands"
-mv -f "$hermes_staged" "$hermes_executable" ||
-  fail "Hermes command activation failed"
-if [ "$skip_council" -eq 0 ]; then
-  mv -f "$council_staged" "$bin_root/council" ||
-    fail "Council command activation failed"
-fi
-
-user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
-mkdir -p "$user_bin"
-ln -sfn "$hermes_executable" "$user_bin/hermes"
-if [ "$skip_council" -eq 0 ]; then
-  ln -sfn "$bin_root/council" "$user_bin/council"
-fi
-
 if [ "$initialize_local" -eq 1 ]; then
   command -v ollama >/dev/null 2>&1 ||
     fail "Ollama is required for --initialize-local. Install it from https://ollama.com/download and rerun this command"
   step "Pulling the explicitly requested local model $model"
   ollama pull "$model" || fail "Ollama could not pull $model"
   step "Explicitly initializing the local Occult profile"
-  "$hermes_executable" occult init --model "$model" ||
+  "$hermes_staged" occult init --model "$model" ||
     fail "hermes occult init failed"
 fi
 
@@ -509,6 +494,21 @@ case "$initialized:$enabled" in
   true:true|true:false|false:false) ;;
   *) fail "the preserved Occult initialization state was invalid" ;;
 esac
+
+step "Activating the fully staged local commands"
+mv -f "$hermes_staged" "$hermes_executable" ||
+  fail "Hermes command activation failed"
+if [ "$skip_council" -eq 0 ]; then
+  mv -f "$council_staged" "$bin_root/council" ||
+    fail "Council command activation failed"
+fi
+
+user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+mkdir -p "$user_bin"
+ln -sfn "$hermes_executable" "$user_bin/hermes"
+if [ "$skip_council" -eq 0 ]; then
+  ln -sfn "$bin_root/council" "$user_bin/council"
+fi
 
 if [ "$skip_council" -eq 1 ]; then
   council_json=null

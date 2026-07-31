@@ -107,9 +107,13 @@ def test_windows_installer_verifies_before_writing_application_files():
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     initialize_block = text.index("if ($InitializeLocal)")
-    assert initialize_block < text.index(
-        '"occult", "init", "--model", $Model', initialize_block
+    initialize_call = text.index(
+        '"occult", "init", "--model", $Model',
+        initialize_block,
     )
+    activation = text.index('Write-Step "Activating the fully staged local commands"')
+    assert "$hermesStagedExecutable" in text[initialize_block:initialize_call]
+    assert initialize_call < activation
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -153,9 +157,12 @@ def test_unix_installer_verifies_before_writing_application_files():
         'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     initialize_block = text.index('if [ "$initialize_local" -eq 1 ]')
-    assert initialize_block < text.index(
-        '"$hermes_executable" occult init --model "$model"', initialize_block
+    initialize_call = text.index(
+        '"$hermes_staged" occult init --model "$model"',
+        initialize_block,
     )
+    activation = text.index('step "Activating the fully staged local commands"')
+    assert initialize_call < activation
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -180,6 +187,7 @@ def test_quickstart_is_the_single_public_occult_entrypoint():
     assert "[Occult local public v1 quickstart](docs/occult/quickstart.md)" in readme
     assert "agents-council.com" not in quickstart
     assert "agents-council@latest" not in quickstart
+    assert 'sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local' in quickstart
 
 
 def test_launch_canary_is_redacted_and_covers_the_operator_flow():
@@ -203,11 +211,17 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "council_result.stdout + council_result.stderr" in text
     assert "--candidate-hermes-wheel" in text
     assert "--candidate-council-archive" in text
+    assert "--install-manifest" in text
     assert "--sigstore-requirements-lock" in text
     assert "release_artifacts" in text
+    assert "install_hermes_environment" in text
+    assert "validate_council_repository" in text
     assert "assert_redaction_surfaces" in text
     assert 'root.glob("gateway-*.log")' in text
     assert 'primary_home / "occult"' in text
+    assert 'primary_home / "logs"' in text
+    assert 'restored_home / "logs"' in text
+    assert '"ollama_model": model' in text
     assert "os.replace(staged, destination)" in text
     assert "previous-after-rollback" in text
     assert "candidate-restored" in text
@@ -222,7 +236,11 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["overall_status"] == "passed"
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
+    manifest = json.loads(_text(MANIFEST))
+    assert evidence["release"]["ollama_model"] == manifest["ollama_model"]
+    assert evidence["release"]["council_commit"] == manifest["council"]["commit_sha"]
     assert set(evidence["release_artifacts"]) == {
+        "install_manifest",
         "hermes_wheel",
         "hermes_requirements_lock",
         "sigstore_requirements_lock",

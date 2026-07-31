@@ -516,20 +516,6 @@ try {
         }
     }
 
-    Write-Step "Activating the fully staged local commands"
-    Move-Item `
-        -LiteralPath $hermesStagedExecutable `
-        -Destination $hermesExecutable `
-        -Force
-    if (-not $SkipCouncil) {
-        $councilExecutable = Join-Path $binRoot "council.exe"
-        Move-Item `
-            -LiteralPath $councilStagedExecutable `
-            -Destination $councilExecutable `
-            -Force
-    }
-
-    Add-UserPath -Directory $binRoot
     if ($InitializeLocal) {
         $ollama = Get-Command ollama -ErrorAction SilentlyContinue
         if (-not $ollama) {
@@ -542,7 +528,7 @@ try {
             -FailureMessage "Ollama could not pull $Model"
         Write-Step "Explicitly initializing the local Occult profile"
         Invoke-Checked `
-            -Executable $hermesExecutable `
+            -Executable $hermesStagedExecutable `
             -Arguments @("occult", "init", "--model", $Model) `
             -FailureMessage "hermes occult init failed"
     }
@@ -563,6 +549,21 @@ print(json.dumps({"initialized": initialized, "enabled": enabled}))
     $state = $stateJson | ConvertFrom-Json
     $initialized = [bool]$state.initialized
     $enabled = [bool]$state.enabled
+
+    Write-Step "Activating the fully staged local commands"
+    Move-Item `
+        -LiteralPath $hermesStagedExecutable `
+        -Destination $hermesExecutable `
+        -Force
+    if (-not $SkipCouncil) {
+        $councilExecutable = Join-Path $binRoot "council.exe"
+        Move-Item `
+            -LiteralPath $councilStagedExecutable `
+            -Destination $councilExecutable `
+            -Force
+    }
+
+    Add-UserPath -Directory $binRoot
 
     $receipt = [ordered]@{
         schema_version = "1.0.0"

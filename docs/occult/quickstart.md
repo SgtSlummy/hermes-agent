@@ -27,7 +27,7 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "817969abc9a2d8302702ec168999377497954e892b78646aac1b9ed00f04a3b2"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Occult installer checksum verification failed" }; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "8a59484aa30ebb68b7abdf2cd61a58f74d58a9e47cc81de07750b9f93c37597b"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Occult installer checksum verification failed" }; & $installer
 ```
 
 This literal checksum is pinned in the immutable `v1.0.1` quickstart and
@@ -61,7 +61,7 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="7d7b3c586a95707cc2ccaf9b9a4de6a46ec09656e596e6b6a9fa87491ee175c3"
+  expected="255f9c5564cee2a61075a5bfe64ad6725de8f517047f6148278225ac314c35fe"
   curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
@@ -136,7 +136,7 @@ with explicit initialization:
 ```
 
 ```bash
-sh "$installer" --initialize-local --model qwen2.5:3b
+sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local --model qwen2.5:3b
 ```
 
 Or perform the same two steps directly:
