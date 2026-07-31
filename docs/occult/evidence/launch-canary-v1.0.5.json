@@ -15,7 +15,7 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-07-31T22:35:12.929750Z",
+  "generated_at": "2026-07-31T23:26:31.908124Z",
   "overall_status": "passed",
   "platform": {
     "architecture": "x86_64",
@@ -41,7 +41,7 @@
     },
     "hermes_wheel": {
       "name": "hermes_agent-0.14.0-py3-none-any.whl",
-      "sha256": "6b686b8851dbf7aa4335843e2910b9632392b2daad6df61c033c75e8b9b93732"
+      "sha256": "d520496b83b9c926cc61d15645bb489ceae6a791fe4f7ad29dcc5b82ec996e26"
     },
     "install_manifest": {
       "name": "occult-install-manifest.json",
