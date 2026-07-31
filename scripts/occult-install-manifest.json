@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "occult_release_version": "1.0.1",
+  "hermes_cli_version": "0.14.0",
+  "hermes_wheel_asset": "hermes_agent-0.14.0-py3-none-any.whl",
+  "council": {
+    "release_tag": "v0.5.2",
+    "commit_sha": "453676402fb3b3183aca6eccf64067ac4e86a4de",
+    "contract_version": "1.0.0",
+    "state_schema": 3,
+    "assets": {
+      "linux-x64": "agents-council-linux-x64.tar.gz",
+      "linux-arm64": "agents-council-linux-arm64.tar.gz",
+      "macos-x64": "agents-council-darwin-x64.tar.gz",
+      "macos-arm64": "agents-council-darwin-arm64.tar.gz",
+      "windows-x64": "agents-council-windows-x64.tar.gz"
+    }
+  },
+  "ollama_model": "qwen2.5:3b",
+  "sigstore_python_version": "4.5.0",
+  "uv_version": "0.11.28"
+}

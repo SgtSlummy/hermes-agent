@@ -115,6 +115,11 @@ def test_release_assembly_is_deterministic_and_policy_safe(tmp_path: Path):
         "maximum_cost_usd": 0,
     }
     assert compatibility["platforms"] == ["linux", "macos", "windows"]
+    assert compatibility["agents_council"] == {
+        "minimum_version": "0.5.2",
+        "release_tag": "v0.5.2",
+        "commit_sha": "453676402fb3b3183aca6eccf64067ac4e86a4de",
+    }
     migration = json.loads((first / MIGRATIONS_FILE).read_text())
     assert migration["rollback_supported"] is True
     assert migration["rollback_requires_backup_restore"] == ["readings-sqlite"]

@@ -93,7 +93,11 @@ def assemble_release(
         "release_version": version,
         "channel": channel,
         "occult_contract_versions": [OCCULT_CONTRACT_VERSION],
-        "agents_council": {"minimum_version": "0.4.0"},
+        "agents_council": {
+            "minimum_version": "0.5.2",
+            "release_tag": "v0.5.2",
+            "commit_sha": "453676402fb3b3183aca6eccf64067ac4e86a4de",
+        },
         "feature_gate": {"config": "occult.enabled", "default": False},
         "default_policy": {
             "local_first": True,

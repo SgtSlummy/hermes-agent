@@ -1,0 +1,29 @@
+{
+  "checks": {
+    "audit_redaction": "passed",
+    "backup_restore": "passed",
+    "council_pause_restart_resume": "passed",
+    "disabled_before_initialization": "passed",
+    "explicit_local_initialization": "passed",
+    "gateway_restart": "passed",
+    "temporary_secret_cleanup": "passed",
+    "versions": "passed",
+    "zero_cost_major_arcana_invocation": "passed"
+  },
+  "contains_secrets": false,
+  "generated_at": "2026-07-31T02:21:24.531004Z",
+  "overall_status": "passed",
+  "platform": {
+    "architecture": "x86_64",
+    "os": "Windows"
+  },
+  "release": {
+    "agents_council": "0.5.2",
+    "council_state_schema": 3,
+    "hermes": "v1.0.1",
+    "hermes_cli": "0.14.0",
+    "runtime_contract": "1.0.0"
+  },
+  "schema_version": "1.0.0",
+  "scope": "pre-release Windows x64 candidate canary"
+}

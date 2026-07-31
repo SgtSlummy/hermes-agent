@@ -35,6 +35,12 @@ zero-dollar request ceiling.
 
 ## Clean local installation
 
+Use the signed GitHub-first installer in
+[`docs/occult/quickstart.md`](quickstart.md). It verifies the exact Hermes and
+Council GitHub Actions Sigstore identities and selected asset checksums before
+installing per-user. Occult remains disabled unless local initialization is
+explicitly requested.
+
 Install Ollama and pull at least one chat model, then run:
 
 ```text
@@ -250,6 +256,7 @@ For suspected credential exposure:
   cryptographic signing, exact staged-byte promotion, release notes, and a
   tested rollback artifact.
 
-The release workflow creates artifacts and gates. Publishing packages,
-advancing public tags, or deploying production remains an explicit operator
-action after review.
+The release workflow creates signed GitHub assets without making a new patch
+release `latest`. Advancing the public latest marker remains an explicit
+operator action after the redacted clean-machine canary and rollback rehearsal
+pass.

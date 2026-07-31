@@ -8,6 +8,9 @@ on:
       - "gateway/run.py"
       - "gateway/platforms/api_server.py"
       - "hermes_cli/occult.py"
+      - "scripts/install-occult.ps1"
+      - "scripts/install-occult.sh"
+      - "scripts/occult-install-manifest.json"
       - "scripts/occult_release.py"
       - "tests/agent/occult/**"
       - "tests/gateway/test_occult_runtime_wiring.py"
@@ -15,6 +18,7 @@ on:
       - "tests/hermes_cli/test_occult_init.py"
       - "tests/hermes_cli/test_config.py"
       - "docs/occult/**"
+      - "README.md"
       - ".github/workflows/occult-production-gate.yml"
       - "pyproject.toml"
       - "uv.lock"
@@ -41,7 +45,12 @@ on:
       council_ref:
         description: Reviewed Agents Council ref compatible with this release
         required: true
-        default: main
+        default: v0.5.2
+        type: string
+      canary_report_sha256:
+        description: SHA-256 of the reviewed redacted local launch canary report
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -113,7 +122,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: SgtSlummy/agents-council
-          ref: ${{ inputs.council_ref || 'main' }}
+          ref: ${{ inputs.council_ref || 'v0.5.2' }}
           persist-credentials: false
           path: council
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -251,6 +260,19 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Install pinned Python dependencies
         run: uv sync --frozen --extra occult
+      - name: Validate immutable launch inputs
+        shell: bash
+        env:
+          CANARY_REPORT_SHA256: ${{ inputs.canary_report_sha256 }}
+          COUNCIL_REF: ${{ inputs.council_ref }}
+        run: |
+          set -euo pipefail
+          test "$COUNCIL_REF" = "v0.5.2"
+          [[ "$CANARY_REPORT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          CANARY="docs/occult/evidence/launch-canary-v1.0.1.json"
+          test -f "$CANARY"
+          echo "$CANARY_REPORT_SHA256  $CANARY" | sha256sum -c -
+          jq -e '.overall_status == "passed" and .contains_secrets == false' "$CANARY"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: occult-staged-${{ env.RELEASE_COMMIT }}
@@ -288,10 +310,63 @@ jobs:
           verify-cert-identity: >-
             https://github.com/SgtSlummy/hermes-agent/.github/workflows/occult-production-gate.yml@${{ github.ref }}
           verify-oidc-issuer: https://token.actions.githubusercontent.com
+      - name: Prepare minimal GitHub-first install assets
+        shell: bash
+        env:
+          CANARY_REPORT_SHA256: ${{ inputs.canary_report_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p install-assets
+          WHEEL="$(
+            find promoted/artifacts/platforms \
+              -type f \
+              -path '*ubuntu-latest*' \
+              -name '*-py3-none-any.whl' \
+              -print -quit
+          )"
+          test -n "$WHEEL"
+          WHEEL_NAME="$(basename "$WHEEL")"
+          cp "$WHEEL" "install-assets/$WHEEL_NAME"
+          cp scripts/install-occult.ps1 install-assets/
+          cp scripts/install-occult.sh install-assets/
+          cp scripts/occult-install-manifest.json install-assets/
+          cp docs/occult/evidence/launch-canary-v1.0.1.json install-assets/
+          jq -e \
+            --arg version "$RELEASE_VERSION" \
+            --arg wheel "$WHEEL_NAME" \
+            '.occult_release_version == $version
+             and .hermes_wheel_asset == $wheel
+             and .council.release_tag == "v0.5.2"
+             and .council.contract_version == "1.0.0"
+             and .council.state_schema == 3' \
+            install-assets/occult-install-manifest.json
+          echo "$CANARY_REPORT_SHA256  install-assets/occult-launch-canary-v1.0.1.json" |
+            sha256sum -c -
+          (
+            cd install-assets
+            find . -maxdepth 1 -type f \
+              ! -name OCCULT-INSTALL-SHA256SUMS.txt \
+              -printf '%f\0' |
+              sort -z |
+              xargs -0 sha256sum > OCCULT-INSTALL-SHA256SUMS.txt
+          )
+      - name: Sign and verify the minimal install checksum manifest
+        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
+        with:
+          inputs: install-assets/OCCULT-INSTALL-SHA256SUMS.txt
+          verify: true
+          verify-cert-identity: >-
+            https://github.com/SgtSlummy/hermes-agent/.github/workflows/occult-production-gate.yml@${{ github.ref }}
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: occult-stable-${{ env.RELEASE_VERSION }}-${{ env.RELEASE_COMMIT }}
-          path: promoted/
+          path: |
+            promoted/
+            install-assets/
+            occult-system-*.tar.gz
+            occult-system-*.tar.gz.sha256
+            occult-system-*.tar.gz.sha256.sigstore.json
           if-no-files-found: error
           retention-days: 90
       - name: Publish signed GitHub release
@@ -313,7 +388,9 @@ jobs:
             "${BUNDLE}.sha256.sigstore.json" \
             promoted/SHA256SUMS.txt \
             promoted/SHA256SUMS.txt.sigstore.json \
+            install-assets/* \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${RELEASE_COMMIT}" \
             --title "Occult System ${TAG}" \
-            --notes-file release-notes.md
+            --notes-file release-notes.md \
+            --latest=false
