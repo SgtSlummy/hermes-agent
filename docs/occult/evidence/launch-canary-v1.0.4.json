@@ -15,7 +15,7 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-07-31T21:22:22.948542Z",
+  "generated_at": "2026-07-31T21:29:01.504899Z",
   "overall_status": "passed",
   "platform": {
     "architecture": "x86_64",
