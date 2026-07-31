@@ -7,6 +7,7 @@ import pytest
 from agent.occult.release import (
     CHECKSUM_FILE,
     COMPATIBILITY_FILE,
+    INSTALL_MANIFEST_FILE,
     MANIFEST_FILE,
     MIGRATIONS_FILE,
     PROVENANCE_FILE,
@@ -20,6 +21,7 @@ from agent.occult.release import (
 
 COMMIT_SHA = "a" * 40
 SOURCE_DATE_EPOCH = 1_700_000_000
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _write_source_locks(root: Path) -> None:
@@ -41,6 +43,12 @@ def _write_source_locks(root: Path) -> None:
             }),
             encoding="utf-8",
         )
+    scripts = root / "scripts"
+    scripts.mkdir()
+    (scripts / INSTALL_MANIFEST_FILE).write_text(
+        (ROOT / "scripts" / INSTALL_MANIFEST_FILE).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
 
 def _assembly_roots(tmp_path: Path) -> tuple[Path, Path]:
@@ -115,10 +123,14 @@ def test_release_assembly_is_deterministic_and_policy_safe(tmp_path: Path):
         "maximum_cost_usd": 0,
     }
     assert compatibility["platforms"] == ["linux", "macos", "windows"]
+    install_manifest = json.loads(
+        (source / "scripts" / INSTALL_MANIFEST_FILE).read_text(encoding="utf-8")
+    )
+    council = install_manifest["council"]
     assert compatibility["agents_council"] == {
-        "minimum_version": "0.5.2",
-        "release_tag": "v0.5.2",
-        "commit_sha": "453676402fb3b3183aca6eccf64067ac4e86a4de",
+        "minimum_version": council["release_tag"].removeprefix("v"),
+        "release_tag": council["release_tag"],
+        "commit_sha": council["commit_sha"],
     }
     migration = json.loads((first / MIGRATIONS_FILE).read_text())
     assert migration["rollback_supported"] is True

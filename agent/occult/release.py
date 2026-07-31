@@ -17,6 +17,7 @@ from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 
 CHECKSUM_FILE = "SHA256SUMS.txt"
 COMPATIBILITY_FILE = "occult-compatibility.json"
+INSTALL_MANIFEST_FILE = "occult-install-manifest.json"
 MANIFEST_FILE = "occult-release-manifest.json"
 MIGRATIONS_FILE = "occult-migrations.json"
 PROVENANCE_FILE = "occult-provenance.intoto.jsonl"
@@ -87,6 +88,9 @@ def assemble_release(
         os.utime(destination, (source_date_epoch, source_date_epoch))
         copied.append(_file_descriptor(output_root, destination))
 
+    install_manifest = _load_install_manifest(source_root)
+    council = install_manifest["council"]
+    council_release_tag = council["release_tag"]
     generated_at = datetime.fromtimestamp(source_date_epoch, UTC).isoformat()
     compatibility = {
         "schema_version": "1.0.0",
@@ -94,9 +98,9 @@ def assemble_release(
         "channel": channel,
         "occult_contract_versions": [OCCULT_CONTRACT_VERSION],
         "agents_council": {
-            "minimum_version": "0.5.2",
-            "release_tag": "v0.5.2",
-            "commit_sha": "453676402fb3b3183aca6eccf64067ac4e86a4de",
+            "minimum_version": council_release_tag.removeprefix("v"),
+            "release_tag": council_release_tag,
+            "commit_sha": council["commit_sha"],
         },
         "feature_gate": {"config": "occult.enabled", "default": False},
         "default_policy": {
@@ -326,6 +330,30 @@ def _validate_release_identity(
         or source_date_epoch < 0
     ):
         raise OccultReleaseError("SOURCE_DATE_EPOCH must be non-negative")
+
+
+def _load_install_manifest(source_root: Path) -> dict[str, Any]:
+    """Load and validate the install metadata used by release assembly."""
+
+    manifest = _load_json_object(source_root / "scripts" / INSTALL_MANIFEST_FILE)
+    council = manifest.get("council")
+    if not isinstance(council, dict):
+        raise OccultReleaseError("install manifest must define Council metadata")
+    release_tag = council.get("release_tag")
+    commit_sha = council.get("commit_sha")
+    if not isinstance(release_tag, str) or not re.fullmatch(
+        r"v\d+\.\d+\.\d+",
+        release_tag,
+    ):
+        raise OccultReleaseError("install manifest Council tag is invalid")
+    if not isinstance(commit_sha, str) or not re.fullmatch(
+        r"[0-9a-f]{40}",
+        commit_sha,
+    ):
+        raise OccultReleaseError("install manifest Council commit is invalid")
+    if council.get("contract_version") != OCCULT_CONTRACT_VERSION:
+        raise OccultReleaseError("install manifest contract version is incompatible")
+    return manifest
 
 
 def _assert_safe_artifact(path: Path, relative: str) -> None:

@@ -9,6 +9,7 @@ inside a temporary directory that is removed before the report is written.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -17,6 +18,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.error
@@ -31,6 +33,14 @@ HERMES_RELEASE = "v1.0.1"
 COUNCIL_VERSION = "0.5.2"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
+PREVIOUS_HERMES_CLI_VERSION = "0.14.0"
+PREVIOUS_HERMES_WHEEL_SHA256 = (
+    "9c5621f70171ffb965f64e19d789813fe024b6b32c6f03e3269a530a2a8b3a71"
+)
+PREVIOUS_COUNCIL_VERSION = "0.5.1"
+PREVIOUS_COUNCIL_ARCHIVE_SHA256 = (
+    "22a7c585a65680c7e99d8236bb4038f8c70e9ec7922c0759b42620546aaf9eec"
+)
 STARTER_CARD_ID = "minor.pentacles.ace.ollama.local"
 SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 SIGNED_URL = re.compile(r"https?://\S+(?:signature|sigstore|x-amz-|token=)", re.I)
@@ -48,6 +58,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--council-executable", type=Path, required=True)
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)
+    parser.add_argument("--uv-executable", type=Path, required=True)
+    parser.add_argument("--requirements-lock", type=Path, required=True)
+    parser.add_argument("--previous-hermes-wheel", type=Path, required=True)
+    parser.add_argument("--previous-council-archive", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument(
         "--ollama-base-url",
@@ -97,6 +111,143 @@ def assert_directory(path: Path, label: str) -> Path:
     if not resolved.is_dir():
         raise CanaryFailure(f"{label} is missing")
     return resolved
+
+
+def assert_sha256(path: Path, expected: str, label: str) -> None:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected:
+        raise CanaryFailure(f"{label} checksum mismatch")
+
+
+def extract_regular_tar(archive_path: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    destination_root = destination.resolve()
+    with tarfile.open(archive_path, "r:gz") as archive:
+        for member in archive.getmembers():
+            normalized = member.name.replace("\\", "/").strip("/")
+            if normalized in {"", "."}:
+                continue
+            parts = Path(normalized).parts
+            if (
+                Path(member.name).is_absolute()
+                or ".." in parts
+                or member.issym()
+                or member.islnk()
+            ):
+                raise CanaryFailure("previous Council archive contains an unsafe path")
+            target = destination.joinpath(*parts).resolve()
+            if not target.is_relative_to(destination_root):
+                raise CanaryFailure("previous Council archive escapes its destination")
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise CanaryFailure("previous Council archive contains a special file")
+            source = archive.extractfile(member)
+            if source is None:
+                raise CanaryFailure("previous Council archive could not be read")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with source, target.open("wb") as output:
+                shutil.copyfileobj(source, output)
+            target.chmod(member.mode & 0o777)
+
+
+def rehearse_rollback(
+    *,
+    root: Path,
+    uv: Path,
+    requirements_lock: Path,
+    previous_hermes_wheel: Path,
+    previous_council_archive: Path,
+    candidate_hermes: Path,
+    candidate_council: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> None:
+    assert_sha256(
+        previous_hermes_wheel,
+        PREVIOUS_HERMES_WHEEL_SHA256,
+        "previous Hermes wheel",
+    )
+    assert_sha256(
+        previous_council_archive,
+        PREVIOUS_COUNCIL_ARCHIVE_SHA256,
+        "previous Council archive",
+    )
+    rollback_root = root / "rollback-rehearsal"
+    rollback_venv = rollback_root / "hermes-venv"
+    run(
+        [
+            str(uv),
+            "venv",
+            "--no-config",
+            "--clear",
+            "--python",
+            "3.11",
+            str(rollback_venv),
+        ],
+        env=env,
+        timeout=timeout,
+    )
+    rollback_python = rollback_venv / "Scripts" / "python.exe"
+    run(
+        [
+            str(uv),
+            "pip",
+            "sync",
+            "--no-config",
+            "--python",
+            str(rollback_python),
+            "--require-hashes",
+            str(requirements_lock),
+        ],
+        env=env,
+        timeout=timeout * 3,
+    )
+    run(
+        [
+            str(uv),
+            "pip",
+            "install",
+            "--no-config",
+            "--python",
+            str(rollback_python),
+            "--no-deps",
+            "--no-index",
+            str(previous_hermes_wheel),
+        ],
+        env=env,
+        timeout=timeout,
+    )
+    previous_hermes = rollback_venv / "Scripts" / "hermes.exe"
+    safe_public_version(
+        run([str(previous_hermes), "--version"], env=env, timeout=timeout).stdout,
+        PREVIOUS_HERMES_CLI_VERSION,
+        "previous Hermes",
+    )
+
+    previous_council_root = rollback_root / "council"
+    extract_regular_tar(previous_council_archive, previous_council_root)
+    previous_council = previous_council_root / "cli" / "council.exe"
+    safe_public_version(
+        run([str(previous_council), "--version"], env=env, timeout=timeout).stdout,
+        PREVIOUS_COUNCIL_VERSION,
+        "previous Council",
+    )
+
+    safe_public_version(
+        run([str(candidate_hermes), "--version"], env=env, timeout=timeout).stdout,
+        HERMES_CLI_VERSION,
+        "restored Hermes",
+    )
+    safe_public_version(
+        run([str(candidate_council), "--version"], env=env, timeout=timeout).stdout,
+        COUNCIL_VERSION,
+        "restored Council",
+    )
 
 
 def safe_public_version(output: str, expected: str, label: str) -> str:
@@ -158,7 +309,8 @@ def wait_for_health(url: str, process: subprocess.Popen[bytes], timeout: int) ->
                 if 200 <= response.status < 300:
                     return
         except (OSError, urllib.error.URLError):
-            time.sleep(0.5)
+            pass
+        time.sleep(0.5)
     raise CanaryFailure("Hermes gateway did not become healthy")
 
 
@@ -255,6 +407,19 @@ def main() -> int:
     hermes = assert_file(args.hermes_executable, "Hermes executable")
     council = assert_file(args.council_executable, "Council executable")
     bun = assert_file(args.bun_executable, "Bun executable")
+    uv = assert_file(args.uv_executable, "uv executable")
+    requirements_lock = assert_file(
+        args.requirements_lock,
+        "Hermes requirements lock",
+    )
+    previous_hermes_wheel = assert_file(
+        args.previous_hermes_wheel,
+        "previous Hermes wheel",
+    )
+    previous_council_archive = assert_file(
+        args.previous_council_archive,
+        "previous Council archive",
+    )
     council_repository = assert_directory(args.council_repository, "Council repository")
     if not (council_repository / "scripts" / "occultHermesE2E.ts").is_file():
         raise CanaryFailure("Council cross-repository E2E script is missing")
@@ -460,6 +625,19 @@ def main() -> int:
         finally:
             if gateway is not None and gateway_log is not None:
                 stop_gateway(gateway, gateway_log)
+
+        rehearse_rollback(
+            root=root,
+            uv=uv,
+            requirements_lock=requirements_lock,
+            previous_hermes_wheel=previous_hermes_wheel,
+            previous_council_archive=previous_council_archive,
+            candidate_hermes=hermes,
+            candidate_council=council,
+            env=env,
+            timeout=args.timeout_seconds,
+        )
+        checks["rollback_previous_checksummed_releases"] = "passed"
 
     for _attempt in range(10):
         if not root.exists():

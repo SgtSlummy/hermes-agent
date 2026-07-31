@@ -27,8 +27,12 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.ps1" -OutFile $installer; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "4ffa3264fe4ccad1da6eb34dd654fdd6e6039a99280fecd46b936617fd030514"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Occult installer checksum verification failed" }; & $installer
 ```
+
+This literal checksum is pinned in the immutable `v1.0.1` quickstart and
+authenticates the installer before PowerShell executes it. The installer then
+verifies the signed release manifest, dependency lock, wheel, and Council asset.
 
 The default install root is `%LOCALAPPDATA%\Occult`. Choose another per-user
 directory with:
@@ -54,8 +58,27 @@ Install Hermes without Council:
 Run as your normal user:
 
 ```bash
-installer="${TMPDIR:-/tmp}/install-occult.sh"; curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.sh" && sh "$installer"
+(
+  set -eu
+  installer="${TMPDIR:-/tmp}/install-occult.sh"
+  expected="b27d7a680f6633b12efaadee227c6d869baf0c6cd4a34826a506080264c6f25c"
+  curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.sh"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$installer" | awk '{print $1}')
+  else
+    actual=$(shasum -a 256 "$installer" | awk '{print $1}')
+  fi
+  [ "$actual" = "$expected" ] || {
+    rm -f -- "$installer"
+    echo "Occult installer checksum verification failed" >&2
+    exit 1
+  }
+  sh "$installer"
+)
 ```
+
+This performs the same pre-execution authentication. The POSIX installer then
+verifies the signed release manifest, dependency lock, wheel, and Council asset.
 
 The default install root is `${XDG_DATA_HOME:-$HOME/.local/share}/occult`.
 The installer creates per-user command links in
@@ -85,15 +108,19 @@ Get-Content "$env:LOCALAPPDATA\Occult\occult-install-receipt.json"
 Linux or macOS:
 
 ```bash
+export PATH="${XDG_BIN_HOME:-$HOME/.local/bin}:$PATH"
 hermes --version
 council --version
 cat "${XDG_DATA_HOME:-$HOME/.local/share}/occult/occult-install-receipt.json"
 ```
 
-The receipt identifies Occult release `1.0.1`, Hermes CLI package `0.14.0`,
-Agents Council `v0.5.2`, contract `1.0.0`, and Council state schema `3`.
-The Hermes package and the Occult release have separate version lines by
-design.
+These commands assume the normal installation. If you used `-SkipCouncil` or
+`--skip-council`, omit `council --version`. The receipt identifies Occult
+release `1.0.1`, Hermes CLI package `0.14.0`, contract `1.0.0`, Council state
+schema `3`, and `occult_initialized: false`. A normal installation also records
+Council `v0.5.2` and its archive hash; a skipped Council installation records
+`null` for both fields. The Hermes package and the Occult release have separate
+version lines by design.
 
 On a fresh profile, installation does not create or enable an Occult
 configuration. `hermes occult status` must therefore report that initialization

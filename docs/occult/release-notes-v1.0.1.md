@@ -6,8 +6,8 @@ schema `3`.
 
 ## Included
 
-- A single Hermes-owned Windows/Linux/macOS installer for Hermes and the pinned
-  Agents Council `v0.5.2` dependency.
+- Hermes-owned PowerShell and POSIX installers for Hermes and the pinned Agents
+  Council `v0.5.2` dependency.
 - Per-user installation without administrator rights.
 - Exact Sigstore workflow-identity verification plus SHA-256 verification
   before application files are installed.
@@ -29,7 +29,7 @@ capped at zero dollars. No cloud provider credential is required or acquired.
 ## Install
 
 Follow the
-[Occult local public v1 quickstart](https://github.com/SgtSlummy/hermes-agent/blob/main/docs/occult/quickstart.md).
+[Occult local public v1 quickstart](https://github.com/SgtSlummy/hermes-agent/blob/v1.0.1/docs/occult/quickstart.md).
 
 The release is initially published without the GitHub `latest` marker. Hermes
 `v1.0.1` and Agents Council `v0.5.2` are promoted to latest only after the

@@ -125,6 +125,14 @@ jobs:
           ref: ${{ inputs.council_ref || 'v0.5.2' }}
           persist-credentials: false
           path: council
+      - name: Verify reviewed Council commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_COUNCIL_COMMIT="$(
+            jq -r '.council.commit_sha' hermes/scripts/occult-install-manifest.json
+          )"
+          test "$(git -C council rev-parse HEAD)" = "$EXPECTED_COUNCIL_COMMIT"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
@@ -267,9 +275,14 @@ jobs:
           COUNCIL_REF: ${{ inputs.council_ref }}
         run: |
           set -euo pipefail
-          test "$COUNCIL_REF" = "v0.5.2"
+          test "$GITHUB_REF" = "refs/heads/main"
+          EXPECTED_COUNCIL_REF="$(
+            jq -r '.council.release_tag' scripts/occult-install-manifest.json
+          )"
+          test "$COUNCIL_REF" = "$EXPECTED_COUNCIL_REF"
           [[ "$CANARY_REPORT_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          CANARY="docs/occult/evidence/launch-canary-v1.0.1.json"
+          VERSION="${RELEASE_VERSION#v}"
+          CANARY="docs/occult/evidence/launch-canary-v${VERSION}.json"
           test -f "$CANARY"
           echo "$CANARY_REPORT_SHA256  $CANARY" | sha256sum -c -
           jq -e '.overall_status == "passed" and .contains_secrets == false' "$CANARY"
@@ -317,6 +330,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p install-assets
+          VERSION="${RELEASE_VERSION#v}"
+          CANARY="docs/occult/evidence/launch-canary-v${VERSION}.json"
+          CANARY_NAME="$(basename "$CANARY")"
+          EXPECTED_COUNCIL_REF="$(
+            jq -r '.council.release_tag' scripts/occult-install-manifest.json
+          )"
           WHEEL="$(
             find promoted/artifacts/platforms \
               -type f \
@@ -330,17 +349,26 @@ jobs:
           cp scripts/install-occult.ps1 install-assets/
           cp scripts/install-occult.sh install-assets/
           cp scripts/occult-install-manifest.json install-assets/
-          cp docs/occult/evidence/launch-canary-v1.0.1.json install-assets/
+          cp "$CANARY" install-assets/
+          uv export \
+            --frozen \
+            --extra occult \
+            --no-dev \
+            --no-emit-project \
+            --format requirements-txt \
+            --output-file install-assets/occult-requirements.lock
           jq -e \
             --arg version "$RELEASE_VERSION" \
             --arg wheel "$WHEEL_NAME" \
+            --arg council "$EXPECTED_COUNCIL_REF" \
             '.occult_release_version == $version
              and .hermes_wheel_asset == $wheel
-             and .council.release_tag == "v0.5.2"
+             and .hermes_requirements_asset == "occult-requirements.lock"
+             and .council.release_tag == $council
              and .council.contract_version == "1.0.0"
              and .council.state_schema == 3' \
             install-assets/occult-install-manifest.json
-          echo "$CANARY_REPORT_SHA256  install-assets/occult-launch-canary-v1.0.1.json" |
+          echo "$CANARY_REPORT_SHA256  install-assets/$CANARY_NAME" |
             sha256sum -c -
           (
             cd install-assets

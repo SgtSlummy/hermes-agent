@@ -1,6 +1,9 @@
 import json
+import re
 import tomllib
 from pathlib import Path
+
+from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -8,9 +11,7 @@ MANIFEST = ROOT / "scripts" / "occult-install-manifest.json"
 POWERSHELL = ROOT / "scripts" / "install-occult.ps1"
 SHELL = ROOT / "scripts" / "install-occult.sh"
 CANARY = ROOT / "scripts" / "run-occult-launch-canary.py"
-CANARY_EVIDENCE = (
-    ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.1.json"
-)
+CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.1.json"
 QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
 
@@ -19,27 +20,31 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_install_manifest_pins_the_reviewed_patch_release():
+def test_install_manifest_has_safe_cross_platform_release_metadata():
     manifest = json.loads(_text(MANIFEST))
+    council = manifest["council"]
 
-    assert manifest["schema_version"] == "1.0.0"
-    assert manifest["occult_release_version"] == "1.0.1"
-    assert manifest["council"] == {
-        "release_tag": "v0.5.2",
-        "commit_sha": "453676402fb3b3183aca6eccf64067ac4e86a4de",
-        "contract_version": "1.0.0",
-        "state_schema": 3,
-        "assets": {
-            "linux-x64": "agents-council-linux-x64.tar.gz",
-            "linux-arm64": "agents-council-linux-arm64.tar.gz",
-            "macos-x64": "agents-council-darwin-x64.tar.gz",
-            "macos-arm64": "agents-council-darwin-arm64.tar.gz",
-            "windows-x64": "agents-council-windows-x64.tar.gz",
-        },
+    assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["schema_version"])
+    assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["occult_release_version"])
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", council["release_tag"])
+    assert re.fullmatch(r"[0-9a-f]{40}", council["commit_sha"])
+    assert council["contract_version"] == OCCULT_CONTRACT_VERSION
+    assert isinstance(council["state_schema"], int) and council["state_schema"] > 0
+    assert set(council["assets"]) == {
+        "linux-x64",
+        "linux-arm64",
+        "macos-x64",
+        "macos-arm64",
+        "windows-x64",
     }
-    assert manifest["ollama_model"] == "qwen2.5:3b"
-    assert manifest["sigstore_python_version"] == "4.5.0"
-    assert manifest["uv_version"] == "0.11.28"
+    assert all(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]+", asset)
+        for asset in council["assets"].values()
+    )
+    assert manifest["hermes_requirements_asset"].endswith(".lock")
+    assert ":" in manifest["ollama_model"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["sigstore_python_version"])
+    assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["uv_version"])
 
 
 def test_install_manifest_wheel_matches_python_package_metadata():
@@ -77,11 +82,16 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "Assert-SafeTarArchive" in text
     assert "the running installer does not match" in text
     assert "refs/tags/$councilTag" in text
+    assert "[StringSplitOptions]::RemoveEmptyEntries" in text
+    assert '"--require-hashes"' in text
+    assert '"--no-deps"' in text
+    assert '"--no-index"' in text
+    assert "hermes_requirements_asset" in text
     assert text.index("Assert-SigstoreIdentity") < text.index(
-        'Write-Step "Installing the verified Hermes wheel per-user"'
+        'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert text.index("if ($VerifyOnly)") < text.index(
-        'Write-Step "Installing the verified Hermes wheel per-user"'
+        'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     initialize_block = text.index("if ($InitializeLocal)")
     assert initialize_block < text.index(
@@ -111,11 +121,16 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert "assert_safe_tar_archive" in text
     assert "the running installer does not match" in text
     assert "refs/tags/$council_tag" in text
+    assert "--require-hashes" in text
+    assert "--no-deps" in text
+    assert "--no-index" in text
+    assert "hermes_requirements_asset" in text
+    assert "grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$'" in text
     assert text.index("verify_sigstore") < text.index(
-        'step "Installing the verified Hermes wheel per-user"'
+        'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert text.index('if [ "$verify_only" -eq 1 ]') < text.index(
-        'step "Installing the verified Hermes wheel per-user"'
+        'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     initialize_block = text.index('if [ "$initialize_local" -eq 1 ]')
     assert initialize_block < text.index(
@@ -128,10 +143,11 @@ def test_unix_installer_verifies_before_writing_application_files():
 def test_quickstart_is_the_single_public_occult_entrypoint():
     quickstart = _text(QUICKSTART)
     readme = _text(README)
+    release_version = json.loads(_text(MANIFEST))["occult_release_version"]
 
     assert "Occult local public v1 quickstart" in quickstart
-    assert "releases/download/v1.0.1/install-occult.ps1" in quickstart
-    assert "releases/download/v1.0.1/install-occult.sh" in quickstart
+    assert f"releases/download/v{release_version}/install-occult.ps1" in quickstart
+    assert f"releases/download/v{release_version}/install-occult.sh" in quickstart
     for topic in (
         "Initialize local Ollama explicitly",
         "First zero-cost Major Arcana invocation",
@@ -158,6 +174,7 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
         "council_pause_restart_resume",
         "audit_redaction",
         "backup_restore",
+        "rollback_previous_checksummed_releases",
         "temporary_secret_cleanup",
     ):
         assert check in text

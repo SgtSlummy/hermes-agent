@@ -105,7 +105,7 @@ function Assert-SafeTarArchive {
         $segments = @(
             $normalized.Split(
                 "/",
-                [StringSplitOptions]::RemoveEmpty
+                [StringSplitOptions]::RemoveEmptyEntries
             )
         )
         if (
@@ -238,8 +238,8 @@ if ([string]::IsNullOrWhiteSpace($Model)) {
 }
 
 $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-if ($architecture -ne "x64") {
-    Fail "Windows $architecture is not supported by Agents Council v0.5.2; use Windows x64"
+if (-not $SkipCouncil -and $architecture -ne "x64") {
+    Fail "Windows $architecture is not supported by the bundled Agents Council release; use Windows x64 or -SkipCouncil"
 }
 $platformKey = "windows-x64"
 $resolvedInstallRoot = [IO.Path]::GetFullPath(
@@ -317,14 +317,26 @@ try {
         -ChecksumFile $installChecksums `
         -AssetName $wheelAsset `
         -FilePath $wheelPath
+    $requirementsAsset = Get-SafeAssetName (
+        [string]$manifest.hermes_requirements_asset
+    )
+    $requirementsPath = Join-Path $temporaryRoot $requirementsAsset
+    Download-Asset `
+        -Url "$hermesReleaseBase/$requirementsAsset" `
+        -Destination $requirementsPath `
+        -Label "the locked Hermes dependency set"
+    $requirementsHash = Assert-FileHash `
+        -ChecksumFile $installChecksums `
+        -AssetName $requirementsAsset `
+        -FilePath $requirementsPath
 
     $councilArchive = $null
     $councilHash = $null
     $councilChecksums = $null
     if (-not $SkipCouncil) {
         $councilTag = [string]$manifest.council.release_tag
-        if ($councilTag -ne "v0.5.2") {
-            Fail "the signed install manifest does not pin Agents Council v0.5.2"
+        if ($councilTag -notmatch '^v\d+\.\d+\.\d+$') {
+            Fail "the signed install manifest contains an invalid Council release tag"
         }
         $councilAsset = Get-SafeAssetName ([string]$manifest.council.assets.$platformKey)
         $councilBase = "https://github.com/$CouncilRepository/releases/download/$councilTag"
@@ -361,34 +373,48 @@ try {
     }
 
     $binRoot = Join-Path $resolvedInstallRoot "bin"
-    $toolRoot = Join-Path $resolvedInstallRoot "uv-tools"
+    $hermesVenv = Join-Path $resolvedInstallRoot "hermes-venv"
     New-Item -ItemType Directory -Path $binRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path $toolRoot -Force | Out-Null
-    $previousToolDir = $env:UV_TOOL_DIR
-    $previousToolBinDir = $env:UV_TOOL_BIN_DIR
-    try {
-        $env:UV_TOOL_DIR = $toolRoot
-        $env:UV_TOOL_BIN_DIR = $binRoot
-        Write-Step "Installing the verified Hermes wheel per-user"
-        Invoke-Checked `
-            -Executable $uv `
-            -Arguments @(
-                "tool", "install",
-                "--no-config",
-                "--force",
-                "--python", "3.11",
-                "${wheelPath}[occult]"
-            ) `
-            -FailureMessage "Hermes wheel installation failed"
-    } finally {
-        $env:UV_TOOL_DIR = $previousToolDir
-        $env:UV_TOOL_BIN_DIR = $previousToolBinDir
-    }
+    Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"
+    Invoke-Checked `
+        -Executable $uv `
+        -Arguments @(
+            "venv",
+            "--no-config",
+            "--clear",
+            "--python", "3.11",
+            $hermesVenv
+        ) `
+        -FailureMessage "Hermes environment creation failed"
+    $venvPython = Join-Path $hermesVenv "Scripts\python.exe"
+    Invoke-Checked `
+        -Executable $uv `
+        -Arguments @(
+            "pip", "sync",
+            "--no-config",
+            "--python", $venvPython,
+            "--require-hashes",
+            $requirementsPath
+        ) `
+        -FailureMessage "Hermes locked dependency installation failed"
+    Invoke-Checked `
+        -Executable $uv `
+        -Arguments @(
+            "pip", "install",
+            "--no-config",
+            "--python", $venvPython,
+            "--no-deps",
+            "--no-index",
+            $wheelPath
+        ) `
+        -FailureMessage "Hermes wheel installation failed"
 
-    $hermesExecutable = Join-Path $binRoot "hermes.exe"
-    if (-not (Test-Path -LiteralPath $hermesExecutable -PathType Leaf)) {
+    $venvHermesExecutable = Join-Path $hermesVenv "Scripts\hermes.exe"
+    if (-not (Test-Path -LiteralPath $venvHermesExecutable -PathType Leaf)) {
         Fail "Hermes installed without creating hermes.exe"
     }
+    $hermesExecutable = Join-Path $binRoot "hermes.exe"
+    Copy-Item -LiteralPath $venvHermesExecutable -Destination $hermesExecutable -Force
     $hermesVersionOutput = (& $hermesExecutable --version | Out-String).Trim()
     if ($hermesVersionOutput -notmatch [Regex]::Escape([string]$manifest.hermes_cli_version)) {
         Fail "Hermes executable version does not match signed release metadata"
@@ -446,6 +472,8 @@ try {
         hermes_cli_version = [string]$manifest.hermes_cli_version
         hermes_wheel = $wheelAsset
         hermes_wheel_sha256 = $wheelHash
+        hermes_requirements = $requirementsAsset
+        hermes_requirements_sha256 = $requirementsHash
         install_manifest_sha256 = $manifestHash
         council_release = if ($SkipCouncil) { $null } else { [string]$manifest.council.release_tag }
         council_archive_sha256 = $councilHash

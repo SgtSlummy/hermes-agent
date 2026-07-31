@@ -3,6 +3,7 @@
   "occult_release_version": "1.0.1",
   "hermes_cli_version": "0.14.0",
   "hermes_wheel_asset": "hermes_agent-0.14.0-py3-none-any.whl",
+  "hermes_requirements_asset": "occult-requirements.lock",
   "council": {
     "release_tag": "v0.5.2",
     "commit_sha": "453676402fb3b3183aca6eccf64067ac4e86a4de",

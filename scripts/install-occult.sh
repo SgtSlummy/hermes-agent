@@ -322,14 +322,25 @@ wheel_asset=$(safe_asset_name "$(json_get "$manifest_path" hermes_wheel_asset)")
 wheel_path="$tmp/$wheel_asset"
 download "$hermes_release_base/$wheel_asset" "$wheel_path" "the Hermes wheel"
 wheel_hash=$(verify_hash "$install_checksums" "$wheel_asset" "$wheel_path")
+requirements_asset=$(safe_asset_name "$(json_get "$manifest_path" hermes_requirements_asset)")
+requirements_path="$tmp/$requirements_asset"
+download \
+  "$hermes_release_base/$requirements_asset" \
+  "$requirements_path" \
+  "the locked Hermes dependency set"
+requirements_hash=$(
+  verify_hash "$install_checksums" "$requirements_asset" "$requirements_path"
+)
 
 council_archive=""
 council_hash=""
 council_tag=""
 if [ "$skip_council" -eq 0 ]; then
   council_tag=$(json_get "$manifest_path" council.release_tag)
-  [ "$council_tag" = "v0.5.2" ] ||
-    fail "the signed install manifest does not pin Agents Council v0.5.2"
+  if ! printf '%s\n' "$council_tag" |
+    grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    fail "the signed install manifest contains an invalid Council release tag"
+  fi
   council_asset=$(safe_asset_name "$(json_get "$manifest_path" "council.assets.$platform_key")")
   council_base="https://github.com/$council_repository/releases/download/$council_tag"
   council_checksums="$tmp/RELEASE-SHA256SUMS.txt"
@@ -364,20 +375,36 @@ case "$install_root" in
   *) install_root="$(pwd)/$install_root" ;;
 esac
 bin_root="$install_root/bin"
-tool_root="$install_root/uv-tools"
-mkdir -p "$bin_root" "$tool_root"
+hermes_venv="$install_root/hermes-venv"
+mkdir -p "$bin_root"
 
-step "Installing the verified Hermes wheel per-user"
-UV_TOOL_DIR="$tool_root" UV_TOOL_BIN_DIR="$bin_root" \
-  "$uv_cmd" tool install \
+step "Installing the verified Hermes wheel and hash-locked dependencies per-user"
+"$uv_cmd" venv \
   --no-config \
-  --force \
+  --clear \
   --python 3.11 \
-  "${wheel_path}[occult]" ||
+  "$hermes_venv" ||
+  fail "Hermes environment creation failed"
+venv_python="$hermes_venv/bin/python"
+"$uv_cmd" pip sync \
+  --no-config \
+  --python "$venv_python" \
+  --require-hashes \
+  "$requirements_path" ||
+  fail "Hermes locked dependency installation failed"
+"$uv_cmd" pip install \
+  --no-config \
+  --python "$venv_python" \
+  --no-deps \
+  --no-index \
+  "$wheel_path" ||
   fail "Hermes wheel installation failed"
 
+venv_hermes_executable="$hermes_venv/bin/hermes"
+[ -x "$venv_hermes_executable" ] ||
+  fail "Hermes installed without creating the hermes executable"
 hermes_executable="$bin_root/hermes"
-[ -x "$hermes_executable" ] || fail "Hermes installed without creating the hermes executable"
+ln -sfn "$venv_hermes_executable" "$hermes_executable"
 hermes_cli_version=$(json_get "$manifest_path" hermes_cli_version)
 hermes_version_output=$("$hermes_executable" --version)
 case "$hermes_version_output" in
@@ -440,6 +467,8 @@ cat >"$receipt_tmp" <<EOF
   "hermes_cli_version": "$hermes_cli_version",
   "hermes_wheel": "$wheel_asset",
   "hermes_wheel_sha256": "$wheel_hash",
+  "hermes_requirements": "$requirements_asset",
+  "hermes_requirements_sha256": "$requirements_hash",
   "install_manifest_sha256": "$manifest_hash",
   "council_release": $council_json,
   "council_archive_sha256": $council_hash_json,
@@ -460,3 +489,7 @@ if [ "$initialize_local" -eq 1 ]; then
 else
   step "Occult remains disabled. Run this installer again with --initialize-local when ready"
 fi
+case ":$PATH:" in
+  *":$user_bin:"*) ;;
+  *) printf 'Add the installed commands to this shell: export PATH="%s:$PATH"\n' "$user_bin" ;;
+esac
