@@ -1,7 +1,7 @@
 # Occult local public v1 quickstart
 
 This is the authoritative installation and first-run guide for the local
-Occult System release. It installs the signed Hermes `v1.0.1` GitHub release
+Occult System release. It installs the signed Hermes `v1.0.2` GitHub release
 and the signed Agents Council `v0.5.2` GitHub release without administrator
 rights. Occult remains disabled until you explicitly initialize a local
 Ollama model.
@@ -27,10 +27,10 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "8a59484aa30ebb68b7abdf2cd61a58f74d58a9e47cc81de07750b9f93c37597b"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Occult installer checksum verification failed" }; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "599bb93a297a3755ef256a13db3ccb397256242f8645f6f11d60edf271096660"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.2/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Occult installer checksum verification failed" }; & $installer
 ```
 
-This literal checksum is pinned in the immutable `v1.0.1` quickstart and
+This literal checksum is pinned in the immutable `v1.0.2` quickstart and
 authenticates the installer before PowerShell executes it. The installer then
 verifies the signed release manifest, dependency lock, wheel, and Council asset.
 
@@ -61,8 +61,8 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="255f9c5564cee2a61075a5bfe64ad6725de8f517047f6148278225ac314c35fe"
-  curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.1/install-occult.sh"
+  expected="db0aa60d23e958cf24884369fc64b99099187e4bf9e5256d277cbbaa701832d6"
+  curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.2/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
   else
@@ -87,7 +87,7 @@ The installer creates per-user command links in
 Available options:
 
 ```text
---version 1.0.1
+--version 1.0.2
 --install-root /path/owned/by/you
 --initialize-local
 --skip-council
@@ -116,7 +116,7 @@ cat "${XDG_DATA_HOME:-$HOME/.local/share}/occult/occult-install-receipt.json"
 
 These commands assume the normal installation. If you used `-SkipCouncil` or
 `--skip-council`, omit `council --version`. The receipt identifies Occult
-release `1.0.1`, Hermes CLI package `0.14.0`, contract `1.0.0`, Council state
+release `1.0.2`, Hermes CLI package `0.14.0`, contract `1.0.0`, Council state
 schema `3`, and `occult_initialized: false`. A normal installation also records
 Council `v0.5.2` and its archive hash; a skipped Council installation records
 `null` for both fields. The Hermes package and the Occult release have separate
@@ -260,7 +260,7 @@ The previous immutable releases are:
 - Agents Council `v0.5.1`
 
 Download them from their GitHub release pages, verify their published checksum
-files before extraction, disable Occult, and retain the `v1.0.1` receipt and
+files before extraction, disable Occult, and retain the `v1.0.2` receipt and
 backup. The Hermes `v1.0.0` universal archive contains its platform wheel; use
 that wheel to replace the `uv` tool environment under the same install root.
 Replace Council with the matching `v0.5.1` platform archive.
