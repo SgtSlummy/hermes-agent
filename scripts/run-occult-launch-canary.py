@@ -142,6 +142,42 @@ def validate_installer_interface(
         raise CanaryFailure("POSIX installer interface is incomplete")
 
 
+def validate_public_installer_initialization(
+    *,
+    hermes: Path,
+    env: dict[str, str],
+    model: str,
+    ollama_base_url: str,
+    timeout: int,
+    outputs: list[str],
+) -> None:
+    """Initialize the public install and validate its local state result."""
+    initialization_result = run(
+        [
+            str(hermes),
+            "tarot",
+            "init",
+            "--base-url",
+            ollama_base_url,
+            "--model",
+            model,
+        ],
+        env=env,
+        timeout=timeout,
+    )
+    outputs.append(initialization_result.stdout + initialization_result.stderr)
+    initialization = load_json_output(
+        initialization_result.stdout,
+        "public installer initialization",
+    )
+    if (
+        initialization.get("enabled") is not True
+        or initialization.get("provider") != "ollama-local"
+        or initialization.get("model") != model
+    ):
+        raise CanaryFailure("the public installer profile state did not change")
+
+
 def validate_public_installer_rerun(
     *,
     installer_powershell: Path,
@@ -279,32 +315,14 @@ def validate_public_installer_rerun(
         if not isinstance(hermes_environment, str) or not hermes_environment:
             raise CanaryFailure("the public installer receipt omitted Hermes state")
 
-        run(
-            [
-                str(hermes),
-                "tarot",
-                "init",
-                "--base-url",
-                ollama_base_url,
-                "--model",
-                model,
-            ],
+        validate_public_installer_initialization(
+            hermes=hermes,
             env=installer_env,
+            model=model,
+            ollama_base_url=ollama_base_url,
             timeout=timeout,
+            outputs=outputs,
         )
-        initialized_status = load_json_output(
-            run(
-                [str(hermes), "tarot", "status"],
-                env=installer_env,
-                timeout=timeout,
-            ).stdout,
-            "public installer initialized status",
-        )
-        if (
-            initialized_status.get("initialized") is not True
-            or initialized_status.get("enabled") is not True
-        ):
-            raise CanaryFailure("the public installer profile state did not change")
         mutable_state_rerun = run(
             installer_command,
             env=installer_env,

@@ -227,6 +227,14 @@ def _load_environment_verifier():
     return module
 
 
+def _load_launch_canary():
+    spec = importlib.util.spec_from_file_location("occult_launch_canary", CANARY)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _write_zip_executable(path: Path, environment: Path, overlay: bytes = b"") -> None:
     path.write_bytes(f"executable-prefix:{environment}\n".encode())
     info = ZipInfo("__main__.py", date_time=(2024, 1, 1, 0, 0, 0))
@@ -864,7 +872,6 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "--environment-verifier" in text
     assert "--public-installer-rerun" in text
     assert "def validate_public_installer_rerun" in text
-    assert '"tarot",\n                "init"' in text
     assert "mutable_state_rerun" in text
     assert "mutable profile state rerun changed an active command" in text
     assert "preserve and record mutable profile state" in text
@@ -890,6 +897,87 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "candidate-restored" in text
     assert "TemporaryDirectory" in text
     assert "command output, prompts, tokens" in text.lower()
+
+
+def test_public_installer_initialization_validates_state_and_records_output(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    canary = _load_launch_canary()
+    observed: dict[str, object] = {}
+    payload = {
+        "enabled": True,
+        "provider": "ollama-local",
+        "model": "qwen2.5:3b",
+    }
+    result = subprocess.CompletedProcess(
+        ["hermes.exe", "tarot", "init"],
+        0,
+        stdout=json.dumps(payload),
+        stderr="safe diagnostic",
+    )
+
+    def fake_run(command, *, env, timeout):
+        observed.update(command=command, env=env, timeout=timeout)
+        return result
+
+    monkeypatch.setattr(canary, "run", fake_run)
+    outputs: list[str] = []
+    environment = {"HERMES_HOME": "profile"}
+    canary.validate_public_installer_initialization(
+        hermes=Path("hermes.exe"),
+        env=environment,
+        model="qwen2.5:3b",
+        ollama_base_url="http://127.0.0.1:11434/v1",
+        timeout=90,
+        outputs=outputs,
+    )
+
+    assert observed == {
+        "command": [
+            "hermes.exe",
+            "tarot",
+            "init",
+            "--base-url",
+            "http://127.0.0.1:11434/v1",
+            "--model",
+            "qwen2.5:3b",
+        ],
+        "env": environment,
+        "timeout": 90,
+    }
+    assert outputs == [result.stdout + result.stderr]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"enabled": False, "provider": "ollama-local", "model": "qwen2.5:3b"},
+        {"enabled": True, "provider": "other", "model": "qwen2.5:3b"},
+        {"enabled": True, "provider": "ollama-local", "model": "other"},
+    ],
+)
+def test_public_installer_initialization_rejects_unexpected_state(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+):
+    canary = _load_launch_canary()
+    result = subprocess.CompletedProcess(
+        ["hermes.exe", "tarot", "init"],
+        0,
+        stdout=json.dumps(payload),
+        stderr="",
+    )
+    monkeypatch.setattr(canary, "run", lambda *_args, **_kwargs: result)
+
+    with pytest.raises(canary.CanaryFailure, match="profile state did not change"):
+        canary.validate_public_installer_initialization(
+            hermes=Path("hermes.exe"),
+            env={},
+            model="qwen2.5:3b",
+            ollama_base_url="http://127.0.0.1:11434/v1",
+            timeout=90,
+            outputs=[],
+        )
 
 
 def test_launch_canary_evidence_is_redacted_and_includes_rollback():
