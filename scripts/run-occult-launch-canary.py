@@ -69,6 +69,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--previous-council-archive", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument(
+        "--public-installer-rerun",
+        action="store_true",
+        help="install the public release twice and require byte-stable commands and receipt",
+    )
+    parser.add_argument(
         "--ollama-base-url",
         default="http://127.0.0.1:11434/v1",
     )
@@ -110,7 +115,7 @@ def assert_file(path: Path, label: str) -> Path:
     return resolved
 
 
-def validate_installer_idempotency_contract(
+def validate_installer_source_contract(
     installer_powershell: Path,
     installer_posix: Path,
 ) -> None:
@@ -137,6 +142,162 @@ def validate_installer_idempotency_contract(
         raise CanaryFailure("Windows installer idempotency contract is incomplete")
     if any(marker not in posix for marker in required_posix):
         raise CanaryFailure("POSIX installer idempotency contract is incomplete")
+
+
+def validate_public_installer_rerun(
+    *,
+    installer_powershell: Path,
+    root: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> list[str]:
+    """Install the signed public bytes twice without retaining user PATH changes."""
+    import winreg
+
+    powershell_name = shutil.which("powershell.exe") or shutil.which("powershell")
+    if not powershell_name:
+        raise CanaryFailure("Windows PowerShell is required for the public installer canary")
+    powershell = Path(powershell_name).resolve()
+    install_root = root / "public-installer-rerun"
+    profile_home = root / "public-installer-profile"
+    profile_home.mkdir()
+    installer_env = dict(env)
+    installer_env["HERMES_HOME"] = str(profile_home)
+
+    path_existed = False
+    original_path = ""
+    original_path_kind = winreg.REG_EXPAND_SZ
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Environment",
+            0,
+            winreg.KEY_READ,
+        ) as key:
+            try:
+                original_path, original_path_kind = winreg.QueryValueEx(key, "Path")
+                path_existed = True
+            except FileNotFoundError:
+                pass
+    except FileNotFoundError:
+        pass
+
+    installer_command = [
+        str(powershell),
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(installer_powershell),
+        "-Version",
+        HERMES_RELEASE.removeprefix("v"),
+        "-InstallRoot",
+        str(install_root),
+    ]
+    outputs: list[str] = []
+
+    def fingerprint(path: Path) -> tuple[str, int, int]:
+        stat = path.stat()
+        return sha256_file(path), stat.st_size, stat.st_mtime_ns
+
+    try:
+        first = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(first.stdout + first.stderr)
+        hermes = assert_file(install_root / "bin" / "hermes.exe", "installed Hermes")
+        council = assert_file(
+            install_root / "bin" / "council.exe",
+            "installed Council",
+        )
+        receipt = assert_file(
+            install_root / "occult-install-receipt.json",
+            "install receipt",
+        )
+        first_commands = {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        }
+        first_receipt = receipt.read_bytes()
+        first_receipt_mtime = receipt.stat().st_mtime_ns
+        try:
+            receipt_data = json.loads(first_receipt.decode("utf-8-sig"))
+        except (UnicodeDecodeError, ValueError, TypeError):
+            raise CanaryFailure("the public installer wrote an invalid receipt") from None
+        if receipt_data.get("occult_release_version") != HERMES_RELEASE.removeprefix("v"):
+            raise CanaryFailure("the public installer receipt has the wrong release")
+        if receipt_data.get("council_release") != f"v{COUNCIL_VERSION}":
+            raise CanaryFailure("the public installer receipt has the wrong Council release")
+        if receipt_data.get("occult_initialized") is not False:
+            raise CanaryFailure("the public installer initialized Occult implicitly")
+        if receipt_data.get("occult_enabled") is not False:
+            raise CanaryFailure("the public installer enabled Occult implicitly")
+
+        second = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(second.stdout + second.stderr)
+        second_commands = {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        }
+        if second_commands != first_commands:
+            raise CanaryFailure("an exact installer rerun changed an active command")
+        if receipt.read_bytes() != first_receipt:
+            raise CanaryFailure("an exact installer rerun changed the install receipt")
+        if receipt.stat().st_mtime_ns != first_receipt_mtime:
+            raise CanaryFailure("an exact installer rerun rewrote the install receipt")
+
+        hermes_version = run([str(hermes), "--version"], env=installer_env, timeout=timeout)
+        council_version = run(
+            [str(council), "--version"],
+            env=installer_env,
+            timeout=timeout,
+        )
+        safe_public_version(
+            hermes_version.stdout,
+            HERMES_CLI_VERSION,
+            "public installer Hermes",
+        )
+        safe_public_version(
+            council_version.stdout,
+            COUNCIL_VERSION,
+            "public installer Council",
+        )
+        outputs.extend(
+            [
+                hermes_version.stdout + hermes_version.stderr,
+                council_version.stdout + council_version.stderr,
+            ]
+        )
+        return outputs
+    finally:
+        with winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER,
+            r"Environment",
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
+            if path_existed:
+                winreg.SetValueEx(
+                    key,
+                    "Path",
+                    0,
+                    original_path_kind,
+                    original_path,
+                )
+            else:
+                try:
+                    winreg.DeleteValue(key, "Path")
+                except FileNotFoundError:
+                    pass
+            winreg.FlushKey(key)
 
 
 def assert_directory(path: Path, label: str) -> Path:
@@ -684,11 +845,11 @@ def main() -> int:
     )
     council_repository = assert_directory(args.council_repository, "Council repository")
     checks: dict[str, str] = {}
-    validate_installer_idempotency_contract(
+    validate_installer_source_contract(
         installer_powershell,
         installer_posix,
     )
-    checks["installer_idempotency_contract"] = "passed"
+    checks["installer_source_contract"] = "passed"
     assert_port_available("127.0.0.1", 8642)
     validate_ollama(args.ollama_base_url, model, args.timeout_seconds)
 
@@ -719,6 +880,17 @@ def main() -> int:
             timeout=args.timeout_seconds,
         )
         checks["council_source_provenance"] = "passed"
+
+        if args.public_installer_rerun:
+            observed_outputs.extend(
+                validate_public_installer_rerun(
+                    installer_powershell=installer_powershell,
+                    root=root,
+                    env=env,
+                    timeout=args.timeout_seconds,
+                )
+            )
+            checks["installer_idempotent_rerun"] = "passed"
 
         hermes = install_hermes_environment(
             environment=root / "candidate-main-hermes",

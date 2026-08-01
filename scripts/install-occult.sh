@@ -78,6 +78,29 @@ step() {
   printf '[Occult] %s\n' "$*"
 }
 
+version_output_matches() {
+  output=$1
+  expected=$2
+  printf '%s\n' "$output" |
+    tr -cs '[:alnum:].+_-' '\n' |
+    awk -v expected="$expected" '
+      $0 == expected || $0 == "v" expected { found=1 }
+      END { exit(found ? 0 : 1) }
+    '
+}
+
+read_occult_state() {
+  python_executable=$1
+  "$python_executable" -c '
+from hermes_cli import config
+raw = config.read_raw_config() or {}
+occult = raw.get("occult")
+initialized = isinstance(occult, dict) and bool(occult.get("local_model"))
+enabled = initialized and occult.get("enabled") is True
+print(("true" if initialized else "false") + " " + ("true" if enabled else "false"))
+'
+}
+
 case "$version" in
   v*) version=${version#v} ;;
 esac
@@ -458,6 +481,10 @@ required = {
 }
 if not isinstance(receipt, dict) or not required.issubset(receipt):
     raise SystemExit(1)
+if type(receipt.get("occult_initialized")) is not bool:
+    raise SystemExit(1)
+if type(receipt.get("occult_enabled")) is not bool:
+    raise SystemExit(1)
 
 expected = {
     "schema_version": "1.0.0",
@@ -501,6 +528,8 @@ elif council_environment not in (None, ""):
 
 print(hermes_environment)
 print(council_environment or "")
+print("true" if receipt["occult_initialized"] else "false")
+print("true" if receipt["occult_enabled"] else "false")
 ' \
       "$receipt" \
       "$version" \
@@ -526,6 +555,8 @@ fi
 if [ -n "$existing_metadata" ]; then
   existing_hermes_environment=$(printf '%s\n' "$existing_metadata" | sed -n '1p')
   existing_council_environment=$(printf '%s\n' "$existing_metadata" | sed -n '2p')
+  existing_receipt_initialized=$(printf '%s\n' "$existing_metadata" | sed -n '3p')
+  existing_receipt_enabled=$(printf '%s\n' "$existing_metadata" | sed -n '4p')
   existing_hermes_root="$hermes_environments/$existing_hermes_environment"
   existing_venv_python="$existing_hermes_root/bin/python"
   existing_venv_hermes="$existing_hermes_root/bin/hermes"
@@ -541,10 +572,8 @@ if [ -n "$existing_metadata" ]; then
   hermes_version_output=""
   if [ "$reuse_ok" -eq 1 ]; then
     if hermes_version_output=$("$hermes_executable" --version 2>/dev/null); then
-      case "$hermes_version_output" in
-        *"$hermes_cli_version"*) ;;
-        *) reuse_ok=0 ;;
-      esac
+      version_output_matches "$hermes_version_output" "$hermes_cli_version" ||
+        reuse_ok=0
     else
       reuse_ok=0
     fi
@@ -563,14 +592,40 @@ if [ -n "$existing_metadata" ]; then
     fi
     if [ "$reuse_ok" -eq 1 ]; then
       if council_version_output=$("$council_executable" --version 2>/dev/null); then
-        case "$council_version_output" in
-          *"${council_tag#v}"*) ;;
-          *) reuse_ok=0 ;;
-        esac
+        version_output_matches "$council_version_output" "${council_tag#v}" ||
+          reuse_ok=0
       else
         reuse_ok=0
       fi
     fi
+  fi
+
+  user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+  if [ "$reuse_ok" -eq 1 ]; then
+    [ -L "$user_bin/hermes" ] || reuse_ok=0
+    if [ "$reuse_ok" -eq 1 ]; then
+      [ "$(readlink "$user_bin/hermes")" = "$hermes_executable" ] || reuse_ok=0
+    fi
+    if [ "$reuse_ok" -eq 1 ] && [ "$skip_council" -eq 0 ]; then
+      [ -L "$user_bin/council" ] || reuse_ok=0
+      if [ "$reuse_ok" -eq 1 ]; then
+        [ "$(readlink "$user_bin/council")" = "$bin_root/council" ] || reuse_ok=0
+      fi
+    fi
+  fi
+
+  if [ "$reuse_ok" -eq 1 ]; then
+    state=$(read_occult_state "$existing_venv_python") ||
+      fail "could not inspect the preserved Occult initialization state"
+    set -- $state
+    initialized=${1:-false}
+    enabled=${2:-false}
+    case "$initialized:$enabled" in
+      true:true|true:false|false:false) ;;
+      *) fail "the preserved Occult initialization state was invalid" ;;
+    esac
+    [ "$existing_receipt_initialized" = "$initialized" ] || reuse_ok=0
+    [ "$existing_receipt_enabled" = "$enabled" ] || reuse_ok=0
   fi
 
   if [ "$reuse_ok" -eq 1 ]; then
@@ -582,25 +637,16 @@ if [ -n "$existing_metadata" ]; then
       step "Explicitly initializing the local Occult profile"
       "$hermes_executable" occult init --model "$model" ||
         fail "hermes occult init failed"
+      state=$(read_occult_state "$existing_venv_python") ||
+        fail "could not inspect the preserved Occult initialization state"
+      set -- $state
+      initialized=${1:-false}
+      enabled=${2:-false}
+      case "$initialized:$enabled" in
+        true:true|true:false|false:false) ;;
+        *) fail "the preserved Occult initialization state was invalid" ;;
+      esac
     fi
-
-    state=$(
-      "$existing_venv_python" -c '
-from hermes_cli import config
-raw = config.read_raw_config() or {}
-occult = raw.get("occult")
-initialized = isinstance(occult, dict) and bool(occult.get("local_model"))
-enabled = initialized and occult.get("enabled") is True
-print(("true" if initialized else "false") + " " + ("true" if enabled else "false"))
-'
-    ) || fail "could not inspect the preserved Occult initialization state"
-    set -- $state
-    initialized=${1:-false}
-    enabled=${2:-false}
-    case "$initialized:$enabled" in
-      true:true|true:false|false:false) ;;
-      *) fail "the preserved Occult initialization state was invalid" ;;
-    esac
 
     if [ "$initialize_local" -eq 1 ]; then
       "$existing_venv_python" -c '
@@ -619,12 +665,6 @@ os.replace(temporary, path)
         fail "could not update the preserved install receipt"
     fi
 
-    user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
-    mkdir -p "$user_bin"
-    ln -sfn "$hermes_executable" "$user_bin/hermes"
-    if [ "$skip_council" -eq 0 ]; then
-      ln -sfn "$bin_root/council" "$user_bin/council"
-    fi
     step "Verified existing Occult release v$version; no application files changed"
     printf '%s\n' "$hermes_version_output"
     if [ -n "$council_version_output" ]; then
@@ -683,10 +723,8 @@ ln -s "$venv_hermes_executable" "$hermes_staged" ||
   fail "Hermes command staging failed"
 hermes_cli_version=$(json_get "$manifest_path" hermes_cli_version)
 hermes_version_output=$("$hermes_staged" --version)
-case "$hermes_version_output" in
-  *"$hermes_cli_version"*) ;;
-  *) fail "Hermes executable version does not match signed release metadata" ;;
-esac
+version_output_matches "$hermes_version_output" "$hermes_cli_version" ||
+  fail "Hermes executable version does not match signed release metadata"
 
 council_version_output=""
 council_environment=""
@@ -709,10 +747,8 @@ if [ "$skip_council" -eq 0 ]; then
     fail "Council command staging failed"
   chmod 0755 "$council_staged"
   council_version_output=$("$council_staged" --version)
-  case "$council_version_output" in
-    *"${council_tag#v}"*) ;;
-    *) fail "Council executable version does not match signed release metadata" ;;
-  esac
+  version_output_matches "$council_version_output" "${council_tag#v}" ||
+    fail "Council executable version does not match signed release metadata"
 fi
 
 if [ "$initialize_local" -eq 1 ]; then

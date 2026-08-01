@@ -130,6 +130,7 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "council.exe.new-" not in text
     assert "function Get-OccultState" in text
     assert "function Test-SafeLeafName" in text
+    assert "function Test-VersionToken" in text
     assert '"inspect-occult-state-" + [Guid]::NewGuid().ToString("N")' in text
     assert "[System.IO.File]::WriteAllText" in text
     assert "& $Python $stateScriptPath" in text
@@ -152,6 +153,9 @@ def test_windows_installer_verifies_before_writing_application_files():
         '$environmentId = "$normalizedVersion-"'
     )
     assert "Existing Occult initialization was preserved" in text
+    assert "$existingReceipt.occult_initialized -is [System.Boolean]" in text
+    assert "$existingReceipt.occult_enabled -is [System.Boolean]" in text
+    assert "-Expected $expectedCouncilRelease.TrimStart(\"v\")" in text
     assert "occult_enabled = $enabled" in text
     assert text.index("Assert-SigstoreIdentity") < text.index(
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
@@ -221,6 +225,11 @@ def test_unix_installer_verifies_before_writing_application_files():
         REQUIRED_RECEIPT_FIELDS
     )
     assert 're.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", value)' in text
+    assert 'type(receipt.get("occult_initialized")) is not bool' in text
+    assert 'type(receipt.get("occult_enabled")) is not bool' in text
+    assert "version_output_matches" in text
+    assert '[ "$(readlink "$user_bin/hermes")" = "$hermes_executable" ]' in text
+    assert '[ "$existing_receipt_initialized" = "$initialized" ]' in text
     assert "Verified existing Occult release v$version; no application files changed" in text
     assert text.index("existing_receipt_seen=0") < text.index(
         'hermes_venv=$(mktemp -d "$hermes_environments/$version.XXXXXX")'
@@ -313,7 +322,8 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
         "backup_restore",
         "rollback_previous_checksummed_releases",
         "temporary_secret_cleanup",
-        "installer_idempotency_contract",
+        "installer_source_contract",
+        "installer_idempotent_rerun",
     ):
         assert check in text
     assert '"contains_secrets": False' in text
@@ -323,6 +333,10 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "--candidate-council-archive" in text
     assert "--install-manifest" in text
     assert "--sigstore-requirements-lock" in text
+    assert "--public-installer-rerun" in text
+    assert "def validate_public_installer_rerun" in text
+    assert "first_receipt_mtime" in text
+    assert text.count("installer_command,") >= 2
     assert "release_artifacts" in text
     assert "install_hermes_environment" in text
     assert "validate_council_repository" in text
@@ -346,7 +360,7 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["overall_status"] == "passed"
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
-    assert evidence["checks"]["installer_idempotency_contract"] == "passed"
+    assert evidence["checks"]["installer_source_contract"] == "passed"
     manifest = json.loads(_text(MANIFEST))
     assert evidence["release"]["hermes"] == (
         f"v{manifest['occult_release_version']}"

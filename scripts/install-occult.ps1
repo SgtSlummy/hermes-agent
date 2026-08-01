@@ -104,6 +104,19 @@ function Test-SafeLeafName {
     )
 }
 
+function Test-VersionToken {
+    param(
+        [AllowEmptyString()][string]$Output,
+        [Parameter(Mandatory = $true)][string]$Expected
+    )
+    $pattern = (
+        '(?<![0-9A-Za-z.+_-])(?:v)?' +
+        [Regex]::Escape($Expected) +
+        '(?![0-9A-Za-z.+_-])'
+    )
+    return [Regex]::IsMatch($Output, $pattern)
+}
+
 function Get-OccultState {
     param(
         [Parameter(Mandatory = $true)][string]$Python,
@@ -585,8 +598,11 @@ try {
             }
             $metadataMatches = (
                 $hermesProbeSucceeded -and
-                $hermesVersionOutput -match [Regex]::Escape(
+                (Test-VersionToken `
+                    -Output $hermesVersionOutput `
+                    -Expected (
                     [string]$manifest.hermes_cli_version
+                    )
                 )
             )
         }
@@ -625,11 +641,23 @@ try {
                 }
                 $metadataMatches = (
                     $councilProbeSucceeded -and
-                    $councilVersionOutput -match [Regex]::Escape(
-                        $expectedCouncilRelease.TrimStart("v")
+                    (Test-VersionToken `
+                        -Output $councilVersionOutput `
+                        -Expected $expectedCouncilRelease.TrimStart("v")
                     )
                 )
             }
+        }
+        if ($metadataMatches) {
+            $state = Get-OccultState `
+                -Python $existingVenvPython `
+                -TemporaryRoot $temporaryRoot
+            $metadataMatches = (
+                $existingReceipt.occult_initialized -is [System.Boolean] -and
+                $existingReceipt.occult_enabled -is [System.Boolean] -and
+                [bool]$existingReceipt.occult_initialized -eq [bool]$state.initialized -and
+                [bool]$existingReceipt.occult_enabled -eq [bool]$state.enabled
+            )
         }
         if ($metadataMatches) {
             if ($InitializeLocal) {
@@ -647,10 +675,10 @@ try {
                     -Executable $hermesExecutable `
                     -Arguments @("occult", "init", "--model", $Model) `
                     -FailureMessage "hermes occult init failed"
+                $state = Get-OccultState `
+                    -Python $existingVenvPython `
+                    -TemporaryRoot $temporaryRoot
             }
-            $state = Get-OccultState `
-                -Python $existingVenvPython `
-                -TemporaryRoot $temporaryRoot
             if ($InitializeLocal) {
                 $existingReceipt.occult_initialized = [bool]$state.initialized
                 $existingReceipt.occult_enabled = [bool]$state.enabled
@@ -732,7 +760,10 @@ try {
         -Destination $hermesStagedExecutable `
         -Force
     $hermesVersionOutput = (& $hermesStagedExecutable --version | Out-String).Trim()
-    if ($hermesVersionOutput -notmatch [Regex]::Escape([string]$manifest.hermes_cli_version)) {
+    if (-not (Test-VersionToken `
+        -Output $hermesVersionOutput `
+        -Expected ([string]$manifest.hermes_cli_version)
+    )) {
         Fail "Hermes executable version does not match signed release metadata"
     }
 
@@ -769,7 +800,10 @@ try {
         $councilVersionOutput = (
             & $councilStagedExecutable --version | Out-String
         ).Trim()
-        if ($councilVersionOutput -notmatch [Regex]::Escape($councilTag.TrimStart("v"))) {
+        if (-not (Test-VersionToken `
+            -Output $councilVersionOutput `
+            -Expected $councilTag.TrimStart("v")
+        )) {
             Fail "Council executable version does not match signed release metadata"
         }
     }
