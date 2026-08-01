@@ -32,7 +32,7 @@ from typing import Any
 
 
 HERMES_CLI_VERSION = "0.14.0"
-HERMES_RELEASE = "v1.0.6"
+HERMES_RELEASE = "v1.0.7"
 COUNCIL_VERSION = "0.5.5"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
@@ -47,7 +47,7 @@ class CanaryFailure(RuntimeError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the redacted Tarot Router v1.0.6 Windows launch canary."
+        description="Run the redacted Tarot Router v1.0.7 Windows launch canary."
     )
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)

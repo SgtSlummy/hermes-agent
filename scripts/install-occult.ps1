@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "1.0.6",
+    [string]$Version = "1.0.7",
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
     [switch]$SkipCouncil,
@@ -128,11 +128,11 @@ import stat
 import sys
 
 status = os.lstat(sys.argv[1])
-reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
 safe = (
     stat.S_ISREG(status.st_mode)
     and status.st_nlink == 1
-    and not (getattr(status, "st_file_attributes", 0) & reparse)
+    and not (getattr(status, 'st_file_attributes', 0) & reparse)
 )
 raise SystemExit(0 if safe else 1)
 '@
@@ -159,10 +159,10 @@ import stat
 import sys
 
 status = os.lstat(sys.argv[1])
-reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
 safe = (
     stat.S_ISDIR(status.st_mode)
-    and not (getattr(status, "st_file_attributes", 0) & reparse)
+    and not (getattr(status, 'st_file_attributes', 0) & reparse)
 )
 raise SystemExit(0 if safe else 1)
 '@
@@ -190,11 +190,11 @@ import sys
 try:
     os.lstat(sys.argv[1])
 except FileNotFoundError:
-    print("absent")
+    print('absent')
 except OSError:
     raise SystemExit(2)
 else:
-    print("present")
+    print('present')
 '@
     $savedErrorActionPreference = $ErrorActionPreference
     $output = $null
@@ -450,7 +450,7 @@ if ($normalizedVersion.StartsWith("v")) {
     $normalizedVersion = $normalizedVersion.Substring(1)
 }
 if ($normalizedVersion -notmatch '^\d+\.\d+\.\d+$') {
-    Fail "--version must be a semantic version such as 1.0.6"
+    Fail "--version must be a semantic version such as 1.0.7"
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     Fail "--model cannot be empty"
