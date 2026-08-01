@@ -120,12 +120,20 @@ def test_sigstore_verifier_lock_pins_inventory_parser_and_matches_installers():
         r"(?m)^packaging==([^\s\\]+)",
         _text(SIGSTORE_INPUT),
     )
+    cryptography_pins = re.findall(
+        r"(?m)^cryptography==([^\s\\]+)",
+        _text(SIGSTORE_INPUT),
+    )
 
     assert len(packaging_pins) == 1
+    assert len(cryptography_pins) == 1
     assert f"packaging=={packaging_pins[0]}" in _text(SIGSTORE_LOCK)
+    assert f"cryptography=={cryptography_pins[0]}" in _text(SIGSTORE_LOCK)
     assert manifest["sigstore_requirements_sha256"] == lock_hash
     assert lock_hash in _text(POWERSHELL)
     assert lock_hash in _text(SHELL)
+    assert '"--only-binary", ":all:"' in _text(POWERSHELL)
+    assert "--only-binary :all:" in _text(SHELL)
 
 
 def _record_digest(data: bytes) -> str:

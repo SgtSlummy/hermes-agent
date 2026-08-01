@@ -27,7 +27,14 @@ def test_occult_production_workflow_is_valid_yaml_and_sha_pinned():
     payload = yaml.load(_workflow_text(), Loader=yaml.BaseLoader)
 
     assert isinstance(payload, dict)
-    assert set(payload["jobs"]) == {"platform", "council", "nix", "stage", "promote"}
+    assert set(payload["jobs"]) == {
+        "platform",
+        "council",
+        "nix",
+        "sigstore-verifier",
+        "stage",
+        "promote",
+    }
     for line in _workflow_text().splitlines():
         if "uses:" in line and "./.github/actions/" not in line:
             assert "@" in line
@@ -103,6 +110,15 @@ def test_occult_production_workflow_preserves_release_invariants():
         promote_runs,
     )
     stage = text.split("  stage:", 1)[1].split("\n  promote:", 1)[0]
+    sigstore_job = payload["jobs"]["sigstore-verifier"]
+    sigstore_runs = "\n".join(
+        step["run"] for step in sigstore_job["steps"] if "run" in step
+    )
+    assert sigstore_job["runs-on"] == "macos-15-intel"
+    assert "--require-hashes" in sigstore_runs
+    assert "--only-binary :all:" in sigstore_runs
+    assert "occult-sigstore-requirements.lock" in sigstore_runs
+    assert "sigstore-verifier" in payload["jobs"]["stage"]["needs"]
     assert "include-hidden-files: true" in stage
     promote = text.split("  promote:", 1)[1]
     assert "uv sync --frozen --extra occult" in promote
