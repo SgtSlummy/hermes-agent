@@ -119,11 +119,15 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert job["environment"] == "occult-production"
     assert "github.ref == 'refs/heads/main'" in job["if"]
     for line in text.splitlines():
-        if "uses:" in line:
+        if "uses:" in line and "./.github/actions/" not in line:
             assert "@" in line
             assert len(line.rsplit("@", 1)[1].split()[0]) == 40
     for expected in (
         "public_canary_report_sha256",
+        "release_commit",
+        '[[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]',
+        'git checkout --detach "$RELEASE_COMMIT"',
+        "'.target_commitish'",
         'overall_status == "passed"',
         "promotion_eligible == true",
         "installer_idempotent_rerun",

@@ -140,8 +140,21 @@ print(json.dumps({"initialized": initialized, "enabled": enabled}))
         $stateScript,
         $utf8NoBom
     )
-    $stateJson = (& $Python $stateScriptPath | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0) {
+    $savedErrorActionPreference = $ErrorActionPreference
+    $stateJson = $null
+    $probeExitCode = 1
+    try {
+        $ErrorActionPreference = "Continue"
+        $stateJson = (
+            & $Python $stateScriptPath 2>$null | Out-String
+        ).Trim()
+        $probeExitCode = $LASTEXITCODE
+    } catch {
+        $probeExitCode = 1
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($probeExitCode -ne 0) {
         Fail "could not inspect the preserved Occult initialization state"
     }
     try {
@@ -603,6 +616,7 @@ try {
             )
         }
         if ($metadataMatches) {
+            $referenceHermesVenv = $null
             try {
                 $referenceLength = (
                     [string]$existingReceipt.hermes_environment

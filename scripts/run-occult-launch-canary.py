@@ -202,7 +202,9 @@ def validate_public_installer_rerun(
 
     def update_record(record: Path, target: Path, site_root: Path) -> None:
         relative = target.relative_to(site_root).as_posix()
-        rows = list(csv.reader(record.read_text(encoding="utf-8").splitlines()))
+        original = record.read_bytes()
+        line_terminator = "\r\n" if b"\r\n" in original else "\n"
+        rows = list(csv.reader(original.decode("utf-8").splitlines()))
         matched = False
         data = target.read_bytes()
         digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode()
@@ -214,7 +216,7 @@ def validate_public_installer_rerun(
         if not matched:
             raise CanaryFailure("the Hermes RECORD omitted its authenticated module")
         with record.open("w", encoding="utf-8", newline="") as stream:
-            csv.writer(stream, lineterminator="\n").writerows(rows)
+            csv.writer(stream, lineterminator=line_terminator).writerows(rows)
 
     try:
         first = run(

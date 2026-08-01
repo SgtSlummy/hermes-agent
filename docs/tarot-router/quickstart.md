@@ -32,7 +32,7 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "4fdbeca9f05d645f36914469afef759ff3e9436099815a34d63c6580ff44a1a3"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "ea4c3d92fd0398dbaf70fa72b0ce1b447199056249c15057f191abb0ed5e61be"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
 ```
 
 This literal checksum is pinned in the immutable `v1.0.6` quickstart and
@@ -71,7 +71,7 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="8420644bd621d429184fd53cfd25ed0b4aaaf55e47607ec233a4bac5a2004f3d"
+  expected="e1ed5a538088ddafb4c4191470c175d757c8c4152365cf8e40d90d28689ace95"
   curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
@@ -274,7 +274,9 @@ The previous immutable releases are:
 
 Download them from their GitHub release pages, verify their published checksum
 files before extraction, disable Tarot Router, and retain the `v1.0.6` receipt
-outside the active install root. On Windows, move it before replacing files:
+outside the active install root. If you installed with `-InstallRoot` or
+`--install-root`, substitute that chosen root's receipt path for the default
+paths below. On Windows, move it before replacing files:
 
 ```powershell
 $rollback = Join-Path $env:USERPROFILE "TarotRouterRollback"

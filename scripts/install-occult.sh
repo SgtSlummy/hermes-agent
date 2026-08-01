@@ -158,9 +158,12 @@ tmp=$(mktemp -d "$tmp_base/occult-install.XXXXXX") ||
   fail "could not create a temporary verification directory"
 cleanup() {
   if [ -n "${reference_hermes_root:-}" ]; then
-    case "$reference_hermes_root" in
-      "$hermes_environments"/r*) rm -rf -- "$reference_hermes_root" ;;
-    esac
+    reference_parent=${reference_hermes_root%/*}
+    if [ -n "${hermes_environments:-}" ] &&
+      [ "$reference_parent" = "$hermes_environments" ] &&
+      [ "$reference_hermes_root" != "$hermes_environments" ]; then
+      rm -rf -- "$reference_hermes_root"
+    fi
   fi
   case "$tmp" in
     "$tmp_base"/occult-install.*)

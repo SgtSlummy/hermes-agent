@@ -8,6 +8,10 @@ on:
         required: true
         default: "1.0.6"
         type: string
+      release_commit:
+        description: Exact 40-character commit published by the Hermes release gate
+        required: true
+        type: string
       council_ref:
         description: Signed Agents Council release pinned by Hermes
         required: true
@@ -45,14 +49,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION_INPUT: ${{ inputs.version }}
+          RELEASE_COMMIT_INPUT: ${{ inputs.release_commit }}
           COUNCIL_REF: ${{ inputs.council_ref }}
           REPORT_SHA256: ${{ inputs.public_canary_report_sha256 }}
         run: |
           set -euo pipefail
           VERSION="${VERSION_INPUT#v}"
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          RELEASE_COMMIT="${RELEASE_COMMIT_INPUT}"
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           [[ "$COUNCIL_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$REPORT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          git fetch --no-tags --depth=1 origin "$RELEASE_COMMIT"
+          test "$(git rev-parse FETCH_HEAD)" = "$RELEASE_COMMIT"
+          git checkout --detach "$RELEASE_COMMIT"
           TAG="v${VERSION}"
           REPORT="public-launch-canary-v${VERSION}.json"
           EXPECTED_COUNCIL="$(
@@ -69,7 +79,7 @@ jobs:
           RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
           test "$(jq -r '.draft' <<<"$RELEASE_JSON")" = false
           test "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" = false
-          test "$(jq -r '.target_commitish' <<<"$RELEASE_JSON")" = "$(git rev-parse HEAD)"
+          test "$(jq -r '.target_commitish' <<<"$RELEASE_JSON")" = "$RELEASE_COMMIT"
           jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$RELEASE_JSON" |
             while IFS=$'\t' read -r name digest; do
               test -f "public-assets/$name"

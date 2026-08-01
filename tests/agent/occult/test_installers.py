@@ -114,9 +114,13 @@ def test_install_manifest_wheel_matches_python_package_metadata():
 def test_sigstore_verifier_lock_pins_inventory_parser_and_matches_installers():
     manifest = json.loads(_text(MANIFEST))
     lock_hash = _sha256(SIGSTORE_LOCK)
+    packaging_pins = re.findall(
+        r"(?m)^packaging==([^\s\\]+)",
+        _text(SIGSTORE_INPUT),
+    )
 
-    assert "packaging==25.0" in _text(SIGSTORE_INPUT)
-    assert "packaging==25.0" in _text(SIGSTORE_LOCK)
+    assert len(packaging_pins) == 1
+    assert f"packaging=={packaging_pins[0]}" in _text(SIGSTORE_LOCK)
     assert manifest["sigstore_requirements_sha256"] == lock_hash
     assert lock_hash in _text(POWERSHELL)
     assert lock_hash in _text(SHELL)
@@ -131,9 +135,13 @@ def _write_test_environment(root: Path) -> tuple[Path, Path, Path]:
     if os.name == "nt":
         site = root / "Lib" / "site-packages"
         launcher = root / "Scripts" / "hermes.exe"
+        runtime = root / "Scripts" / "python.exe"
+        external_launcher = root / "Scripts" / "demo.exe"
     else:
         site = root / "lib" / "python3.11" / "site-packages"
         launcher = root / "bin" / "hermes"
+        runtime = root / "bin" / "python"
+        external_launcher = root / "bin" / "demo"
     package = site / "demo"
     metadata = site / "demo-1.0.0.dist-info"
     package.mkdir(parents=True)
@@ -149,6 +157,15 @@ def _write_test_environment(root: Path) -> tuple[Path, Path, Path]:
     )
     launcher.write_bytes(f"launcher:{root}\n".encode())
     launcher.chmod(0o755)
+    runtime.write_bytes(f"python:{root}\n".encode())
+    runtime.chmod(0o755)
+    external_launcher.write_bytes(f"demo:{root}\n".encode())
+    external_launcher.chmod(0o755)
+    (root / "pyvenv.cfg").write_text(
+        f"command = {root}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     record = metadata / "RECORD"
     relative_launcher = os.path.relpath(launcher, site).replace(os.sep, "/")
     rows = [
@@ -166,6 +183,11 @@ def _write_test_environment(root: Path) -> tuple[Path, Path, Path]:
             relative_launcher,
             _record_digest(launcher.read_bytes()),
             str(launcher.stat().st_size),
+        ),
+        (
+            os.path.relpath(external_launcher, site).replace(os.sep, "/"),
+            _record_digest(external_launcher.read_bytes()),
+            str(external_launcher.stat().st_size),
         ),
         (record.relative_to(site).as_posix(), "", ""),
     ]
@@ -188,6 +210,7 @@ def _run_environment_verifier(existing: Path, reference: Path) -> int:
         text=True,
         capture_output=True,
         check=False,
+        timeout=30,
     )
     return completed.returncode
 
@@ -201,7 +224,18 @@ def test_environment_verifier_accepts_an_authenticated_equivalent(tmp_path: Path
     assert _run_environment_verifier(existing, reference) == 0
 
 
-@pytest.mark.parametrize("tamper", ["record_and_source", "bytecode", "launcher", "extra"])
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "record_and_source",
+        "bytecode",
+        "launcher",
+        "interpreter",
+        "external_launcher",
+        "pyvenv",
+        "extra",
+    ],
+)
 def test_environment_verifier_rejects_tampered_reuse(tmp_path: Path, tamper: str):
     existing = tmp_path / "existing0"
     reference = tmp_path / "reference"
@@ -222,6 +256,15 @@ def test_environment_verifier_rejects_tampered_reuse(tmp_path: Path, tamper: str
         cache.write_bytes(data)
     elif tamper == "launcher":
         launcher.write_bytes(launcher.read_bytes() + b"tampered")
+    elif tamper == "interpreter":
+        runtime = existing / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        runtime.write_bytes(runtime.read_bytes() + b"tampered")
+    elif tamper == "external_launcher":
+        tool = existing / ("Scripts/demo.exe" if os.name == "nt" else "bin/demo")
+        tool.write_bytes(tool.read_bytes() + b"tampered")
+    elif tamper == "pyvenv":
+        config = existing / "pyvenv.cfg"
+        config.write_text("command = tampered\n", encoding="utf-8", newline="\n")
     else:
         (source.parent / "untrusted.pth").write_text("payload\n", encoding="utf-8")
 
@@ -362,20 +405,30 @@ def test_quickstart_is_the_single_public_tarot_router_entrypoint():
     assert "agents-council.com" not in quickstart
     assert "agents-council@latest" not in quickstart
     assert 'sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local' in quickstart
-    powershell_block = re.search(
-        r"```powershell\n(?P<body>.*?install-occult\.ps1.*?)\n```",
+    powershell_blocks = re.findall(
+        r"(?m)^```powershell[ \t]*\r?\n"
+        r"(?P<body>(?:(?!^```)[^\r\n]*(?:\r?\n|$))*)"
+        r"^```[ \t]*$",
         quickstart,
-        flags=re.DOTALL,
+    )
+    powershell_block = next(
+        (body for body in powershell_blocks if "install-occult.ps1" in body),
+        None,
     )
     assert powershell_block is not None
-    assert _sha256(POWERSHELL) in powershell_block.group("body")
-    posix_block = re.search(
-        r"```bash\n(?P<body>.*?install-occult\.sh.*?)\n```",
+    assert _sha256(POWERSHELL) in powershell_block
+    posix_blocks = re.findall(
+        r"(?m)^```bash[ \t]*\r?\n"
+        r"(?P<body>(?:(?!^```)[^\r\n]*(?:\r?\n|$))*)"
+        r"^```[ \t]*$",
         quickstart,
-        flags=re.DOTALL,
+    )
+    posix_block = next(
+        (body for body in posix_blocks if "install-occult.sh" in body),
+        None,
     )
     assert posix_block is not None
-    assert _sha256(SHELL) in posix_block.group("body")
+    assert _sha256(SHELL) in posix_block
     rollback = manifest["rollback"]
     assert f"Hermes Occult `{rollback['hermes_release_tag']}`" in quickstart
     assert f"Agents Council `{rollback['council_release_tag']}`" in quickstart

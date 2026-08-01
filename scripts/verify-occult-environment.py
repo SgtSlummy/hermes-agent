@@ -13,7 +13,6 @@ import base64
 import csv
 import hashlib
 import json
-import marshal
 import os
 import py_compile
 import re
@@ -152,8 +151,8 @@ def _record_map(site_root: Path, environment: Path) -> dict[str, list[tuple[str,
                             (relative, "sha256=" + encoded, str(len(normalized)))
                         )
                 else:
-                    # Generated launchers embed the environment path. Their
-                    # content is authenticated independently below.
+                    # Generated launchers embed the environment path. Every
+                    # file outside site-packages is authenticated below.
                     rows.append((relative, "generated-outside-site-root", ""))
         result[record.relative_to(site_root).as_posix()] = rows
     return result
@@ -168,26 +167,31 @@ def _pyc_mode(flags: int) -> py_compile.PycInvalidationMode:
 
 
 def _validate_bytecode(site_root: Path, trusted_files: set[str]) -> None:
-    for cache in sorted(site_root.rglob("*.pyc")):
-        if cache.parent.name != "__pycache__":
-            raise IntegrityError("sourceless bytecode is not allowed")
-        try:
-            source = Path(source_from_cache(str(cache))).resolve()
-        except (NotImplementedError, ValueError) as error:
-            raise IntegrityError("bytecode cache name is invalid") from error
-        if not _inside(source, site_root):
-            raise IntegrityError("bytecode source escapes package root")
-        source_relative = source.relative_to(site_root).as_posix()
-        if source_relative not in trusted_files or not source.is_file():
-            raise IntegrityError("bytecode has no authenticated source")
-        data = cache.read_bytes()
-        if len(data) < 16:
-            raise IntegrityError("bytecode header is incomplete")
-        flags = struct.unpack("<I", data[4:8])[0]
-        optimization_match = re.search(r"\.opt-([12])\.pyc$", cache.name)
-        optimization = int(optimization_match.group(1)) if optimization_match else 0
-        with tempfile.TemporaryDirectory(prefix="occult-pyc-") as temporary:
-            expected = Path(temporary) / cache.name
+    with tempfile.TemporaryDirectory(prefix="occult-pyc-") as temporary:
+        for cache in sorted(site_root.rglob("*.pyc")):
+            if cache.parent.name != "__pycache__":
+                raise IntegrityError("sourceless bytecode is not allowed")
+            try:
+                source = Path(source_from_cache(str(cache))).resolve()
+            except (NotImplementedError, ValueError) as error:
+                raise IntegrityError("bytecode cache name is invalid") from error
+            if not _inside(source, site_root):
+                raise IntegrityError("bytecode source escapes package root")
+            source_relative = source.relative_to(site_root).as_posix()
+            if source_relative not in trusted_files or not source.is_file():
+                raise IntegrityError("bytecode has no authenticated source")
+            data = cache.read_bytes()
+            if len(data) < 16:
+                raise IntegrityError("bytecode header is incomplete")
+            flags = struct.unpack("<I", data[4:8])[0]
+            optimization_match = re.search(r"\.opt-([12])\.pyc$", cache.name)
+            optimization = (
+                int(optimization_match.group(1)) if optimization_match else 0
+            )
+            expected_name = hashlib.sha256(
+                cache.relative_to(site_root).as_posix().encode()
+            ).hexdigest()
+            expected = Path(temporary) / expected_name
             try:
                 py_compile.compile(
                     str(source),
@@ -200,13 +204,7 @@ def _validate_bytecode(site_root: Path, trusted_files: set[str]) -> None:
             except (OSError, py_compile.PyCompileError) as error:
                 raise IntegrityError("bytecode could not be reproduced") from error
             expected_data = expected.read_bytes()
-            try:
-                code_matches = marshal.loads(data[16:]) == marshal.loads(
-                    expected_data[16:]
-                )
-            except (EOFError, TypeError, ValueError):
-                code_matches = False
-            if data[:16] != expected_data[:16] or not code_matches:
+            if data != expected_data:
                 relative_cache = cache.relative_to(site_root).as_posix()
                 raise IntegrityError(
                     "bytecode differs from authenticated source: " + relative_cache
@@ -226,38 +224,63 @@ def _launcher(environment: Path) -> Path:
     return matches[0]
 
 
-def _normalized_launcher(environment: Path) -> bytes:
-    launcher = _launcher(environment)
-    data = launcher.read_bytes()
+def _path_variants(environment: Path) -> set[str]:
     variants: set[str] = set()
     for value in (str(environment), str(environment.resolve())):
         variants.update({value, value.replace("\\", "/"), value.replace("/", "\\")})
+    return variants
+
+
+def _replace_environment_paths(data: bytes, environment: Path) -> bytes:
+    variants = _path_variants(environment)
     for value in sorted(variants, key=len, reverse=True):
         encoded = value.encode()
         encoded_wide = value.encode("utf-16-le")
         data = data.replace(encoded, b"\0" * len(encoded))
         data = data.replace(encoded_wide, b"\0" * len(encoded_wide))
+    return data
+
+
+def _normalized_environment_file(path: Path, environment: Path) -> bytes:
+    data = _replace_environment_paths(path.read_bytes(), environment)
     archive_offset = data.find(b"PK\x03\x04")
-    if archive_offset < 0:
+    if archive_offset < 0 or path.suffix.lower() != ".exe":
         return data
     try:
-        with ZipFile(launcher) as archive:
+        with ZipFile(path) as archive:
             members = []
             for name in sorted(archive.namelist()):
-                member = archive.read(name)
-                for value in sorted(variants, key=len, reverse=True):
-                    encoded = value.encode()
-                    encoded_wide = value.encode("utf-16-le")
-                    member = member.replace(encoded, b"\0" * len(encoded))
-                    member = member.replace(
-                        encoded_wide,
-                        b"\0" * len(encoded_wide),
-                    )
+                member = _replace_environment_paths(archive.read(name), environment)
                 members.append((name, hashlib.sha256(member).hexdigest()))
     except (BadZipFile, KeyError, OSError) as error:
-        raise IntegrityError("Hermes launcher archive is invalid") from error
+        raise IntegrityError("environment launcher archive is invalid") from error
     encoded_members = json.dumps(members, separators=(",", ":")).encode()
     return data[:archive_offset] + b"\n<OCCULT_ZIP>\n" + encoded_members
+
+
+def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for path in sorted(environment.rglob("*")):
+        if _inside(path, site_root):
+            continue
+        relative = path.relative_to(environment).as_posix()
+        mode = path.lstat().st_mode & 0o777
+        if path.is_symlink():
+            target = os.readlink(path).encode()
+            normalized = _replace_environment_paths(target, environment).decode(
+                errors="surrogateescape"
+            )
+            result[relative] = f"symlink:{mode:o}:{normalized}"
+        elif path.is_file():
+            normalized = _normalized_environment_file(path, environment)
+            result[relative] = (
+                f"file:{mode:o}:" + hashlib.sha256(normalized).hexdigest()
+            )
+    return result
+
+
+def _normalized_launcher(environment: Path) -> bytes:
+    return _normalized_environment_file(_launcher(environment), environment)
 
 
 def verify_environment(existing: Path, reference: Path) -> None:
@@ -275,6 +298,10 @@ def verify_environment(existing: Path, reference: Path) -> None:
         raise IntegrityError("installed package files differ")
     if _record_map(existing_site, existing) != _record_map(reference_site, reference):
         raise IntegrityError("installed RECORD metadata differs")
+    if _outside_environment_map(existing, existing_site) != _outside_environment_map(
+        reference, reference_site
+    ):
+        raise IntegrityError("installed environment runtime differs")
     _validate_bytecode(existing_site, set(existing_files))
     if _normalized_launcher(existing) != _normalized_launcher(reference):
         raise IntegrityError("Hermes launcher differs")
