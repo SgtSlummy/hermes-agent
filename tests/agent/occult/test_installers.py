@@ -288,6 +288,23 @@ def test_environment_verifier_rejects_hard_linked_files(tmp_path: Path):
     assert _run_environment_verifier(existing, reference) == 1
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "symlink"), reason="directory symlinks are unavailable"
+)
+def test_environment_verifier_rejects_linked_environment_root(tmp_path: Path):
+    external = tmp_path / "external"
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    _write_test_environment(external)
+    _write_test_environment(reference)
+    try:
+        existing.symlink_to(external, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"directory symlinks are unavailable: {error}")
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
 def test_direct_url_normalization_preserves_authenticated_origin(tmp_path: Path):
     verifier = _load_environment_verifier()
     first = tmp_path / "first.json"
@@ -505,6 +522,11 @@ def test_windows_installer_verifies_before_writing_application_files():
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert "$referencePackagedCouncil" in text
+    assert "function Test-IndependentRegularFile" in text
+    assert "-Path $hermesExecutable" in text
+    assert "-Path $referencePackagedCouncil" in text
+    assert "-Path $existingPackagedCouncil" in text
+    assert "-Path $councilExecutable" in text
     assert "if ($metadataMatches -and $SkipCouncil)" in text
     assert 'Join-Path $binRoot "council.exe"' in text
     assert "Remove-Item -LiteralPath $councilExecutable -Force" in text

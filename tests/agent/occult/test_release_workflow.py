@@ -308,8 +308,34 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert promote["runs-on"] == "ubuntu-latest"
     assert promote["environment"] == "occult-production"
     assert promote["permissions"] == {"contents": "write"}
-    assert len(promote["steps"]) == 1
-    promote_run = promote["steps"][0]["run"]
+    assert len(promote["steps"]) == 4
+    promote_named = {
+        step["name"]: step for step in promote["steps"] if "name" in step
+    }
+    promote_step = promote_named[
+        "Revalidate current release bytes and promote Hermes"
+    ]
+    assert promote_step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "VERSION_INPUT": "${{ inputs.version }}",
+        "RELEASE_COMMIT": "${{ inputs.release_commit }}",
+        "COUNCIL_REF": "${{ inputs.council_ref }}",
+        "REPORT_SHA256": "${{ inputs.public_canary_report_sha256 }}",
+    }
+    promote_run = promote_step["run"]
+    assert 'gh release download "$TAG"' in promote_run
+    assert ".assets[] | [.name, .digest]" in promote_run
+    assert 'echo "$REPORT_SHA256  $PUBLIC/$REPORT" | sha256sum -c -' in promote_run
+    assert promote_run.count("verify_identity \\") == 4
+    assert "--offline" in promote_run
+    assert "RELEASE_ASSET_SNAPSHOT" in promote_run
+    assert "CURRENT_RELEASE_SNAPSHOT" in promote_run
+    assert promote_run.index('gh release download "$TAG"') < promote_run.index(
+        'gh release edit "$TAG"'
+    )
+    assert promote_run.index("CURRENT_RELEASE_SNAPSHOT") < promote_run.index(
+        'gh release edit "$TAG"'
+    )
     assert promote_run.index(
         "gh release view --repo SgtSlummy/agents-council"
     ) < promote_run.index('gh release edit "$TAG"')

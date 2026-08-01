@@ -16,6 +16,7 @@ import json
 import os
 import py_compile
 import re
+import stat
 import struct
 import subprocess
 import sys
@@ -513,9 +514,22 @@ def _normalized_launcher(environment: Path) -> bytes:
 
 
 def verify_environment(existing: Path, reference: Path) -> None:
-    existing = existing.resolve()
-    reference = reference.resolve()
-    if existing == reference or not existing.is_dir() or not reference.is_dir():
+    try:
+        existing_status = existing.lstat()
+        reference_status = reference.lstat()
+    except OSError as error:
+        raise IntegrityError("environment paths are unreadable") from error
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    if (
+        not stat.S_ISDIR(existing_status.st_mode)
+        or not stat.S_ISDIR(reference_status.st_mode)
+        or getattr(existing_status, "st_file_attributes", 0) & reparse_flag
+        or getattr(reference_status, "st_file_attributes", 0) & reparse_flag
+    ):
+        raise IntegrityError("environment roots must be real directories")
+    existing = existing.resolve(strict=True)
+    reference = reference.resolve(strict=True)
+    if existing == reference:
         raise IntegrityError("environment paths are invalid")
     existing_site = _site_root(existing)
     reference_site = _site_root(reference)

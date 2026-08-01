@@ -117,6 +117,37 @@ function Test-VersionToken {
     return [Regex]::IsMatch($Output, $pattern)
 }
 
+function Test-IndependentRegularFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+    $probe = @'
+import os
+import stat
+import sys
+
+status = os.lstat(sys.argv[1])
+reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+safe = (
+    stat.S_ISREG(status.st_mode)
+    and status.st_nlink == 1
+    and not (getattr(status, "st_file_attributes", 0) & reparse)
+)
+raise SystemExit(0 if safe else 1)
+'@
+    $savedErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $Python -c $probe $Path 1>$null 2>$null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+}
+
 function Get-OccultState {
     param(
         [Parameter(Mandatory = $true)][string]$Python,
@@ -615,6 +646,9 @@ try {
                 (Test-Path -LiteralPath $existingVenvPython -PathType Leaf) -and
                 (Test-Path -LiteralPath $existingVenvHermes -PathType Leaf) -and
                 (Test-Path -LiteralPath $hermesExecutable -PathType Leaf) -and
+                (Test-IndependentRegularFile `
+                    -Python $sigstoreVerifierPython `
+                    -Path $hermesExecutable) -and
                 (Get-FileHash -Algorithm SHA256 -LiteralPath $existingVenvHermes).Hash -eq
                     (Get-FileHash -Algorithm SHA256 -LiteralPath $hermesExecutable).Hash
             )
@@ -770,6 +804,15 @@ try {
                     (Test-Path -LiteralPath $existingPackagedCouncil -PathType Leaf) -and
                     (Test-Path -LiteralPath $councilExecutable -PathType Leaf) -and
                     (Test-Path -LiteralPath $referencePackagedCouncil -PathType Leaf) -and
+                    (Test-IndependentRegularFile `
+                        -Python $sigstoreVerifierPython `
+                        -Path $referencePackagedCouncil) -and
+                    (Test-IndependentRegularFile `
+                        -Python $sigstoreVerifierPython `
+                        -Path $existingPackagedCouncil) -and
+                    (Test-IndependentRegularFile `
+                        -Python $sigstoreVerifierPython `
+                        -Path $councilExecutable) -and
                     (Get-FileHash -Algorithm SHA256 -LiteralPath $referencePackagedCouncil).Hash -eq
                         (Get-FileHash -Algorithm SHA256 -LiteralPath $existingPackagedCouncil).Hash -and
                     (Get-FileHash -Algorithm SHA256 -LiteralPath $existingPackagedCouncil).Hash -eq
