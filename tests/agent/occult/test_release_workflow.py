@@ -133,6 +133,8 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
         "installer_idempotent_rerun",
         "installer_tamper_repair",
         "contains_secrets == false",
+        ".release_artifacts | keys",
+        "EXPECTED_ARTIFACT_KEYS",
         "gh release download",
         ".assets[] | [.name, .digest]",
         "OCCULT-INSTALL-SHA256SUMS.txt",

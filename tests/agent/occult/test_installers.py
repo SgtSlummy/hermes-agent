@@ -20,7 +20,6 @@ MANIFEST = ROOT / "scripts" / "occult-install-manifest.json"
 POWERSHELL = ROOT / "scripts" / "install-occult.ps1"
 SHELL = ROOT / "scripts" / "install-occult.sh"
 CANARY = ROOT / "scripts" / "run-occult-launch-canary.py"
-CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.6.json"
 QUICKSTART = ROOT / "docs" / "tarot-router" / "quickstart.md"
 LEGACY_QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
@@ -495,7 +494,15 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
 
 
 def test_launch_canary_evidence_is_redacted_and_includes_rollback():
-    evidence = json.loads(_text(CANARY_EVIDENCE))
+    manifest = json.loads(_text(MANIFEST))
+    canary_evidence = (
+        ROOT
+        / "docs"
+        / "occult"
+        / "evidence"
+        / f"launch-canary-v{manifest['occult_release_version']}.json"
+    )
+    evidence = json.loads(_text(canary_evidence))
     serialized = json.dumps(evidence, sort_keys=True).lower()
 
     assert evidence["candidate_status"] == "passed"
@@ -505,7 +512,6 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
     assert evidence["checks"]["installer_interface"] == "passed"
-    manifest = json.loads(_text(MANIFEST))
     assert evidence["release"]["hermes"] == (
         f"v{manifest['occult_release_version']}"
     )

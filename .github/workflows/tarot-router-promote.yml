@@ -97,6 +97,12 @@ jobs:
              and .release.hermes == $hermes
              and .release.agents_council == $council' \
             "public-assets/$REPORT"
+          EXPECTED_ARTIFACT_KEYS='["council_windows_x64","environment_verifier","hermes_requirements_lock","hermes_wheel","install_manifest","installer_posix","installer_powershell","sigstore_requirements_lock"]'
+          jq -e \
+            --argjson expected "$EXPECTED_ARTIFACT_KEYS" \
+            '(.release_artifacts | type == "object")
+             and ((.release_artifacts | keys) == $expected)' \
+            "public-assets/$REPORT"
           jq -r '.release_artifacts | to_entries[] | [.key, .value.name, .value.sha256] | @tsv' \
             "public-assets/$REPORT" |
             while IFS=$'\t' read -r key name expected; do
