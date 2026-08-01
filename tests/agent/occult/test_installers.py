@@ -311,6 +311,8 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert '"--require-hashes"' in text
     assert '"--no-deps"' in text
     assert '"--no-index"' in text
+    assert text.count('"--link-mode", "copy"') >= 4
+    assert text.count('"--cache-dir", $referenceCache') == 2
     assert '"tool", "run"' not in text
     assert "New-SigstoreVerifier" in text
     assert "$SigstoreRequirementsSha256" in text
@@ -363,6 +365,8 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert "--require-hashes" in text
     assert "--no-deps" in text
     assert "--no-index" in text
+    assert text.count("--link-mode copy") >= 4
+    assert text.count('--cache-dir "$reference_cache"') == 2
     assert "tool run" not in text
     assert "sigstore_requirements_sha256" in text
     assert "hermes_requirements_asset" in text
@@ -475,6 +479,8 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "--environment-verifier" in text
     assert "--public-installer-rerun" in text
     assert "def validate_public_installer_rerun" in text
+    assert "def call_packaged_council_tool" in text
+    assert "def validate_packaged_council_mcp_flow" in text
     assert "first_receipt_mtime" in text
     assert text.count("installer_command,") >= 2
     assert "release_artifacts" in text
@@ -482,6 +488,7 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "validate_council_repository" in text
     assert "assert_redaction_surfaces" in text
     assert 'root.glob("gateway-*.log")' in text
+    assert 'checks["packaged_council_mcp_flow"] = "passed"' in text
     assert 'primary_home / "occult"' in text
     assert 'primary_home / "logs"' in text
     assert 'restored_home / "logs"' in text
@@ -512,6 +519,7 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
     assert evidence["checks"]["installer_interface"] == "passed"
+    assert evidence["checks"]["packaged_council_mcp_flow"] == "passed"
     assert evidence["release"]["hermes"] == (
         f"v{manifest['occult_release_version']}"
     )

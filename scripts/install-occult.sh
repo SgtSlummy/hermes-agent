@@ -605,10 +605,13 @@ if [ -n "$existing_metadata" ]; then
       "$reference_hermes_root" ||
       fail "Hermes reference environment creation failed"
     reference_python="$reference_hermes_root/bin/python"
+    reference_cache="$tmp/hermes-reference-cache"
     "$uv_cmd" pip sync \
       --no-config \
       --python "$reference_python" \
       --require-hashes \
+      --link-mode copy \
+      --cache-dir "$reference_cache" \
       "$requirements_path" ||
       fail "Hermes reference dependencies failed verification"
     "$uv_cmd" pip install \
@@ -616,6 +619,8 @@ if [ -n "$existing_metadata" ]; then
       --python "$reference_python" \
       --no-deps \
       --no-index \
+      --link-mode copy \
+      --cache-dir "$reference_cache" \
       "$wheel_path" ||
       fail "Hermes reference wheel installation failed"
     "$sigstore_venv/bin/python" \
@@ -774,6 +779,7 @@ venv_python="$hermes_venv/bin/python"
   --no-config \
   --python "$venv_python" \
   --require-hashes \
+  --link-mode copy \
   "$requirements_path" ||
   fail "Hermes locked dependency installation failed"
 "$uv_cmd" pip install \
@@ -781,6 +787,7 @@ venv_python="$hermes_venv/bin/python"
   --python "$venv_python" \
   --no-deps \
   --no-index \
+  --link-mode copy \
   "$wheel_path" ||
   fail "Hermes wheel installation failed"
 

@@ -11,13 +11,14 @@
     "explicit_local_initialization": "passed",
     "gateway_restart": "passed",
     "installer_interface": "passed",
+    "packaged_council_mcp_flow": "passed",
     "rollback_previous_checksummed_releases": "passed",
     "temporary_secret_cleanup": "passed",
     "versions": "passed",
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-08-01T02:57:09.061473Z",
+  "generated_at": "2026-08-01T03:44:16.349722Z",
   "overall_status": "candidate_passed",
   "platform": {
     "architecture": "x86_64",
@@ -56,11 +57,11 @@
     },
     "installer_posix": {
       "name": "install-occult.sh",
-      "sha256": "e1ed5a538088ddafb4c4191470c175d757c8c4152365cf8e40d90d28689ace95"
+      "sha256": "9fa5a95a187c3857aac49e2f4e2624c27093bfef95734fd5cb801e7cda712c36"
     },
     "installer_powershell": {
       "name": "install-occult.ps1",
-      "sha256": "1138d0d7fa7c40c68e2427af1408d6e9d1c2a9c032f154ef7b0d169566162cfc"
+      "sha256": "34e27dbeb6200f576f6b3697f54ca0fb99451b0e901f5e8ba29f0930a22dac86"
     },
     "sigstore_requirements_lock": {
       "name": "occult-sigstore-requirements.lock",

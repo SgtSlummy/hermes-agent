@@ -68,7 +68,15 @@ jobs:
           EXPECTED_COUNCIL="$(
             jq -r '.council.release_tag' scripts/occult-install-manifest.json
           )"
+          EXPECTED_COUNCIL_COMMIT="$(
+            jq -r '.council.commit_sha' scripts/occult-install-manifest.json
+          )"
           test "$COUNCIL_REF" = "$EXPECTED_COUNCIL"
+          RESOLVED_COUNCIL_COMMIT="$(
+            gh api "repos/SgtSlummy/agents-council/commits/$COUNCIL_REF" \
+              --jq .sha
+          )"
+          test "$RESOLVED_COUNCIL_COMMIT" = "$EXPECTED_COUNCIL_COMMIT"
           mkdir -p public-assets council-assets
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
           gh release download "$COUNCIL_REF" \
@@ -97,11 +105,30 @@ jobs:
              and .release.hermes == $hermes
              and .release.agents_council == $council' \
             "public-assets/$REPORT"
-          EXPECTED_ARTIFACT_KEYS='["council_windows_x64","environment_verifier","hermes_requirements_lock","hermes_wheel","install_manifest","installer_posix","installer_powershell","sigstore_requirements_lock"]'
+          EXPECTED_CHECK_KEYS='["audit_redaction","backup_restore","candidate_artifact_installation","council_pause_restart_resume","council_source_provenance","default_model_binding","disabled_before_initialization","explicit_local_initialization","gateway_restart","installer_idempotent_rerun","installer_interface","installer_tamper_repair","packaged_council_mcp_flow","rollback_previous_checksummed_releases","temporary_secret_cleanup","versions","zero_cost_major_arcana_invocation"]'
           jq -e \
-            --argjson expected "$EXPECTED_ARTIFACT_KEYS" \
+            --argjson expected "$EXPECTED_CHECK_KEYS" \
+            '(.checks | type == "object")
+             and ((.checks | keys) == $expected)
+             and ([.checks[] | . == "passed"] | all)' \
+            "public-assets/$REPORT"
+          EXPECTED_ARTIFACT_NAMES="$(
+            jq -c '{
+              install_manifest: "occult-install-manifest.json",
+              hermes_wheel: .hermes_wheel_asset,
+              hermes_requirements_lock: .hermes_requirements_asset,
+              sigstore_requirements_lock: .sigstore_requirements_asset,
+              installer_powershell: "install-occult.ps1",
+              installer_posix: "install-occult.sh",
+              environment_verifier: .environment_verifier_asset,
+              council_windows_x64: .council.assets["windows-x64"]
+            }' scripts/occult-install-manifest.json
+          )"
+          jq -e \
+            --argjson expected "$EXPECTED_ARTIFACT_NAMES" \
             '(.release_artifacts | type == "object")
-             and ((.release_artifacts | keys) == $expected)' \
+             and ((.release_artifacts
+                   | with_entries(.value = .value.name)) == $expected)' \
             "public-assets/$REPORT"
           jq -r '.release_artifacts | to_entries[] | [.key, .value.name, .value.sha256] | @tsv' \
             "public-assets/$REPORT" |

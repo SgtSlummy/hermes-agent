@@ -603,6 +603,291 @@ def validate_council_repository(
         raise CanaryFailure("Council cross-repository E2E script is missing")
 
 
+def call_packaged_council_tool(
+    council: Path,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    env: dict[str, str],
+    timeout: int,
+) -> tuple[dict[str, Any], str]:
+    """Call one MCP tool through the packaged Council executable."""
+    messages = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "tarot-router-launch-canary",
+                    "version": "1.0.0",
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments},
+        },
+    ]
+    input_text = "".join(
+        json.dumps(message, separators=(",", ":")) + "\n"
+        for message in messages
+    )
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    completed = subprocess.run(
+        [str(council), "mcp", "--format", "json", "--agent-name", "e2e-operator"],
+        env=env,
+        input=input_text,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        creationflags=flags,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise CanaryFailure("the packaged Council MCP process failed")
+    response: dict[str, Any] | None = None
+    for line in completed.stdout.splitlines():
+        try:
+            payload = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict) and payload.get("id") == 2:
+            response = payload
+    if response is None:
+        raise CanaryFailure("the packaged Council MCP tool returned no response")
+    result = response.get("result")
+    if not isinstance(result, dict) or result.get("isError") is True:
+        raise CanaryFailure("the packaged Council MCP tool returned an error")
+    structured = result.get("structuredContent")
+    if not isinstance(structured, dict):
+        raise CanaryFailure("the packaged Council MCP tool omitted structured output")
+    return structured, completed.stdout + completed.stderr
+
+
+def approve_persisted_council_reading(
+    state_path: Path,
+    reading_id: str,
+    approval_id: str,
+) -> None:
+    """Record the canary operator approval between packaged process runs."""
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(state, dict) or state.get("version") != COUNCIL_STATE_SCHEMA:
+            raise CanaryFailure("the packaged Council state schema is invalid")
+        readings = state.get("occultReadings")
+        if not isinstance(readings, list):
+            raise CanaryFailure("the packaged Council state omitted readings")
+        reading = next(
+            (
+                item
+                for item in readings
+                if isinstance(item, dict) and item.get("id") == reading_id
+            ),
+            None,
+        )
+        if reading is None:
+            raise CanaryFailure("the packaged Council state omitted the reading")
+        approvals = reading.get("approvals")
+        if not isinstance(approvals, list):
+            raise CanaryFailure("the packaged Council state omitted approvals")
+        approval = next(
+            (
+                item
+                for item in approvals
+                if isinstance(item, dict) and item.get("approvalId") == approval_id
+            ),
+            None,
+        )
+        if approval is None or approval.get("state") != "pending":
+            raise CanaryFailure("the packaged Council approval is not pending")
+        resolved_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        approval.update({
+            "state": "approved",
+            "resolvedAt": resolved_at,
+            "resolvedBy": "e2e-operator",
+        })
+        reading["updatedAt"] = resolved_at
+        staged = state_path.with_name(
+            state_path.name + ".approval-" + uuid.uuid4().hex + ".tmp"
+        )
+        staged.write_text(
+            json.dumps(state, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(staged, state_path)
+    except CanaryFailure:
+        raise
+    except (OSError, TypeError, ValueError):
+        raise CanaryFailure(
+            "the packaged Council approval could not be persisted"
+        ) from None
+
+
+def packaged_council_plan(session_id: str) -> dict[str, Any]:
+    """Return the public v1 build-review-synthesis wire plan."""
+    return {
+        "session_id": session_id,
+        "spread_id": "occult.spread.build-review-synthesis",
+        "spread_version": "1.0.0",
+        "idempotency_key": "packaged-council:build-review-synthesis",
+        "routing": {
+            "mode": "local_only",
+            "free_only": True,
+            "local_only": True,
+            "maximum_fallbacks": 0,
+            "maximum_cost_usd": 0,
+        },
+        "maximum_parallelism": 1,
+        "nodes": [
+            {
+                "node_id": "build",
+                "agent_id": "occult.major.magician",
+                "message": "Build the packaged production artifact.",
+            },
+            {
+                "node_id": "review",
+                "agent_id": "occult.major.justice",
+                "message": "Review the packaged production artifact.",
+                "requires_approval": True,
+            },
+            {
+                "node_id": "synthesis",
+                "agent_id": "occult.major.temperance",
+                "message": "Synthesize the approved packaged result.",
+            },
+        ],
+        "dependencies": [
+            {"source": "build", "target": "review"},
+            {"source": "review", "target": "synthesis"},
+        ],
+    }
+
+
+def validate_packaged_council_mcp_flow(
+    council: Path,
+    root: Path,
+    *,
+    env: dict[str, str],
+    hermes_url: str,
+    service_token: str,
+    timeout: int,
+) -> list[str]:
+    """Exercise pause, process restart, approval, and resume through Council MCP."""
+    state_path = root / "packaged-council-state.json"
+    council_env = dict(env)
+    council_env.update({
+        "AGENTS_COUNCIL_STATE_PATH": str(state_path),
+        "OCCULT_ENABLED": "true",
+        "OCCULT_HERMES_URL": hermes_url,
+        "OCCULT_HERMES_SERVICE_TOKEN": service_token,
+    })
+    outputs: list[str] = []
+    started, output = call_packaged_council_tool(
+        council,
+        "start_council",
+        {"request": "Build, review, and synthesize the packaged release."},
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    session_id = started.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise CanaryFailure("the packaged Council MCP flow omitted its session")
+    plan = packaged_council_plan(session_id)
+    paused, output = call_packaged_council_tool(
+        council,
+        "occult_create_reading_v1",
+        {"contract_version": CONTRACT_VERSION, "plan": plan},
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    reading_id = paused.get("reading_id")
+    if (
+        not isinstance(reading_id, str)
+        or not reading_id
+        or paused.get("contract_version") != CONTRACT_VERSION
+        or paused.get("state") != "running"
+    ):
+        raise CanaryFailure("the packaged Council reading did not pause")
+    approvals = paused.get("approvals")
+    if not isinstance(approvals, list):
+        raise CanaryFailure("the packaged Council reading omitted approvals")
+    approval = next(
+        (
+            item
+            for item in approvals
+            if isinstance(item, dict)
+            and item.get("node_id") == "review"
+            and item.get("state") == "pending"
+        ),
+        None,
+    )
+    if approval is None or not isinstance(approval.get("approval_id"), str):
+        raise CanaryFailure("the packaged Council reading did not request approval")
+    inspected, output = call_packaged_council_tool(
+        council,
+        "occult_get_reading_v1",
+        {
+            "contract_version": CONTRACT_VERSION,
+            "session_id": session_id,
+            "reading_id": reading_id,
+        },
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    if inspected.get("reading_id") != reading_id or inspected.get("state") != "running":
+        raise CanaryFailure("the packaged Council reading did not survive restart")
+    approve_persisted_council_reading(
+        state_path,
+        reading_id,
+        approval["approval_id"],
+    )
+    completed, output = call_packaged_council_tool(
+        council,
+        "occult_resume_reading_v1",
+        {
+            "contract_version": CONTRACT_VERSION,
+            "reading_id": reading_id,
+            "plan": plan,
+        },
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    events = completed.get("events")
+    terminal = (
+        [
+            event
+            for event in events
+            if isinstance(event, dict)
+            and event.get("event_type")
+            in {"reading.cancelled", "reading.completed", "reading.failed"}
+        ]
+        if isinstance(events, list)
+        else []
+    )
+    if (
+        completed.get("reading_id") != reading_id
+        or completed.get("state") != "completed"
+        or len(terminal) != 1
+        or terminal[0].get("event_type") != "reading.completed"
+    ):
+        raise CanaryFailure("the packaged Council reading did not resume cleanly")
+    return outputs
+
+
 def rehearse_rollback(
     *,
     root: Path,
@@ -1179,6 +1464,18 @@ def main() -> int:
                 "OCCULT_E2E_HERMES_URL": "http://127.0.0.1:8642",
                 "OCCULT_E2E_HERMES_TOKEN": token,
             })
+            packaged_outputs = validate_packaged_council_mcp_flow(
+                council,
+                root / "packaged-council-mcp",
+                env=env,
+                hermes_url="http://127.0.0.1:8642",
+                service_token=token,
+                timeout=args.timeout_seconds * 3,
+            )
+            for output in packaged_outputs:
+                assert_redacted(output, token)
+            observed_outputs.extend(packaged_outputs)
+            checks["packaged_council_mcp_flow"] = "passed"
             council_result = run(
                 [str(bun), "run", "test:occult-hermes-e2e"],
                 env=council_env,

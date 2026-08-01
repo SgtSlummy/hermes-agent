@@ -621,6 +621,7 @@ try {
         }
         if ($metadataMatches) {
             $referenceHermesVenv = $null
+            $referenceCache = $null
             try {
                 $referenceLength = (
                     [string]$existingReceipt.hermes_environment
@@ -638,6 +639,9 @@ try {
                 if (Test-Path -LiteralPath $referenceHermesVenv) {
                     Fail "the isolated Hermes reference path is unavailable"
                 }
+                $referenceCache = Join-Path `
+                    $temporaryRoot `
+                    ("hermes-reference-cache-" + [Guid]::NewGuid().ToString("N"))
                 Invoke-Checked `
                     -Executable $uv `
                     -Arguments @(
@@ -652,14 +656,18 @@ try {
                     -Executable $uv `
                     -Arguments @(
                         "pip", "sync", "--no-config", "--python",
-                        $referencePython, "--require-hashes", $requirementsPath
+                        $referencePython, "--require-hashes",
+                        "--link-mode", "copy", "--cache-dir", $referenceCache,
+                        $requirementsPath
                     ) `
                     -FailureMessage "Hermes reference dependencies failed verification"
                 Invoke-Checked `
                     -Executable $uv `
                     -Arguments @(
                         "pip", "install", "--no-config", "--python",
-                        $referencePython, "--no-deps", "--no-index", $wheelPath
+                        $referencePython, "--no-deps", "--no-index",
+                        "--link-mode", "copy", "--cache-dir", $referenceCache,
+                        $wheelPath
                     ) `
                     -FailureMessage "Hermes reference wheel installation failed"
                 $savedErrorActionPreference = $ErrorActionPreference
@@ -683,6 +691,13 @@ try {
                 ) {
                     Remove-Item `
                         -LiteralPath $referenceHermesVenv `
+                        -Recurse `
+                        -Force `
+                        -ErrorAction SilentlyContinue
+                }
+                if ($referenceCache -and (Test-Path -LiteralPath $referenceCache)) {
+                    Remove-Item `
+                        -LiteralPath $referenceCache `
                         -Recurse `
                         -Force `
                         -ErrorAction SilentlyContinue
@@ -863,6 +878,7 @@ try {
             "--no-config",
             "--python", $venvPython,
             "--require-hashes",
+            "--link-mode", "copy",
             $requirementsPath
         ) `
         -FailureMessage "Hermes locked dependency installation failed"
@@ -874,6 +890,7 @@ try {
             "--python", $venvPython,
             "--no-deps",
             "--no-index",
+            "--link-mode", "copy",
             $wheelPath
         ) `
         -FailureMessage "Hermes wheel installation failed"
