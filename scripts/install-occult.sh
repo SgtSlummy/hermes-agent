@@ -89,6 +89,19 @@ version_output_matches() {
     '
 }
 
+regular_file_profile() {
+  "$sigstore_venv/bin/python" - "$1" <<'PY'
+import os
+import stat
+import sys
+
+status = os.lstat(sys.argv[1])
+if not stat.S_ISREG(status.st_mode) or status.st_nlink != 1:
+    raise SystemExit(1)
+print(f"{stat.S_IMODE(status.st_mode):o}")
+PY
+}
+
 read_occult_state() {
   python_executable=$1
   "$python_executable" -c '
@@ -663,6 +676,18 @@ if [ -n "$existing_metadata" ]; then
     fi
     if [ "$reuse_ok" -eq 1 ]; then
       [ "$(sha256_file "$existing_packaged_council")" = "$(sha256_file "$council_executable")" ] ||
+        reuse_ok=0
+    fi
+    if [ "$reuse_ok" -eq 1 ]; then
+      reference_council_profile=$(regular_file_profile "$reference_packaged_council") ||
+        reuse_ok=0
+    fi
+    if [ "$reuse_ok" -eq 1 ]; then
+      [ "$(regular_file_profile "$existing_packaged_council")" = "$reference_council_profile" ] ||
+        reuse_ok=0
+    fi
+    if [ "$reuse_ok" -eq 1 ]; then
+      [ "$(regular_file_profile "$council_executable")" = "$reference_council_profile" ] ||
         reuse_ok=0
     fi
     if [ "$reuse_ok" -eq 1 ]; then

@@ -272,6 +272,48 @@ def test_environment_verifier_authenticates_package_file_modes(tmp_path: Path):
     assert _run_environment_verifier(existing, reference) == 1
 
 
+@pytest.mark.skipif(not hasattr(os, "link"), reason="hard links are unavailable")
+def test_environment_verifier_rejects_hard_linked_files(tmp_path: Path):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    source, _, _ = _write_test_environment(existing)
+    _write_test_environment(reference)
+    external = tmp_path / "external-source.py"
+    source.replace(external)
+    try:
+        os.link(external, source)
+    except OSError as error:
+        pytest.skip(f"hard links are unavailable: {error}")
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
+def test_direct_url_normalization_preserves_authenticated_origin(tmp_path: Path):
+    verifier = _load_environment_verifier()
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    remote = tmp_path / "remote.json"
+    first.write_text(
+        json.dumps({"url": "file:///temporary/one/hermes.whl"}),
+        encoding="utf-8",
+    )
+    second.write_text(
+        json.dumps({"url": "file:///temporary/two/hermes.whl"}),
+        encoding="utf-8",
+    )
+    remote.write_text(
+        json.dumps({"url": "https://attacker.invalid/hermes.whl"}),
+        encoding="utf-8",
+    )
+
+    assert verifier._normalized_direct_url(first) == verifier._normalized_direct_url(
+        second
+    )
+    assert verifier._normalized_direct_url(first) != verifier._normalized_direct_url(
+        remote
+    )
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory modes are meaningful")
 @pytest.mark.parametrize("target", ["environment", "site_root", "package"])
 def test_environment_verifier_authenticates_directory_modes(
@@ -520,6 +562,9 @@ def test_unix_installer_verifies_before_writing_application_files():
         'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert 'reference_packaged_council="$reference_council_root/cli/council"' in text
+    assert 'regular_file_profile "$reference_packaged_council"' in text
+    assert 'regular_file_profile "$existing_packaged_council"' in text
+    assert 'regular_file_profile "$council_executable"' in text
     assert '[ -e "$bin_root/council" ] || [ -L "$bin_root/council" ]' in text
     assert 'rm -f -- "$bin_root/council"' in text
     assert 'rm -f -- "$user_bin/council"' in text

@@ -23,6 +23,7 @@ import tempfile
 from email.parser import BytesParser
 from importlib.util import source_from_cache
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit, urlunsplit
 from zipfile import BadZipFile, ZipFile
 
 
@@ -80,7 +81,17 @@ def _normalized_direct_url(path: Path) -> bytes:
         raise IntegrityError("direct URL metadata is invalid") from error
     if not isinstance(payload, dict) or not isinstance(payload.get("url"), str):
         raise IntegrityError("direct URL metadata is incomplete")
-    payload["url"] = Path(payload["url"].replace("file://", "")).name
+    parsed = urlsplit(payload["url"])
+    if parsed.scheme.lower() == "file":
+        filename = PurePosixPath(parsed.path).name
+        if not filename:
+            raise IntegrityError("direct URL metadata has no artifact name")
+        # uv records the temporary directory containing the authenticated
+        # local wheel. Normalize only that varying directory while retaining
+        # the file scheme, authority, artifact name, query, and fragment.
+        payload["url"] = urlunsplit(
+            ("file", parsed.netloc, "/" + filename, parsed.query, parsed.fragment)
+        )
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 
 
@@ -109,6 +120,8 @@ def _file_map(site_root: Path) -> dict[str, str]:
             continue
         if not path.is_file():
             raise IntegrityError("package root contains an unsupported node")
+        if path.stat().st_nlink != 1:
+            raise IntegrityError("package root contains a hard-linked file")
         relative = path.relative_to(site_root).as_posix()
         if path.suffix == ".pyc" or path.name == "RECORD":
             continue
@@ -484,6 +497,8 @@ def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, st
             result[relative] = f"directory:{mode:o}"
             continue
         elif path.is_file():
+            if path.stat().st_nlink != 1:
+                raise IntegrityError("environment contains a hard-linked file")
             normalized = _normalized_environment_file(path, environment)
             result[relative] = (
                 f"file:{mode:o}:" + hashlib.sha256(normalized).hexdigest()

@@ -71,7 +71,7 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="a836e152dac99c8c160ae29389f1dfb49f4623c14c7aa9067acd57b05c503bd9"
+  expected="cf294c59fadb5b4fcfece68b98a364f4d7f324779e3f482ef8a19fd5f4ba70f8"
   curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
