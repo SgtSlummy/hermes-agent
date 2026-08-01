@@ -14,6 +14,7 @@ on:
       - "scripts/occult-sigstore-requirements.in"
       - "scripts/occult-sigstore-requirements.lock"
       - "scripts/run-occult-launch-canary.py"
+      - "scripts/verify-occult-environment.py"
       - "scripts/occult_release.py"
       - "tests/agent/occult/**"
       - "tests/gateway/test_occult_runtime_wiring.py"
@@ -23,6 +24,7 @@ on:
       - "docs/occult/**"
       - "README.md"
       - ".github/workflows/occult-production-gate.yml"
+      - ".github/workflows/tarot-router-promote.yml"
       - "pyproject.toml"
       - "uv.lock"
       - "web/**"
@@ -254,7 +256,7 @@ jobs:
           retention-days: 30
 
   promote:
-    name: Sign and promote exact staged bytes
+    name: Sign and publish exact staged bytes without latest promotion
     if: >-
       github.event_name == 'workflow_dispatch' &&
       inputs.channel == 'stable' &&
@@ -298,7 +300,11 @@ jobs:
           )"
           jq -e \
             --arg model "$EXPECTED_MODEL" \
-            '.overall_status == "passed"
+            '.candidate_status == "passed"
+             and .overall_status == "candidate_passed"
+             and .promotion_eligible == false
+             and (.checks.installer_idempotent_rerun? == null)
+             and .checks.installer_interface == "passed"
              and .contains_secrets == false
              and .release.ollama_model == $model' \
             "$CANARY"
@@ -365,6 +371,7 @@ jobs:
           cp "$WHEEL" "install-assets/$WHEEL_NAME"
           cp scripts/install-occult.ps1 install-assets/
           cp scripts/install-occult.sh install-assets/
+          cp scripts/verify-occult-environment.py install-assets/
           cp scripts/occult-install-manifest.json install-assets/
           cp scripts/occult-sigstore-requirements.lock install-assets/
           cp "$CANARY" install-assets/
@@ -386,6 +393,7 @@ jobs:
             '.occult_release_version == $version
              and .hermes_wheel_asset == $wheel
              and .hermes_requirements_asset == "occult-requirements.lock"
+             and .environment_verifier_asset == "verify-occult-environment.py"
              and .sigstore_requirements_asset == "occult-sigstore-requirements.lock"
              and .sigstore_requirements_sha256 == $sigstore_lock_sha
              and .council.release_tag == $council
@@ -420,6 +428,9 @@ jobs:
           verify_canary_artifact \
             installer_posix \
             install-assets/install-occult.sh
+          verify_canary_artifact \
+            environment_verifier \
+            install-assets/verify-occult-environment.py
           COUNCIL_ASSET="$(
             jq -r '.council.assets["windows-x64"]' \
               scripts/occult-install-manifest.json

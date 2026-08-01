@@ -1,7 +1,7 @@
 # Tarot Router local public v1 quickstart
 
 This is the authoritative installation and first-run guide for the local
-Tarot Router release. It installs the signed Hermes `v1.0.5` GitHub release
+Tarot Router release. It installs the signed Hermes `v1.0.6` GitHub release
 and the signed Agents Council `v0.5.5` GitHub release without administrator
 rights. Tarot Router remains disabled until you explicitly initialize a local
 Ollama model.
@@ -32,10 +32,10 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "327c606f1e230f468d14f0a51735208569e8fdd46330ca6f11e58b0213e92007"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.5/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "d1503af18040baee0b964edba01e00ab4a991c5e9e920b2af17ef07a5dd9580a"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
 ```
 
-This literal checksum is pinned in the immutable `v1.0.5` quickstart and
+This literal checksum is pinned in the immutable `v1.0.6` quickstart and
 authenticates the installer before PowerShell executes it. The installer then
 verifies the signed release manifest, dependency lock, wheel, and Council asset.
 
@@ -52,6 +52,11 @@ Verify all release assets without installing:
 & $installer -VerifyOnly
 ```
 
+Rerunning the same installer and version re-verifies the signed public assets,
+then reuses an exact matching installation without replacing its active
+commands or receipt. Explicit initialization remains the only rerun mode that
+may update the preserved local profile and receipt state flags.
+
 Install Hermes without Council:
 
 ```powershell
@@ -66,8 +71,8 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="32a39caffc19be2ea42b5d4374a114c19bb9a68bd79befce52947097c53c39a7"
-  curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.5/install-occult.sh"
+  expected="e1b5ea06633db6f2568b3394b4e96ec75fe8e783b1541262beb4eb565303fc34"
+  curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
   else
@@ -92,7 +97,7 @@ The installer creates per-user command links in
 Available options:
 
 ```text
---version 1.0.5
+--version 1.0.6
 --install-root /path/owned/by/you
 --initialize-local
 --skip-council
@@ -121,7 +126,7 @@ cat "${XDG_DATA_HOME:-$HOME/.local/share}/occult/occult-install-receipt.json"
 
 These commands assume the normal installation. If you used `-SkipCouncil` or
 `--skip-council`, omit `council --version`. The receipt identifies Occult
-release `1.0.5` (the stable v1 metadata name), Hermes CLI package `0.14.0`,
+release `1.0.6` (the stable v1 metadata name), Hermes CLI package `0.14.0`,
 contract `1.0.0`, Council state schema `3`, and `occult_initialized: false`.
 A normal installation also records
 Council `v0.5.5` and its archive hash; a skipped Council installation records
@@ -264,14 +269,33 @@ Validate `hermes tarot status`, then explicitly re-enable local routing.
 
 The previous immutable releases are:
 
-- Hermes Occult `v1.0.0` (the immutable pre-rename release name)
-- Agents Council `v0.5.1`
+- Hermes Occult `v1.0.3` (the last promoted checksummed release)
+- Agents Council `v0.5.2`
 
 Download them from their GitHub release pages, verify their published checksum
-files before extraction, disable Tarot Router, and retain the `v1.0.5` receipt and
-backup. The Hermes `v1.0.0` universal archive contains its platform wheel; use
-that wheel to replace the `uv` tool environment under the same install root.
-Replace Council with the matching `v0.5.1` platform archive.
+files before extraction, disable Tarot Router, and retain the `v1.0.6` receipt
+outside the active install root. If you installed with `-InstallRoot` or
+`--install-root`, substitute that chosen root's receipt path for the default
+paths below. On Windows, move it before replacing files:
+
+```powershell
+$rollback = Join-Path $env:USERPROFILE "TarotRouterRollback"
+New-Item -ItemType Directory -Force -Path $rollback | Out-Null
+Move-Item -LiteralPath "$env:LOCALAPPDATA\Occult\occult-install-receipt.json" -Destination "$rollback\occult-install-receipt-v1.0.6.json"
+```
+
+On Linux or macOS:
+
+```bash
+rollback="$HOME/TarotRouterRollback"
+mkdir -p "$rollback"
+mv "${XDG_DATA_HOME:-$HOME/.local/share}/occult/occult-install-receipt.json" "$rollback/occult-install-receipt-v1.0.6.json"
+```
+
+Do not leave a receipt claiming `v1.0.6` in the active install root after the
+rollback. The Hermes `v1.0.3` universal archive contains its platform wheel;
+use that wheel to replace the `uv` tool environment under the same install
+root. Replace Council with the matching `v0.5.2` platform archive.
 
 Runtime contract `1.0.0` and Council state schema `3` are unchanged in these
 patch releases. State restoration is therefore not normally required, but the

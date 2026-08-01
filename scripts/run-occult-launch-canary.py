@@ -9,6 +9,8 @@ inside a temporary directory that is removed before the report is written.
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
 import hashlib
 import json
 import os
@@ -30,18 +32,10 @@ from typing import Any
 
 
 HERMES_CLI_VERSION = "0.14.0"
-HERMES_RELEASE = "v1.0.5"
+HERMES_RELEASE = "v1.0.6"
 COUNCIL_VERSION = "0.5.5"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
-PREVIOUS_HERMES_CLI_VERSION = "0.14.0"
-PREVIOUS_HERMES_WHEEL_SHA256 = (
-    "8bf1af5acc71f44e9eb2cbae0b596fb3188446e513e24bee031552b78edc70c3"
-)
-PREVIOUS_COUNCIL_VERSION = "0.5.2"
-PREVIOUS_COUNCIL_ARCHIVE_SHA256 = (
-    "638b8b044d4334468ef299fddd1db6f8901a271a605fbdd48cbfb3e78af1b934"
-)
 STARTER_CARD_ID = "minor.pentacles.ace.ollama.local"
 SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 SIGNED_URL = re.compile(r"https?://\S+(?:signature|sigstore|x-amz-|token=)", re.I)
@@ -53,7 +47,7 @@ class CanaryFailure(RuntimeError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the redacted Tarot Router v1.0.5 Windows launch canary."
+        description="Run the redacted Tarot Router v1.0.6 Windows launch canary."
     )
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)
@@ -64,10 +58,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-council-archive", type=Path, required=True)
     parser.add_argument("--installer-powershell", type=Path, required=True)
     parser.add_argument("--installer-posix", type=Path, required=True)
+    parser.add_argument("--environment-verifier", type=Path, required=True)
     parser.add_argument("--sigstore-requirements-lock", type=Path, required=True)
     parser.add_argument("--previous-hermes-wheel", type=Path, required=True)
     parser.add_argument("--previous-council-archive", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument(
+        "--public-installer-rerun",
+        action="store_true",
+        help="install the public release twice and require byte-stable commands and receipt",
+    )
     parser.add_argument(
         "--ollama-base-url",
         default="http://127.0.0.1:11434/v1",
@@ -97,8 +97,11 @@ def run(
     )
     succeeded = completed.returncode == 0
     if succeeded != expect_success:
+        operation = Path(command[0]).name
+        if len(command) > 1 and re.fullmatch(r"[A-Za-z0-9_.+-]{1,32}", command[1]):
+            operation += " " + command[1]
         raise CanaryFailure(
-            f"command failed its expected outcome: {Path(command[0]).name}"
+            f"command failed its expected outcome: {operation}"
         )
     return completed
 
@@ -108,6 +111,394 @@ def assert_file(path: Path, label: str) -> Path:
     if not resolved.is_file():
         raise CanaryFailure(f"{label} is missing")
     return resolved
+
+
+def validate_installer_interface(
+    installer_powershell: Path,
+    installer_posix: Path,
+) -> None:
+    try:
+        powershell = installer_powershell.read_text(encoding="utf-8-sig")
+        posix = installer_posix.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise CanaryFailure(
+            f"an installer script could not be read: {error.__class__.__name__}"
+        ) from None
+    required_powershell = (
+        "[switch]$InitializeLocal",
+        "[switch]$SkipCouncil",
+        "[switch]$VerifyOnly",
+        "environment_verifier_asset",
+    )
+    required_posix = (
+        "--initialize-local",
+        "--skip-council",
+        "--verify-only",
+        "environment_verifier_asset",
+    )
+    if any(marker not in powershell for marker in required_powershell):
+        raise CanaryFailure("Windows installer interface is incomplete")
+    if any(marker not in posix for marker in required_posix):
+        raise CanaryFailure("POSIX installer interface is incomplete")
+
+
+def validate_public_installer_rerun(
+    *,
+    installer_powershell: Path,
+    root: Path,
+    env: dict[str, str],
+    model: str,
+    ollama_base_url: str,
+    timeout: int,
+) -> list[str]:
+    """Exercise exact rerun, mutable state, and tamper repair on public bytes."""
+    import winreg
+
+    powershell_name = shutil.which("powershell.exe") or shutil.which("powershell")
+    if not powershell_name:
+        raise CanaryFailure("Windows PowerShell is required for the public installer canary")
+    powershell = Path(powershell_name).resolve()
+    install_root = root / "public-installer-rerun"
+    profile_home = root / "public-installer-profile"
+    profile_home.mkdir()
+    installer_env = dict(env)
+    installer_env["HERMES_HOME"] = str(profile_home)
+
+    path_existed = False
+    original_path = ""
+    original_path_kind = winreg.REG_EXPAND_SZ
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Environment",
+            0,
+            winreg.KEY_READ,
+        ) as key:
+            try:
+                original_path, original_path_kind = winreg.QueryValueEx(key, "Path")
+                path_existed = True
+            except FileNotFoundError:
+                pass
+    except FileNotFoundError:
+        pass
+
+    installer_command = [
+        str(powershell),
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(installer_powershell),
+        "-Version",
+        HERMES_RELEASE.removeprefix("v"),
+        "-InstallRoot",
+        str(install_root),
+    ]
+    outputs: list[str] = []
+
+    def fingerprint(path: Path) -> tuple[str, int, int]:
+        stat = path.stat()
+        return sha256_file(path), stat.st_size, stat.st_mtime_ns
+
+    def update_record(record: Path, target: Path, site_root: Path) -> None:
+        relative = target.relative_to(site_root).as_posix()
+        original = record.read_bytes()
+        line_terminator = "\r\n" if b"\r\n" in original else "\n"
+        rows = list(csv.reader(original.decode("utf-8").splitlines()))
+        matched = False
+        data = target.read_bytes()
+        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode()
+        for row in rows:
+            if row and row[0] == relative:
+                row[1] = "sha256=" + digest.rstrip("=")
+                row[2] = str(len(data))
+                matched = True
+        if not matched:
+            raise CanaryFailure("the Hermes RECORD omitted its authenticated module")
+        with record.open("w", encoding="utf-8", newline="") as stream:
+            csv.writer(stream, lineterminator=line_terminator).writerows(rows)
+
+    try:
+        first = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(first.stdout + first.stderr)
+        hermes = assert_file(install_root / "bin" / "hermes.exe", "installed Hermes")
+        council = assert_file(
+            install_root / "bin" / "council.exe",
+            "installed Council",
+        )
+        receipt = assert_file(
+            install_root / "occult-install-receipt.json",
+            "install receipt",
+        )
+        first_commands = {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        }
+        first_receipt = receipt.read_bytes()
+        first_receipt_mtime = receipt.stat().st_mtime_ns
+        try:
+            receipt_data = json.loads(first_receipt.decode("utf-8-sig"))
+        except (UnicodeDecodeError, ValueError, TypeError):
+            raise CanaryFailure("the public installer wrote an invalid receipt") from None
+        if receipt_data.get("occult_release_version") != HERMES_RELEASE.removeprefix("v"):
+            raise CanaryFailure("the public installer receipt has the wrong release")
+        if receipt_data.get("council_release") != f"v{COUNCIL_VERSION}":
+            raise CanaryFailure("the public installer receipt has the wrong Council release")
+        if receipt_data.get("occult_initialized") is not False:
+            raise CanaryFailure("the public installer initialized Occult implicitly")
+        if receipt_data.get("occult_enabled") is not False:
+            raise CanaryFailure("the public installer enabled Occult implicitly")
+
+        second = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(second.stdout + second.stderr)
+        second_commands = {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        }
+        if second_commands != first_commands:
+            raise CanaryFailure("an exact installer rerun changed an active command")
+        if receipt.read_bytes() != first_receipt:
+            raise CanaryFailure("an exact installer rerun changed the install receipt")
+        if receipt.stat().st_mtime_ns != first_receipt_mtime:
+            raise CanaryFailure("an exact installer rerun rewrote the install receipt")
+
+        council_environment = receipt_data.get("council_environment")
+        hermes_environment = receipt_data.get("hermes_environment")
+        if not isinstance(council_environment, str) or not council_environment:
+            raise CanaryFailure("the public installer receipt omitted Council state")
+        if not isinstance(hermes_environment, str) or not hermes_environment:
+            raise CanaryFailure("the public installer receipt omitted Hermes state")
+
+        run(
+            [
+                str(hermes),
+                "tarot",
+                "init",
+                "--base-url",
+                ollama_base_url,
+                "--model",
+                model,
+            ],
+            env=installer_env,
+            timeout=timeout,
+        )
+        initialized_status = load_json_output(
+            run(
+                [str(hermes), "tarot", "status"],
+                env=installer_env,
+                timeout=timeout,
+            ).stdout,
+            "public installer initialized status",
+        )
+        if (
+            initialized_status.get("initialized") is not True
+            or initialized_status.get("enabled") is not True
+        ):
+            raise CanaryFailure("the public installer profile state did not change")
+        mutable_state_rerun = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(mutable_state_rerun.stdout + mutable_state_rerun.stderr)
+        if {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        } != first_commands:
+            raise CanaryFailure("a mutable profile state rerun changed an active command")
+        refreshed_receipt = json.loads(receipt.read_text(encoding="utf-8-sig"))
+        if (
+            refreshed_receipt.get("hermes_environment") != hermes_environment
+            or refreshed_receipt.get("council_environment") != council_environment
+            or refreshed_receipt.get("occult_initialized") is not True
+            or refreshed_receipt.get("occult_enabled") is not True
+        ):
+            raise CanaryFailure(
+                "the public installer did not preserve and record mutable profile state"
+            )
+        packaged_council = assert_file(
+            install_root
+            / "council-environments"
+            / council_environment
+            / "cli"
+            / "council.exe",
+            "packaged Council",
+        )
+        trusted_council = council.read_bytes()
+        council.write_bytes(trusted_council + b"occult-canary-tamper")
+        packaged_council.write_bytes(
+            packaged_council.read_bytes() + b"occult-canary-tamper"
+        )
+        council_repair = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(council_repair.stdout + council_repair.stderr)
+        if council.read_bytes() != trusted_council:
+            raise CanaryFailure("the installer did not repair a modified Council binary")
+
+        repaired_receipt = json.loads(receipt.read_text(encoding="utf-8-sig"))
+        repaired_hermes_environment = repaired_receipt.get("hermes_environment")
+        if not isinstance(repaired_hermes_environment, str):
+            raise CanaryFailure("the repaired receipt omitted Hermes state")
+        site_root = (
+            install_root
+            / "hermes-environments"
+            / repaired_hermes_environment
+            / "Lib"
+            / "site-packages"
+        )
+        source = assert_file(
+            site_root / "hermes_cli" / "__init__.py",
+            "installed Hermes module",
+        )
+        records = list(site_root.glob("hermes_agent-*.dist-info/RECORD"))
+        if len(records) != 1:
+            raise CanaryFailure("the installed Hermes RECORD is ambiguous")
+        trusted_source = source.read_bytes()
+        source.write_bytes(trusted_source + b"\n# occult canary tamper\n")
+        update_record(records[0], source, site_root)
+        caches = sorted((site_root / "hermes_cli" / "__pycache__").glob("*.pyc"))
+        if caches:
+            bytecode = bytearray(caches[0].read_bytes())
+            bytecode[-1] ^= 1
+            caches[0].write_bytes(bytecode)
+        hermes_repair = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(hermes_repair.stdout + hermes_repair.stderr)
+        final_receipt = receipt.read_bytes()
+        final_receipt_mtime = receipt.stat().st_mtime_ns
+        final_commands = {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        }
+        final_receipt_data = json.loads(final_receipt.decode("utf-8-sig"))
+        final_site_root = (
+            install_root
+            / "hermes-environments"
+            / final_receipt_data["hermes_environment"]
+            / "Lib"
+            / "site-packages"
+        )
+        final_source = assert_file(
+            final_site_root / "hermes_cli" / "__init__.py",
+            "repaired Hermes module",
+        )
+        if final_source.read_bytes() != trusted_source:
+            raise CanaryFailure("the installer did not repair modified Hermes code")
+
+        post_repair_rerun = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(post_repair_rerun.stdout + post_repair_rerun.stderr)
+        if {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        } != final_commands:
+            raise CanaryFailure("a post-repair rerun changed an active command")
+        if receipt.read_bytes() != final_receipt:
+            raise CanaryFailure("a post-repair rerun changed the install receipt")
+        if receipt.stat().st_mtime_ns != final_receipt_mtime:
+            raise CanaryFailure("a post-repair rerun rewrote the install receipt")
+
+        hermes_version = run([str(hermes), "--version"], env=installer_env, timeout=timeout)
+        council_version = run(
+            [str(council), "--version"],
+            env=installer_env,
+            timeout=timeout,
+        )
+        safe_public_version(
+            hermes_version.stdout,
+            HERMES_CLI_VERSION,
+            "public installer Hermes",
+        )
+        safe_public_version(
+            council_version.stdout,
+            COUNCIL_VERSION,
+            "public installer Council",
+        )
+        outputs.extend(
+            [
+                hermes_version.stdout + hermes_version.stderr,
+                council_version.stdout + council_version.stderr,
+            ]
+        )
+
+        skip_command = [*installer_command, "-SkipCouncil"]
+        skip_transition = run(
+            skip_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(skip_transition.stdout + skip_transition.stderr)
+        if council.exists():
+            raise CanaryFailure("--skip-council left a stale Council command")
+        skip_receipt = receipt.read_bytes()
+        skip_receipt_mtime = receipt.stat().st_mtime_ns
+        skip_hermes = fingerprint(hermes)
+        skip_receipt_data = json.loads(skip_receipt.decode("utf-8-sig"))
+        if any(
+            skip_receipt_data.get(field) is not None
+            for field in (
+                "council_release",
+                "council_archive_sha256",
+                "council_environment",
+            )
+        ):
+            raise CanaryFailure("--skip-council preserved Council receipt metadata")
+
+        skip_rerun = run(
+            skip_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(skip_rerun.stdout + skip_rerun.stderr)
+        if council.exists():
+            raise CanaryFailure("a --skip-council rerun restored a Council command")
+        if fingerprint(hermes) != skip_hermes:
+            raise CanaryFailure("a --skip-council rerun changed the Hermes command")
+        if receipt.read_bytes() != skip_receipt:
+            raise CanaryFailure("a --skip-council rerun changed the install receipt")
+        if receipt.stat().st_mtime_ns != skip_receipt_mtime:
+            raise CanaryFailure("a --skip-council rerun rewrote the install receipt")
+        return outputs
+    finally:
+        with winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER,
+            r"Environment",
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
+            if path_existed:
+                winreg.SetValueEx(
+                    key,
+                    "Path",
+                    0,
+                    original_path_kind,
+                    original_path,
+                )
+            else:
+                try:
+                    winreg.DeleteValue(key, "Path")
+                except FileNotFoundError:
+                    pass
+            winreg.FlushKey(key)
 
 
 def assert_directory(path: Path, label: str) -> Path:
@@ -250,6 +641,18 @@ def load_install_manifest(path: Path) -> dict[str, Any]:
         model,
     ):
         raise CanaryFailure("install manifest Ollama model is invalid")
+    rollback = manifest.get("rollback")
+    if not isinstance(rollback, dict):
+        raise CanaryFailure("install manifest rollback metadata is missing")
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", rollback.get("hermes_release_tag", "")):
+        raise CanaryFailure("rollback Hermes release is invalid")
+    if not re.fullmatch(r"\d+\.\d+\.\d+", rollback.get("hermes_cli_version", "")):
+        raise CanaryFailure("rollback Hermes CLI version is invalid")
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", rollback.get("council_release_tag", "")):
+        raise CanaryFailure("rollback Council release is invalid")
+    for field in ("hermes_wheel_sha256", "council_windows_x64_sha256"):
+        if not re.fullmatch(r"[0-9a-f]{64}", rollback.get(field, "")):
+            raise CanaryFailure(f"rollback checksum is invalid: {field}")
     return manifest
 
 
@@ -288,6 +691,292 @@ def validate_council_repository(
         raise CanaryFailure("Council cross-repository E2E script is missing")
 
 
+def call_packaged_council_tool(
+    council: Path,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    env: dict[str, str],
+    timeout: int,
+) -> tuple[dict[str, Any], str]:
+    """Call one MCP tool through the packaged Council executable."""
+    messages = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "tarot-router-launch-canary",
+                    "version": "1.0.0",
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments},
+        },
+    ]
+    input_text = "".join(
+        json.dumps(message, separators=(",", ":")) + "\n"
+        for message in messages
+    )
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    completed = subprocess.run(
+        [str(council), "mcp", "--format", "json", "--agent-name", "e2e-operator"],
+        env=env,
+        input=input_text,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        creationflags=flags,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise CanaryFailure("the packaged Council MCP process failed")
+    response: dict[str, Any] | None = None
+    for line in completed.stdout.splitlines():
+        try:
+            payload = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict) and payload.get("id") == 2:
+            response = payload
+    if response is None:
+        raise CanaryFailure("the packaged Council MCP tool returned no response")
+    result = response.get("result")
+    if not isinstance(result, dict) or result.get("isError") is True:
+        raise CanaryFailure("the packaged Council MCP tool returned an error")
+    structured = result.get("structuredContent")
+    if not isinstance(structured, dict):
+        raise CanaryFailure("the packaged Council MCP tool omitted structured output")
+    return structured, completed.stdout + completed.stderr
+
+
+def approve_persisted_council_reading(
+    state_path: Path,
+    reading_id: str,
+    approval_id: str,
+) -> None:
+    """Record the canary operator approval between packaged process runs."""
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(state, dict) or state.get("version") != COUNCIL_STATE_SCHEMA:
+            raise CanaryFailure("the packaged Council state schema is invalid")
+        readings = state.get("occultReadings")
+        if not isinstance(readings, list):
+            raise CanaryFailure("the packaged Council state omitted readings")
+        reading = next(
+            (
+                item
+                for item in readings
+                if isinstance(item, dict) and item.get("id") == reading_id
+            ),
+            None,
+        )
+        if reading is None:
+            raise CanaryFailure("the packaged Council state omitted the reading")
+        approvals = reading.get("approvals")
+        if not isinstance(approvals, list):
+            raise CanaryFailure("the packaged Council state omitted approvals")
+        approval = next(
+            (
+                item
+                for item in approvals
+                if isinstance(item, dict) and item.get("approvalId") == approval_id
+            ),
+            None,
+        )
+        if approval is None or approval.get("state") != "pending":
+            raise CanaryFailure("the packaged Council approval is not pending")
+        resolved_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        approval.update({
+            "state": "approved",
+            "resolvedAt": resolved_at,
+            "resolvedBy": "e2e-operator",
+        })
+        reading["updatedAt"] = resolved_at
+        staged = state_path.with_name(
+            state_path.name + ".approval-" + uuid.uuid4().hex + ".tmp"
+        )
+        staged.write_text(
+            json.dumps(state, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(staged, state_path)
+    except CanaryFailure:
+        raise
+    except (OSError, TypeError, ValueError):
+        raise CanaryFailure(
+            "the packaged Council approval could not be persisted"
+        ) from None
+
+
+def packaged_council_plan(session_id: str) -> dict[str, Any]:
+    """Return the public v1 build-review-synthesis wire plan."""
+    return {
+        "session_id": session_id,
+        "spread_id": "occult.spread.build-review-synthesis",
+        "spread_version": "1.0.0",
+        "idempotency_key": "packaged-council:build-review-synthesis",
+        "routing": {
+            "mode": "local_only",
+            "free_only": True,
+            "local_only": True,
+            "maximum_fallbacks": 0,
+            "maximum_cost_usd": 0,
+        },
+        "maximum_parallelism": 1,
+        "nodes": [
+            {
+                "node_id": "build",
+                "agent_id": "occult.major.magician",
+                "message": "Build the packaged production artifact.",
+            },
+            {
+                "node_id": "review",
+                "agent_id": "occult.major.justice",
+                "message": "Review the packaged production artifact.",
+                "requires_approval": True,
+            },
+            {
+                "node_id": "synthesis",
+                "agent_id": "occult.major.temperance",
+                "message": "Synthesize the approved packaged result.",
+            },
+        ],
+        "dependencies": [
+            {"source": "build", "target": "review"},
+            {"source": "review", "target": "synthesis"},
+        ],
+    }
+
+
+def validate_packaged_council_mcp_flow(
+    council: Path,
+    root: Path,
+    *,
+    env: dict[str, str],
+    hermes_url: str,
+    service_token: str,
+    timeout: int,
+) -> list[str]:
+    """Exercise pause, process restart, approval, and resume through Council MCP."""
+    root.mkdir(parents=True, exist_ok=True)
+    state_path = root / "packaged-council-state.json"
+    council_env = dict(env)
+    council_env.update({
+        "AGENTS_COUNCIL_STATE_PATH": str(state_path),
+        "OCCULT_ENABLED": "true",
+        "OCCULT_HERMES_URL": hermes_url,
+        "OCCULT_HERMES_SERVICE_TOKEN": service_token,
+    })
+    outputs: list[str] = []
+    started, output = call_packaged_council_tool(
+        council,
+        "start_council",
+        {"request": "Build, review, and synthesize the packaged release."},
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    session_id = started.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise CanaryFailure("the packaged Council MCP flow omitted its session")
+    plan = packaged_council_plan(session_id)
+    paused, output = call_packaged_council_tool(
+        council,
+        "occult_create_reading_v1",
+        {"contract_version": CONTRACT_VERSION, "plan": plan},
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    reading_id = paused.get("reading_id")
+    if (
+        not isinstance(reading_id, str)
+        or not reading_id
+        or paused.get("contract_version") != CONTRACT_VERSION
+        or paused.get("state") != "running"
+    ):
+        raise CanaryFailure("the packaged Council reading did not pause")
+    approvals = paused.get("approvals")
+    if not isinstance(approvals, list):
+        raise CanaryFailure("the packaged Council reading omitted approvals")
+    approval = next(
+        (
+            item
+            for item in approvals
+            if isinstance(item, dict)
+            and item.get("node_id") == "review"
+            and item.get("state") == "pending"
+        ),
+        None,
+    )
+    if approval is None or not isinstance(approval.get("approval_id"), str):
+        raise CanaryFailure("the packaged Council reading did not request approval")
+    inspected, output = call_packaged_council_tool(
+        council,
+        "occult_get_reading_v1",
+        {
+            "contract_version": CONTRACT_VERSION,
+            "session_id": session_id,
+            "reading_id": reading_id,
+        },
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    if inspected.get("reading_id") != reading_id or inspected.get("state") != "running":
+        raise CanaryFailure("the packaged Council reading did not survive restart")
+    approve_persisted_council_reading(
+        state_path,
+        reading_id,
+        approval["approval_id"],
+    )
+    completed, output = call_packaged_council_tool(
+        council,
+        "occult_resume_reading_v1",
+        {
+            "contract_version": CONTRACT_VERSION,
+            "reading_id": reading_id,
+            "plan": plan,
+        },
+        env=council_env,
+        timeout=timeout,
+    )
+    outputs.append(output)
+    events = completed.get("events")
+    terminal = (
+        [
+            event
+            for event in events
+            if isinstance(event, dict)
+            and event.get("event_type")
+            in {"reading.cancelled", "reading.completed", "reading.failed"}
+        ]
+        if isinstance(events, list)
+        else []
+    )
+    if (
+        completed.get("reading_id") != reading_id
+        or completed.get("state") != "completed"
+        or len(terminal) != 1
+        or terminal[0].get("event_type") != "reading.completed"
+    ):
+        raise CanaryFailure("the packaged Council reading did not resume cleanly")
+    return outputs
+
+
 def rehearse_rollback(
     *,
     root: Path,
@@ -297,17 +986,21 @@ def rehearse_rollback(
     candidate_council_archive: Path,
     previous_hermes_wheel: Path,
     previous_council_archive: Path,
+    previous_hermes_cli_version: str,
+    previous_hermes_wheel_sha256: str,
+    previous_council_version: str,
+    previous_council_archive_sha256: str,
     env: dict[str, str],
     timeout: int,
 ) -> list[str]:
     assert_sha256(
         previous_hermes_wheel,
-        PREVIOUS_HERMES_WHEEL_SHA256,
+        previous_hermes_wheel_sha256,
         "previous Hermes wheel",
     )
     assert_sha256(
         previous_council_archive,
-        PREVIOUS_COUNCIL_ARCHIVE_SHA256,
+        previous_council_archive_sha256,
         "previous Council archive",
     )
     rollback_root = root / "rollback-rehearsal"
@@ -339,7 +1032,7 @@ def rehearse_rollback(
     )
     safe_public_version(
         run([str(previous_hermes), "--version"], env=env, timeout=timeout).stdout,
-        PREVIOUS_HERMES_CLI_VERSION,
+        previous_hermes_cli_version,
         "previous Hermes",
     )
 
@@ -356,7 +1049,7 @@ def rehearse_rollback(
     )
     safe_public_version(
         run([str(previous_council), "--version"], env=env, timeout=timeout).stdout,
-        PREVIOUS_COUNCIL_VERSION,
+        previous_council_version,
         "previous Council",
     )
 
@@ -414,8 +1107,8 @@ def rehearse_rollback(
     verify_active(
         previous_hermes,
         previous_council,
-        PREVIOUS_HERMES_CLI_VERSION,
-        PREVIOUS_COUNCIL_VERSION,
+        previous_hermes_cli_version,
+        previous_council_version,
         "previous-after-rollback",
     )
     verify_active(
@@ -624,6 +1317,7 @@ def main() -> int:
     manifest = load_install_manifest(install_manifest)
     model = manifest["ollama_model"]
     council_commit = manifest["council"]["commit_sha"]
+    rollback = manifest["rollback"]
     requirements_lock = assert_file(
         args.requirements_lock,
         "Hermes requirements lock",
@@ -641,6 +1335,10 @@ def main() -> int:
         "PowerShell installer",
     )
     installer_posix = assert_file(args.installer_posix, "POSIX installer")
+    environment_verifier = assert_file(
+        args.environment_verifier,
+        "environment verifier",
+    )
     sigstore_requirements_lock = assert_file(
         args.sigstore_requirements_lock,
         "Sigstore requirements lock",
@@ -654,16 +1352,21 @@ def main() -> int:
         "previous Council archive",
     )
     council_repository = assert_directory(args.council_repository, "Council repository")
+    checks: dict[str, str] = {}
+    validate_installer_interface(
+        installer_powershell,
+        installer_posix,
+    )
+    checks["installer_interface"] = "passed"
     assert_port_available("127.0.0.1", 8642)
     validate_ollama(args.ollama_base_url, model, args.timeout_seconds)
 
-    checks: dict[str, str] = {}
     observed_outputs: list[str] = []
     prompt_marker = "OCCULT_CANARY_PRIVATE_PROMPT_" + uuid.uuid4().hex
     gateway: subprocess.Popen[bytes] | None = None
     gateway_log: Any | None = None
     with tempfile.TemporaryDirectory(
-        prefix="tarot-router-v105-canary-",
+        prefix="tarot-router-v106-canary-",
         ignore_cleanup_errors=True,
     ) as temporary:
         root = Path(temporary)
@@ -685,6 +1388,20 @@ def main() -> int:
             timeout=args.timeout_seconds,
         )
         checks["council_source_provenance"] = "passed"
+
+        if args.public_installer_rerun:
+            observed_outputs.extend(
+                validate_public_installer_rerun(
+                    installer_powershell=installer_powershell,
+                    root=root,
+                    env=env,
+                    model=model,
+                    ollama_base_url=args.ollama_base_url,
+                    timeout=args.timeout_seconds,
+                )
+            )
+            checks["installer_idempotent_rerun"] = "passed"
+            checks["installer_tamper_repair"] = "passed"
 
         hermes = install_hermes_environment(
             environment=root / "candidate-main-hermes",
@@ -838,6 +1555,18 @@ def main() -> int:
                 "OCCULT_E2E_HERMES_URL": "http://127.0.0.1:8642",
                 "OCCULT_E2E_HERMES_TOKEN": token,
             })
+            packaged_outputs = validate_packaged_council_mcp_flow(
+                council,
+                root / "packaged-council-mcp",
+                env=env,
+                hermes_url="http://127.0.0.1:8642",
+                service_token=token,
+                timeout=args.timeout_seconds * 3,
+            )
+            for output in packaged_outputs:
+                assert_redacted(output, token)
+            observed_outputs.extend(packaged_outputs)
+            checks["packaged_council_mcp_flow"] = "passed"
             council_result = run(
                 [str(bun), "run", "test:occult-hermes-e2e"],
                 env=council_env,
@@ -914,6 +1643,14 @@ def main() -> int:
                 candidate_council_archive=candidate_council_archive,
                 previous_hermes_wheel=previous_hermes_wheel,
                 previous_council_archive=previous_council_archive,
+                previous_hermes_cli_version=rollback["hermes_cli_version"],
+                previous_hermes_wheel_sha256=rollback["hermes_wheel_sha256"],
+                previous_council_version=rollback["council_release_tag"].removeprefix(
+                    "v"
+                ),
+                previous_council_archive_sha256=rollback[
+                    "council_windows_x64_sha256"
+                ],
                 env=env,
                 timeout=args.timeout_seconds,
             )
@@ -943,9 +1680,14 @@ def main() -> int:
         raise CanaryFailure("temporary secret directory could not be removed")
     checks["temporary_secret_cleanup"] = "passed"
 
+    public_rerun_complete = args.public_installer_rerun
     report = {
         "schema_version": "1.0.0",
-        "scope": "pre-release Windows x64 candidate canary",
+        "scope": (
+            "public Windows x64 launch canary"
+            if public_rerun_complete
+            else "pre-release Windows x64 candidate canary"
+        ),
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "release": {
             "hermes": HERMES_RELEASE,
@@ -982,13 +1724,19 @@ def main() -> int:
                 "name": installer_posix.name,
                 "sha256": sha256_file(installer_posix),
             },
+            "environment_verifier": {
+                "name": environment_verifier.name,
+                "sha256": sha256_file(environment_verifier),
+            },
             "council_windows_x64": {
                 "name": candidate_council_archive.name,
                 "sha256": sha256_file(candidate_council_archive),
             },
         },
         "checks": checks,
-        "overall_status": "passed",
+        "candidate_status": "passed",
+        "promotion_eligible": public_rerun_complete,
+        "overall_status": "passed" if public_rerun_complete else "candidate_passed",
         "contains_secrets": False,
     }
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -996,7 +1744,8 @@ def main() -> int:
         raise CanaryFailure("report contains a signed URL")
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(encoded, encoding="utf-8", newline="\n")
-    print(f"Tarot Router launch canary passed; redacted report: {args.report}")
+    status = "public launch" if public_rerun_complete else "release candidate"
+    print(f"Tarot Router {status} canary passed; redacted report: {args.report}")
     return 0
 
 
