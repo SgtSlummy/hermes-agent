@@ -296,6 +296,27 @@ def test_zip_executable_normalization_authenticates_framing_and_overlay(
     )
 
 
+def test_zip_executable_normalization_rejects_length_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    verifier = _load_environment_verifier()
+    environment = tmp_path / "environment"
+    environment.mkdir()
+    launcher = environment / "launcher.exe"
+    _write_zip_executable(launcher, environment)
+
+    monkeypatch.setattr(
+        verifier,
+        "_replace_environment_paths",
+        lambda data, _environment: data[:-1],
+    )
+    with pytest.raises(
+        verifier.IntegrityError,
+        match="path normalization changed archive length",
+    ):
+        verifier._normalized_environment_file(launcher, environment)
+
+
 @pytest.mark.parametrize(
     "tamper",
     [

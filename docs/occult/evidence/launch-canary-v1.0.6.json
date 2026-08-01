@@ -18,7 +18,7 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-08-01T04:18:54.618669Z",
+  "generated_at": "2026-08-01T04:31:44.933455Z",
   "overall_status": "candidate_passed",
   "platform": {
     "architecture": "x86_64",
@@ -41,7 +41,7 @@
     },
     "environment_verifier": {
       "name": "verify-occult-environment.py",
-      "sha256": "d816c626c240b3e880b14b043166a237ac2736819294bd01d1234a824739953d"
+      "sha256": "e2eaf007079c9abc2be1dcb2ea47e5c400db12c4a29c8a6ef54c53a9e94978bf"
     },
     "hermes_requirements_lock": {
       "name": "occult-requirements.lock",

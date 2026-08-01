@@ -783,6 +783,7 @@ def validate_packaged_council_mcp_flow(
     timeout: int,
 ) -> list[str]:
     """Exercise pause, process restart, approval, and resume through Council MCP."""
+    root.mkdir(parents=True, exist_ok=True)
     state_path = root / "packaged-council-state.json"
     council_env = dict(env)
     council_env.update({

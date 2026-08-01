@@ -346,6 +346,10 @@ def _normalized_zip_executable(
     fields are canonicalized because normalized member bytes can change them.
     """
     normalized = _replace_environment_paths(original, environment)
+    if len(normalized) != len(original):
+        raise IntegrityError(
+            "environment launcher path normalization changed archive length"
+        )
     try:
         with ZipFile(path) as archive:
             infos = archive.infolist()
