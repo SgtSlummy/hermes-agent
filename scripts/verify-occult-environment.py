@@ -96,13 +96,16 @@ def _normalized_uv_cache(path: Path) -> bytes:
 
 
 def _file_map(site_root: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
+    root_mode = site_root.stat().st_mode & 0o777
+    result: dict[str, str] = {".": f"directory:{root_mode:o}"}
     for path in sorted(site_root.rglob("*")):
         if path.is_symlink():
             target = os.readlink(path)
             result[path.relative_to(site_root).as_posix()] = "symlink:" + target
             continue
         if path.is_dir():
+            mode = path.stat().st_mode & 0o777
+            result[path.relative_to(site_root).as_posix()] = f"directory:{mode:o}"
             continue
         if not path.is_file():
             raise IntegrityError("package root contains an unsupported node")
@@ -116,7 +119,7 @@ def _file_map(site_root: Path) -> dict[str, str]:
         else:
             data = path.read_bytes()
         mode = path.stat().st_mode & 0o777
-        result[relative] = f"{mode:o}:" + hashlib.sha256(data).hexdigest()
+        result[relative] = f"file:{mode:o}:" + hashlib.sha256(data).hexdigest()
     return result
 
 
@@ -461,7 +464,8 @@ def _normalized_environment_file(path: Path, environment: Path) -> bytes:
 
 
 def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
+    root_mode = environment.stat().st_mode & 0o777
+    result: dict[str, str] = {".": f"directory:{root_mode:o}"}
     for path in sorted(environment.rglob("*")):
         if _inside(path, site_root):
             continue
@@ -477,6 +481,7 @@ def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, st
             )
             result[relative] = f"symlink:{mode:o}:{normalized}"
         elif path.is_dir():
+            result[relative] = f"directory:{mode:o}"
             continue
         elif path.is_file():
             normalized = _normalized_environment_file(path, environment)

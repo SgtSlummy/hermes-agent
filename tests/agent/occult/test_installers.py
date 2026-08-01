@@ -272,6 +272,26 @@ def test_environment_verifier_authenticates_package_file_modes(tmp_path: Path):
     assert _run_environment_verifier(existing, reference) == 1
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory modes are meaningful")
+@pytest.mark.parametrize("target", ["environment", "site_root", "package"])
+def test_environment_verifier_authenticates_directory_modes(
+    tmp_path: Path, target: str
+):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    source, _, _ = _write_test_environment(existing)
+    _write_test_environment(reference)
+    if target == "environment":
+        directory = existing
+    elif target == "site_root":
+        directory = source.parents[1]
+    else:
+        directory = source.parent
+    directory.chmod(0o777)
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
 def test_zip_executable_normalization_authenticates_framing_and_overlay(
     tmp_path: Path,
 ):
@@ -504,6 +524,16 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert 'rm -f -- "$bin_root/council"' in text
     assert 'rm -f -- "$user_bin/council"' in text
     assert "the stale managed Council command is not a file" in text
+    hermes_directory_guard = (
+        'if [ -d "$user_bin/hermes" ] && [ ! -L "$user_bin/hermes" ]'
+    )
+    assert hermes_directory_guard in text
+    assert text.index(hermes_directory_guard) < text.index(
+        'step "Activating the fully staged local commands"'
+    )
+    assert "the user Council command path is a directory" in text
+    assert "the user Hermes command link could not be verified" in text
+    assert "the user Council command link could not be verified" in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 

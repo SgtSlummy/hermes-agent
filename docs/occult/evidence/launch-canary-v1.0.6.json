@@ -18,7 +18,7 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-08-01T04:49:29.416787Z",
+  "generated_at": "2026-08-01T05:07:47.699141Z",
   "overall_status": "candidate_passed",
   "platform": {
     "architecture": "x86_64",
@@ -41,7 +41,7 @@
     },
     "environment_verifier": {
       "name": "verify-occult-environment.py",
-      "sha256": "b11286d2f4eee46f1cdb8140d98cab3d33efd4865f7e681ad24e31a6035573fc"
+      "sha256": "e627e6ca97747734838d0d3a17285ff58eb1dbc347b0c8341bcc9fbc39ab1567"
     },
     "hermes_requirements_lock": {
       "name": "occult-requirements.lock",
@@ -57,7 +57,7 @@
     },
     "installer_posix": {
       "name": "install-occult.sh",
-      "sha256": "76f81d183b680cee517c50bd76c639d75e94fda1fc0ba58a50a5c4c98fde214a"
+      "sha256": "a836e152dac99c8c160ae29389f1dfb49f4623c14c7aa9067acd57b05c503bd9"
     },
     "installer_powershell": {
       "name": "install-occult.ps1",

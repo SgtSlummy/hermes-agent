@@ -865,10 +865,19 @@ case "$initialized:$enabled" in
   *) fail "the preserved Occult initialization state was invalid" ;;
 esac
 
+user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+mkdir -p "$user_bin"
+if [ -d "$user_bin/hermes" ] && [ ! -L "$user_bin/hermes" ]; then
+  fail "the user Hermes command path is a directory"
+fi
+if [ "$skip_council" -eq 0 ] &&
+  [ -d "$user_bin/council" ] && [ ! -L "$user_bin/council" ]; then
+  fail "the user Council command path is a directory"
+fi
+
 step "Activating the fully staged local commands"
 mv -f "$hermes_staged" "$hermes_executable" ||
   fail "Hermes command activation failed"
-user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
 if [ "$skip_council" -eq 1 ]; then
   if [ -d "$bin_root/council" ] && [ ! -L "$bin_root/council" ]; then
     fail "the stale managed Council command is not a file"
@@ -885,10 +894,15 @@ else
     fail "Council command activation failed"
 fi
 
-mkdir -p "$user_bin"
 ln -sfn "$hermes_executable" "$user_bin/hermes"
+[ -L "$user_bin/hermes" ] &&
+  [ "$(readlink "$user_bin/hermes")" = "$hermes_executable" ] ||
+  fail "the user Hermes command link could not be verified"
 if [ "$skip_council" -eq 0 ]; then
   ln -sfn "$bin_root/council" "$user_bin/council"
+  [ -L "$user_bin/council" ] &&
+    [ "$(readlink "$user_bin/council")" = "$bin_root/council" ] ||
+    fail "the user Council command link could not be verified"
 fi
 
 if [ "$skip_council" -eq 1 ]; then
