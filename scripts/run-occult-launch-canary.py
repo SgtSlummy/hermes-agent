@@ -1166,9 +1166,14 @@ def main() -> int:
         raise CanaryFailure("temporary secret directory could not be removed")
     checks["temporary_secret_cleanup"] = "passed"
 
+    public_rerun_complete = args.public_installer_rerun
     report = {
         "schema_version": "1.0.0",
-        "scope": "pre-release Windows x64 candidate canary",
+        "scope": (
+            "public Windows x64 launch canary"
+            if public_rerun_complete
+            else "pre-release Windows x64 candidate canary"
+        ),
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "release": {
             "hermes": HERMES_RELEASE,
@@ -1211,7 +1216,9 @@ def main() -> int:
             },
         },
         "checks": checks,
-        "overall_status": "passed",
+        "candidate_status": "passed",
+        "promotion_eligible": public_rerun_complete,
+        "overall_status": "passed" if public_rerun_complete else "candidate_passed",
         "contains_secrets": False,
     }
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -1219,7 +1226,8 @@ def main() -> int:
         raise CanaryFailure("report contains a signed URL")
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(encoded, encoding="utf-8", newline="\n")
-    print(f"Tarot Router launch canary passed; redacted report: {args.report}")
+    status = "public launch" if public_rerun_complete else "release candidate"
+    print(f"Tarot Router {status} canary passed; redacted report: {args.report}")
     return 0
 
 

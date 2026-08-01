@@ -1,4 +1,5 @@
 {
+  "candidate_status": "passed",
   "checks": {
     "audit_redaction": "passed",
     "backup_restore": "passed",
@@ -16,12 +17,13 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-08-01T00:36:51.477266Z",
-  "overall_status": "passed",
+  "generated_at": "2026-08-01T01:02:09.721708Z",
+  "overall_status": "candidate_passed",
   "platform": {
     "architecture": "x86_64",
     "os": "Windows"
   },
+  "promotion_eligible": false,
   "release": {
     "agents_council": "0.5.5",
     "council_commit": "7966ccc9d65a400bdd184c13669a23919f606da3",
@@ -46,19 +48,19 @@
     },
     "install_manifest": {
       "name": "occult-install-manifest.json",
-      "sha256": "e4a5dcb13f54e76d296509d9c036bf455ee28392bd55383493951d4882b576b3"
+      "sha256": "fa21a7f1f1aed82072a6ea18730d31f7af433ec2f41397e42240756c22d6d855"
     },
     "installer_posix": {
       "name": "install-occult.sh",
-      "sha256": "6bd0d00721603bf604a90561f713efaa08a7d082c2622f05def94e2d054a4a11"
+      "sha256": "4d85e61b12e48fd57a67c6fd8dc33d1b26092e7996dbf4f4c5b7f39c063bb762"
     },
     "installer_powershell": {
       "name": "install-occult.ps1",
-      "sha256": "1b2477e641471632bd4bc7be30eb07e1e7f7bf0e6c55c92e1e092598bb462a90"
+      "sha256": "27005349337562d496b42bbcdb4c860a57ee01c006897a6fc345c1d344ca0771"
     },
     "sigstore_requirements_lock": {
       "name": "occult-sigstore-requirements.lock",
-      "sha256": "bcb33aef02d914b025ad423450250d9ffaf22a727d600d58d4cce5d746836b04"
+      "sha256": "99a5d5d682282ce6f4c51bccf5c2050e1dae96f1ade4a0dfa85fd35f3676dee2"
     }
   },
   "schema_version": "1.0.0",

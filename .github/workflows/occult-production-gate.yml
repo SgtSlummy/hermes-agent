@@ -254,7 +254,7 @@ jobs:
           retention-days: 30
 
   promote:
-    name: Sign and promote exact staged bytes
+    name: Sign and publish exact staged bytes without latest promotion
     if: >-
       github.event_name == 'workflow_dispatch' &&
       inputs.channel == 'stable' &&
@@ -298,7 +298,11 @@ jobs:
           )"
           jq -e \
             --arg model "$EXPECTED_MODEL" \
-            '.overall_status == "passed"
+            '.candidate_status == "passed"
+             and .overall_status == "candidate_passed"
+             and .promotion_eligible == false
+             and (.checks.installer_idempotent_rerun? == null)
+             and .checks.installer_source_contract == "passed"
              and .contains_secrets == false
              and .release.ollama_model == $model' \
             "$CANARY"

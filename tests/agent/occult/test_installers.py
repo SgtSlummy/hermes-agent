@@ -16,6 +16,8 @@ CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.6.
 QUICKSTART = ROOT / "docs" / "tarot-router" / "quickstart.md"
 LEGACY_QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
+SIGSTORE_INPUT = ROOT / "scripts" / "occult-sigstore-requirements.in"
+SIGSTORE_LOCK = ROOT / "scripts" / "occult-sigstore-requirements.lock"
 
 REQUIRED_RECEIPT_FIELDS = {
     "schema_version",
@@ -99,6 +101,17 @@ def test_install_manifest_wheel_matches_python_package_metadata():
     )
 
 
+def test_sigstore_verifier_lock_pins_inventory_parser_and_matches_installers():
+    manifest = json.loads(_text(MANIFEST))
+    lock_hash = _sha256(SIGSTORE_LOCK)
+
+    assert "packaging==25.0" in _text(SIGSTORE_INPUT)
+    assert "packaging==25.0" in _text(SIGSTORE_LOCK)
+    assert manifest["sigstore_requirements_sha256"] == lock_hash
+    assert lock_hash in _text(POWERSHELL)
+    assert lock_hash in _text(SHELL)
+
+
 def test_windows_installer_verifies_before_writing_application_files():
     text = _text(POWERSHELL)
 
@@ -142,6 +155,10 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "function Test-VersionToken" in text
     assert "function Test-HermesEnvironmentRecords" in text
     assert "*.dist-info/RECORD" in text
+    assert "installed != expected_inventory" in text
+    assert 'for bootstrap_name in ("_virtualenv.pth", "_virtualenv.py")' in text
+    assert "-Requirements $requirementsPath" in text
+    assert "-Wheel $wheelPath" in text
     assert '"inspect-occult-state-" + [Guid]::NewGuid().ToString("N")' in text
     assert "[System.IO.File]::WriteAllText" in text
     assert "& $Python $stateScriptPath" in text
@@ -159,6 +176,7 @@ def test_windows_installer_verifies_before_writing_application_files():
     )
     assert "Test-SafeLeafName $existingReceipt.hermes_environment" in text
     assert "Test-SafeLeafName `\n                $existingReceipt.council_environment" in text
+    assert "$expectedCouncilEnvironmentMatches" in text
     assert "Verified existing Occult release v$normalizedVersion; no application files changed" in text
     assert text.index("$requiredReceiptProperties") < text.index(
         '$environmentId = "$normalizedVersion-"'
@@ -240,6 +258,10 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert 'type(receipt.get("occult_enabled")) is not bool' in text
     assert "version_output_matches" in text
     assert "verify_environment_records" in text
+    assert "installed != expected_inventory" in text
+    assert 'for bootstrap_name in ("_virtualenv.pth", "_virtualenv.py")' in text
+    assert '"$requirements_path"' in text
+    assert '"$wheel_path"' in text
     assert "*.dist-info/RECORD" in text
     assert '[ "$(readlink "$user_bin/hermes")" = "$hermes_executable" ]' in text
     assert '[ "$existing_receipt_initialized" = "$initialized" ]' in text
@@ -372,7 +394,10 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     evidence = json.loads(_text(CANARY_EVIDENCE))
     serialized = json.dumps(evidence, sort_keys=True).lower()
 
-    assert evidence["overall_status"] == "passed"
+    assert evidence["candidate_status"] == "passed"
+    assert evidence["overall_status"] == "candidate_passed"
+    assert evidence["promotion_eligible"] is False
+    assert "installer_idempotent_rerun" not in evidence["checks"]
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
     assert evidence["checks"]["installer_source_contract"] == "passed"

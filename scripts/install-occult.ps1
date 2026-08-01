@@ -24,7 +24,7 @@ $BootstrapUvWindowsAsset = "uv-x86_64-pc-windows-msvc.zip"
 $BootstrapUvWindowsSha256 = "0a23463216d09c6a72ff80ef5dc5a795f07dc1575cb84d24596c2f124a441b7b"
 $PinnedSigstoreVersion = "4.5.0"
 $SigstoreRequirementsAsset = "occult-sigstore-requirements.lock"
-$SigstoreRequirementsSha256 = "bcb33aef02d914b025ad423450250d9ffaf22a727d600d58d4cce5d746836b04"
+$SigstoreRequirementsSha256 = "99a5d5d682282ce6f4c51bccf5c2050e1dae96f1ade4a0dfa85fd35f3676dee2"
 $ExpectedIssuer = "https://token.actions.githubusercontent.com"
 
 function Write-Step {
@@ -159,6 +159,8 @@ function Test-HermesEnvironmentRecords {
     param(
         [Parameter(Mandatory = $true)][string]$Python,
         [Parameter(Mandatory = $true)][string]$Environment,
+        [Parameter(Mandatory = $true)][string]$Requirements,
+        [Parameter(Mandatory = $true)][string]$Wheel,
         [Parameter(Mandatory = $true)][string]$TemporaryRoot
     )
     $recordScript = @'
@@ -167,15 +169,82 @@ import csv
 import hashlib
 import hmac
 import sys
+import sysconfig
+from email.parser import BytesParser
+from importlib.util import source_from_cache
 from pathlib import Path, PurePosixPath
+from zipfile import ZipFile
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 root = Path(sys.argv[1]).resolve()
+requirements = Path(sys.argv[2]).resolve()
+wheel = Path(sys.argv[3]).resolve()
+
+expected_inventory = {}
+for raw_line in requirements.read_text(encoding="utf-8-sig").splitlines():
+    if not raw_line or raw_line[0].isspace() or raw_line.lstrip().startswith("#"):
+        continue
+    requirement_line = raw_line.rstrip()
+    if requirement_line.endswith("\\"):
+        requirement_line = requirement_line[:-1].rstrip()
+    requirement = Requirement(requirement_line)
+    if requirement.marker is not None and not requirement.marker.evaluate():
+        continue
+    specifiers = list(requirement.specifier)
+    if (
+        requirement.url is not None
+        or len(specifiers) != 1
+        or specifiers[0].operator != "=="
+        or specifiers[0].version.endswith(".*")
+    ):
+        raise SystemExit(1)
+    name = canonicalize_name(requirement.name)
+    if name in expected_inventory and expected_inventory[name] != specifiers[0].version:
+        raise SystemExit(1)
+    expected_inventory[name] = specifiers[0].version
+
+try:
+    with ZipFile(wheel) as archive:
+        metadata_names = [
+            name for name in archive.namelist()
+            if name.endswith(".dist-info/METADATA")
+        ]
+        if len(metadata_names) != 1:
+            raise SystemExit(1)
+        wheel_metadata = BytesParser().parsebytes(
+            archive.read(metadata_names[0]), headersonly=True
+        )
+except (OSError, ValueError):
+    raise SystemExit(1)
+wheel_name = canonicalize_name(wheel_metadata.get("Name", ""))
+wheel_version = wheel_metadata.get("Version", "")
+if not wheel_name or not wheel_version or wheel_name in expected_inventory:
+    raise SystemExit(1)
+expected_inventory[wheel_name] = wheel_version
+
 records = sorted(root.rglob("*.dist-info/RECORD"))
 if not records:
     raise SystemExit(1)
 checked = 0
+installed = {}
+recorded_files = set()
+site_roots = set()
 for record in records:
     base = record.parent.parent
+    site_roots.add(base.resolve())
+    try:
+        metadata = BytesParser().parsebytes(
+            (record.parent / "METADATA").read_bytes(), headersonly=True
+        )
+    except OSError:
+        raise SystemExit(1)
+    name = canonicalize_name(metadata.get("Name", ""))
+    version = metadata.get("Version", "")
+    if not name or not version or name in installed:
+        raise SystemExit(1)
+    installed[name] = version
     try:
         stream = record.open(encoding="utf-8", newline="")
     except OSError:
@@ -185,15 +254,18 @@ for record in records:
             if len(row) < 3:
                 raise SystemExit(1)
             relative, hash_spec, size = row[:3]
-            if not hash_spec:
-                continue
-            algorithm, separator, encoded = hash_spec.partition("=")
-            if algorithm != "sha256" or not separator or not encoded:
-                raise SystemExit(1)
             candidate = (base.joinpath(*PurePosixPath(relative).parts)).resolve()
             try:
                 candidate.relative_to(root)
             except ValueError:
+                raise SystemExit(1)
+            if not hash_spec:
+                if candidate != record.resolve():
+                    raise SystemExit(1)
+                recorded_files.add(candidate)
+                continue
+            algorithm, separator, encoded = hash_spec.partition("=")
+            if algorithm != "sha256" or not separator or not encoded:
                 raise SystemExit(1)
             if not candidate.is_file():
                 raise SystemExit(1)
@@ -202,13 +274,49 @@ for record in records:
                 raise SystemExit(1)
             padding = "=" * (-len(encoded) % 4)
             try:
-                expected = base64.urlsafe_b64decode(encoded + padding)
+                expected_digest = base64.urlsafe_b64decode(encoded + padding)
             except (ValueError, TypeError):
                 raise SystemExit(1)
-            if not hmac.compare_digest(hashlib.sha256(data).digest(), expected):
+            if not hmac.compare_digest(
+                hashlib.sha256(data).digest(), expected_digest
+            ):
                 raise SystemExit(1)
+            recorded_files.add(candidate)
             checked += 1
-if checked == 0:
+if checked == 0 or installed != expected_inventory or len(site_roots) != 1:
+    raise SystemExit(1)
+
+site_root = next(iter(site_roots))
+trusted_site = Path(sysconfig.get_paths()["purelib"]).resolve()
+trusted_bootstrap = {}
+for bootstrap_name in ("_virtualenv.pth", "_virtualenv.py"):
+    trusted = trusted_site / bootstrap_name
+    if not trusted.is_file():
+        raise SystemExit(1)
+    trusted_bootstrap[bootstrap_name] = hashlib.sha256(trusted.read_bytes()).digest()
+
+for candidate in site_root.rglob("*"):
+    if not candidate.is_file():
+        continue
+    resolved = candidate.resolve()
+    if resolved in recorded_files:
+        continue
+    if candidate.parent == site_root and candidate.name in trusted_bootstrap:
+        if not hmac.compare_digest(
+            hashlib.sha256(candidate.read_bytes()).digest(),
+            trusted_bootstrap[candidate.name],
+        ):
+            raise SystemExit(1)
+        continue
+    if candidate.suffix == ".pyc" and candidate.parent.name == "__pycache__":
+        try:
+            source = Path(source_from_cache(str(candidate))).resolve()
+        except (NotImplementedError, ValueError):
+            raise SystemExit(1)
+        if source in recorded_files or (
+            source.parent == site_root and source.name in trusted_bootstrap
+        ):
+            continue
     raise SystemExit(1)
 '@
     $recordScriptPath = Join-Path (
@@ -224,7 +332,7 @@ if checked == 0:
     $succeeded = $false
     try {
         $ErrorActionPreference = "Continue"
-        & $Python $recordScriptPath $Environment 1>$null 2>$null
+        & $Python $recordScriptPath $Environment $Requirements $Wheel 1>$null 2>$null
         $succeeded = $LASTEXITCODE -eq 0
     } catch {
         $succeeded = $false
@@ -621,6 +729,11 @@ try {
         } else {
             [string]$councilHash
         }
+        $expectedCouncilEnvironmentMatches = (
+            -not $SkipCouncil -or
+            $null -eq $existingReceipt.council_environment -or
+            [string]$existingReceipt.council_environment -eq ""
+        )
         $metadataMatches = (
             $missingReceiptProperties.Count -eq 0 -and
             [string]$existingReceipt.schema_version -eq "1.0.0" -and
@@ -635,6 +748,7 @@ try {
             [string]$existingReceipt.install_manifest_sha256 -eq $manifestHash -and
             [string]$existingReceipt.council_release -eq $expectedCouncilRelease -and
             [string]$existingReceipt.council_archive_sha256 -eq $expectedCouncilHash -and
+            $expectedCouncilEnvironmentMatches -and
             [string]$existingReceipt.contract_version -eq [string]$manifest.council.contract_version -and
             [string]$existingReceipt.council_state_schema -eq [string]$manifest.council.state_schema -and
             (Test-SafeLeafName $existingReceipt.hermes_environment)
@@ -666,6 +780,8 @@ try {
             $metadataMatches = Test-HermesEnvironmentRecords `
                 -Python $sigstoreVerifierPython `
                 -Environment $existingHermesVenv `
+                -Requirements $requirementsPath `
+                -Wheel $wheelPath `
                 -TemporaryRoot $temporaryRoot
         }
         $hermesProbeSucceeded = $false
