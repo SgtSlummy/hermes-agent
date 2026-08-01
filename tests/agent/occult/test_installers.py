@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import tomllib
@@ -11,7 +12,7 @@ MANIFEST = ROOT / "scripts" / "occult-install-manifest.json"
 POWERSHELL = ROOT / "scripts" / "install-occult.ps1"
 SHELL = ROOT / "scripts" / "install-occult.sh"
 CANARY = ROOT / "scripts" / "run-occult-launch-canary.py"
-CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.5.json"
+CANARY_EVIDENCE = ROOT / "docs" / "occult" / "evidence" / "launch-canary-v1.0.6.json"
 QUICKSTART = ROOT / "docs" / "tarot-router" / "quickstart.md"
 LEGACY_QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
@@ -19,6 +20,10 @@ README = ROOT / "README.md"
 
 def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_install_manifest_has_safe_cross_platform_release_metadata():
@@ -102,10 +107,20 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert '"council.new-" + [Guid]::NewGuid().ToString("N") + ".exe"' in text
     assert "hermes.exe.new-" not in text
     assert "council.exe.new-" not in text
-    assert '$stateScriptPath = Join-Path $temporaryRoot "inspect-occult-state.py"' in text
+    assert "function Get-OccultState" in text
+    assert "function Test-SafeLeafName" in text
+    assert '"inspect-occult-state-" + [Guid]::NewGuid().ToString("N")' in text
     assert "[System.IO.File]::WriteAllText" in text
-    assert "& $venvPython $stateScriptPath" in text
+    assert "& $Python $stateScriptPath" in text
     assert "& $venvPython -c $stateScript" not in text
+    assert "$requiredReceiptProperties" in text
+    assert "$missingReceiptProperties.Count -eq 0" in text
+    assert "Test-SafeLeafName $existingReceipt.hermes_environment" in text
+    assert "Test-SafeLeafName `\n                $existingReceipt.council_environment" in text
+    assert "Verified existing Occult release v$normalizedVersion; no application files changed" in text
+    assert text.index("$requiredReceiptProperties") < text.index(
+        '$environmentId = "$normalizedVersion-"'
+    )
     assert "Existing Occult initialization was preserved" in text
     assert "occult_enabled = $enabled" in text
     assert text.index("Assert-SigstoreIdentity") < text.index(
@@ -114,7 +129,16 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert text.index("if ($VerifyOnly)") < text.index(
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
-    initialize_block = text.index("if ($InitializeLocal)")
+    reuse_initialize_block = text.index("if ($InitializeLocal)")
+    reuse_initialize_call = text.index(
+        '"occult", "init", "--model", $Model',
+        reuse_initialize_block,
+    )
+    assert "$hermesExecutable" in text[
+        reuse_initialize_block:reuse_initialize_call
+    ]
+    staged_install = text.index('$environmentId = "$normalizedVersion-"')
+    initialize_block = text.index("if ($InitializeLocal)", staged_install)
     initialize_call = text.index(
         '"occult", "init", "--model", $Model',
         initialize_block,
@@ -155,6 +179,13 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert "hermes-environments" in text
     assert "--clear" not in text
     assert "hermes.new.$$" in text
+    assert "existing_receipt_seen=0" in text
+    assert "required.issubset(receipt)" in text
+    assert 're.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", value)' in text
+    assert "Verified existing Occult release v$version; no application files changed" in text
+    assert text.index("existing_receipt_seen=0") < text.index(
+        'hermes_venv=$(mktemp -d "$hermes_environments/$version.XXXXXX")'
+    )
     assert "Existing Occult initialization was preserved" in text
     assert '"occult_enabled": $enabled' in text
     assert "grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$'" in text
@@ -164,7 +195,18 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert text.index('if [ "$verify_only" -eq 1 ]') < text.index(
         'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
-    initialize_block = text.index('if [ "$initialize_local" -eq 1 ]')
+    reuse_initialize_block = text.index('if [ "$initialize_local" -eq 1 ]')
+    reuse_initialize_call = text.index(
+        '"$hermes_executable" occult init --model "$model"',
+        reuse_initialize_block,
+    )
+    assert reuse_initialize_call > reuse_initialize_block
+    staged_install = text.index(
+        'hermes_venv=$(mktemp -d "$hermes_environments/$version.XXXXXX")'
+    )
+    initialize_block = text.index(
+        'if [ "$initialize_local" -eq 1 ]', staged_install
+    )
     initialize_call = text.index(
         '"$hermes_staged" occult init --model "$model"',
         initialize_block,
@@ -200,6 +242,10 @@ def test_quickstart_is_the_single_public_tarot_router_entrypoint():
     assert "agents-council.com" not in quickstart
     assert "agents-council@latest" not in quickstart
     assert 'sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local' in quickstart
+    assert _sha256(POWERSHELL) in quickstart
+    assert _sha256(SHELL) in quickstart
+    assert "Hermes Occult `v1.0.3`" in quickstart
+    assert "Agents Council `v0.5.2`" in quickstart
 
 
 def test_launch_canary_is_redacted_and_covers_the_operator_flow():
@@ -216,6 +262,7 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
         "backup_restore",
         "rollback_previous_checksummed_releases",
         "temporary_secret_cleanup",
+        "installer_idempotency_contract",
     ):
         assert check in text
     assert '"contains_secrets": False' in text

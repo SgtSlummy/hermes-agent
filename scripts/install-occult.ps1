@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "1.0.5",
+    [string]$Version = "1.0.6",
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
     [switch]$SkipCouncil,
@@ -88,6 +88,54 @@ function Get-SafeAssetName {
         Fail "release metadata contains an unsafe asset name"
     }
     return $Name
+}
+
+function Test-SafeLeafName {
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value) {
+        return $false
+    }
+    $name = [string]$Value
+    return (
+        $name -match '^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$' -and
+        -not $name.Contains("..") -and
+        -not $name.Contains("/") -and
+        -not $name.Contains("\")
+    )
+}
+
+function Get-OccultState {
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$TemporaryRoot
+    )
+    $stateScript = @'
+import json
+from hermes_cli import config
+raw = config.read_raw_config() or {}
+occult = raw.get("occult")
+initialized = isinstance(occult, dict) and bool(occult.get("local_model"))
+enabled = initialized and occult.get("enabled") is True
+print(json.dumps({"initialized": initialized, "enabled": enabled}))
+'@
+    $stateScriptPath = Join-Path (
+        $TemporaryRoot
+    ) ("inspect-occult-state-" + [Guid]::NewGuid().ToString("N") + ".py")
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText(
+        $stateScriptPath,
+        $stateScript,
+        $utf8NoBom
+    )
+    $stateJson = (& $Python $stateScriptPath | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Fail "could not inspect the preserved Occult initialization state"
+    }
+    $state = $stateJson | ConvertFrom-Json
+    return [pscustomobject]@{
+        initialized = [bool]$state.initialized
+        enabled = [bool]$state.enabled
+    }
 }
 
 function Assert-SafeTarArchive {
@@ -275,7 +323,7 @@ if ($normalizedVersion.StartsWith("v")) {
     $normalizedVersion = $normalizedVersion.Substring(1)
 }
 if ($normalizedVersion -notmatch '^\d+\.\d+\.\d+$') {
-    Fail "--version must be a semantic version such as 1.0.5"
+    Fail "--version must be a semantic version such as 1.0.6"
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     Fail "--model cannot be empty"
@@ -425,8 +473,192 @@ try {
     }
 
     $binRoot = Join-Path $resolvedInstallRoot "bin"
-    $environmentId = "$normalizedVersion-" + [Guid]::NewGuid().ToString("N")
     $hermesEnvironmentsRoot = Join-Path $resolvedInstallRoot "hermes-environments"
+    $receiptPath = Join-Path $resolvedInstallRoot "occult-install-receipt.json"
+    $existingReceipt = $null
+    if (Test-Path -LiteralPath $receiptPath -PathType Leaf) {
+        try {
+            $existingReceipt = Get-Content `
+                -LiteralPath $receiptPath `
+                -Raw | ConvertFrom-Json
+        } catch {
+            Write-Step "Existing install receipt is invalid; staging a verified repair"
+        }
+    }
+    if ($null -ne $existingReceipt) {
+        $requiredReceiptProperties = @(
+            "schema_version",
+            "occult_release_version",
+            "hermes_cli_version",
+            "hermes_wheel",
+            "hermes_wheel_sha256",
+            "hermes_requirements",
+            "hermes_requirements_sha256",
+            "sigstore_requirements",
+            "sigstore_requirements_sha256",
+            "hermes_environment",
+            "install_manifest_sha256",
+            "council_release",
+            "council_archive_sha256",
+            "council_environment",
+            "contract_version",
+            "council_state_schema",
+            "occult_initialized",
+            "occult_enabled"
+        )
+        $receiptPropertyNames = @(
+            $existingReceipt.PSObject.Properties.Name
+        )
+        $missingReceiptProperties = @(
+            $requiredReceiptProperties | Where-Object {
+                $receiptPropertyNames -notcontains $_
+            }
+        )
+        $expectedCouncilRelease = if ($SkipCouncil) {
+            ""
+        } else {
+            [string]$manifest.council.release_tag
+        }
+        $expectedCouncilHash = if ($SkipCouncil) {
+            ""
+        } else {
+            [string]$councilHash
+        }
+        $metadataMatches = (
+            $missingReceiptProperties.Count -eq 0 -and
+            [string]$existingReceipt.schema_version -eq "1.0.0" -and
+            [string]$existingReceipt.occult_release_version -eq $normalizedVersion -and
+            [string]$existingReceipt.hermes_cli_version -eq [string]$manifest.hermes_cli_version -and
+            [string]$existingReceipt.hermes_wheel -eq $wheelAsset -and
+            [string]$existingReceipt.hermes_wheel_sha256 -eq $wheelHash -and
+            [string]$existingReceipt.hermes_requirements -eq $requirementsAsset -and
+            [string]$existingReceipt.hermes_requirements_sha256 -eq $requirementsHash -and
+            [string]$existingReceipt.sigstore_requirements -eq $SigstoreRequirementsAsset -and
+            [string]$existingReceipt.sigstore_requirements_sha256 -eq $SigstoreRequirementsSha256 -and
+            [string]$existingReceipt.install_manifest_sha256 -eq $manifestHash -and
+            [string]$existingReceipt.council_release -eq $expectedCouncilRelease -and
+            [string]$existingReceipt.council_archive_sha256 -eq $expectedCouncilHash -and
+            [string]$existingReceipt.contract_version -eq [string]$manifest.council.contract_version -and
+            [string]$existingReceipt.council_state_schema -eq [string]$manifest.council.state_schema -and
+            (Test-SafeLeafName $existingReceipt.hermes_environment)
+        )
+        $existingHermesVenv = $null
+        $existingVenvPython = $null
+        $existingVenvHermes = $null
+        $hermesExecutable = Join-Path $binRoot "hermes.exe"
+        $hermesVersionOutput = $null
+        if ($metadataMatches) {
+            $existingHermesVenv = Join-Path `
+                $hermesEnvironmentsRoot `
+                ([string]$existingReceipt.hermes_environment)
+            $existingVenvPython = Join-Path `
+                $existingHermesVenv `
+                "Scripts\python.exe"
+            $existingVenvHermes = Join-Path `
+                $existingHermesVenv `
+                "Scripts\hermes.exe"
+            $metadataMatches = (
+                (Test-Path -LiteralPath $existingVenvPython -PathType Leaf) -and
+                (Test-Path -LiteralPath $existingVenvHermes -PathType Leaf) -and
+                (Test-Path -LiteralPath $hermesExecutable -PathType Leaf) -and
+                (Get-FileHash -Algorithm SHA256 -LiteralPath $existingVenvHermes).Hash -eq
+                    (Get-FileHash -Algorithm SHA256 -LiteralPath $hermesExecutable).Hash
+            )
+        }
+        if ($metadataMatches) {
+            $hermesVersionOutput = (
+                & $hermesExecutable --version | Out-String
+            ).Trim()
+            $metadataMatches = (
+                $LASTEXITCODE -eq 0 -and
+                $hermesVersionOutput -match [Regex]::Escape(
+                    [string]$manifest.hermes_cli_version
+                )
+            )
+        }
+        $councilVersionOutput = $null
+        if ($metadataMatches -and -not $SkipCouncil) {
+            $metadataMatches = Test-SafeLeafName `
+                $existingReceipt.council_environment
+            if ($metadataMatches) {
+                $existingCouncilRoot = Join-Path `
+                    (Join-Path $resolvedInstallRoot "council-environments") `
+                    ([string]$existingReceipt.council_environment)
+                $existingPackagedCouncil = Join-Path `
+                    $existingCouncilRoot `
+                    "cli\council.exe"
+                $councilExecutable = Join-Path $binRoot "council.exe"
+                $metadataMatches = (
+                    (Test-Path -LiteralPath $existingPackagedCouncil -PathType Leaf) -and
+                    (Test-Path -LiteralPath $councilExecutable -PathType Leaf) -and
+                    (Get-FileHash -Algorithm SHA256 -LiteralPath $existingPackagedCouncil).Hash -eq
+                        (Get-FileHash -Algorithm SHA256 -LiteralPath $councilExecutable).Hash
+                )
+            }
+            if ($metadataMatches) {
+                $councilVersionOutput = (
+                    & $councilExecutable --version | Out-String
+                ).Trim()
+                $metadataMatches = (
+                    $LASTEXITCODE -eq 0 -and
+                    $councilVersionOutput -match [Regex]::Escape(
+                        $expectedCouncilRelease.TrimStart("v")
+                    )
+                )
+            }
+        }
+        if ($metadataMatches) {
+            if ($InitializeLocal) {
+                $ollama = Get-Command ollama -ErrorAction SilentlyContinue
+                if (-not $ollama) {
+                    Fail "Ollama is required for --initialize-local. Install it from https://ollama.com/download and rerun this command"
+                }
+                Write-Step "Pulling the explicitly requested local model $Model"
+                Invoke-Checked `
+                    -Executable $ollama.Source `
+                    -Arguments @("pull", $Model) `
+                    -FailureMessage "Ollama could not pull $Model"
+                Write-Step "Explicitly initializing the local Occult profile"
+                Invoke-Checked `
+                    -Executable $hermesExecutable `
+                    -Arguments @("occult", "init", "--model", $Model) `
+                    -FailureMessage "hermes occult init failed"
+            }
+            $state = Get-OccultState `
+                -Python $existingVenvPython `
+                -TemporaryRoot $temporaryRoot
+            if ($InitializeLocal) {
+                $existingReceipt.occult_initialized = [bool]$state.initialized
+                $existingReceipt.occult_enabled = [bool]$state.enabled
+                $receiptTemporary = "$receiptPath.tmp"
+                $existingReceipt |
+                    ConvertTo-Json -Depth 5 |
+                    Set-Content -LiteralPath $receiptTemporary -Encoding UTF8
+                Move-Item `
+                    -LiteralPath $receiptTemporary `
+                    -Destination $receiptPath `
+                    -Force
+            }
+            Add-UserPath -Directory $binRoot
+            Write-Step "Verified existing Occult release v$normalizedVersion; no application files changed"
+            Write-Host $hermesVersionOutput
+            if ($councilVersionOutput) {
+                Write-Host "Agents Council $councilVersionOutput"
+            }
+            if ($InitializeLocal) {
+                Write-Step "Local initialization completed explicitly with $Model"
+            } elseif ($state.initialized) {
+                $stateLabel = if ($state.enabled) { "enabled" } else { "disabled" }
+                Write-Step "Existing Occult initialization was preserved and remains $stateLabel"
+            } else {
+                Write-Step "Occult remains disabled. Run this installer again with -InitializeLocal when ready"
+            }
+            return
+        }
+        Write-Step "Existing installation does not match the verified release; staging a repair"
+    }
+
+    $environmentId = "$normalizedVersion-" + [Guid]::NewGuid().ToString("N")
     $hermesVenv = Join-Path $hermesEnvironmentsRoot $environmentId
     New-Item -ItemType Directory -Path $binRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $hermesEnvironmentsRoot -Force | Out-Null
@@ -535,26 +767,9 @@ try {
             -FailureMessage "hermes occult init failed"
     }
 
-    $stateScript = @'
-import json
-from hermes_cli import config
-raw = config.read_raw_config() or {}
-occult = raw.get("occult")
-initialized = isinstance(occult, dict) and bool(occult.get("local_model"))
-enabled = initialized and occult.get("enabled") is True
-print(json.dumps({"initialized": initialized, "enabled": enabled}))
-'@
-    # Windows PowerShell 5 can strip embedded quotes from native `-c`
-    # arguments. Execute an installer-owned temporary file so the state probe
-    # reaches Python byte-for-byte.
-    $stateScriptPath = Join-Path $temporaryRoot "inspect-occult-state.py"
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($stateScriptPath, $stateScript, $utf8NoBom)
-    $stateJson = (& $venvPython $stateScriptPath | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0) {
-        Fail "could not inspect the preserved Occult initialization state"
-    }
-    $state = $stateJson | ConvertFrom-Json
+    $state = Get-OccultState `
+        -Python $venvPython `
+        -TemporaryRoot $temporaryRoot
     $initialized = [bool]$state.initialized
     $enabled = [bool]$state.enabled
 
@@ -593,7 +808,6 @@ print(json.dumps({"initialized": initialized, "enabled": enabled}))
         occult_initialized = $initialized
         occult_enabled = $enabled
     }
-    $receiptPath = Join-Path $resolvedInstallRoot "occult-install-receipt.json"
     $receiptTemporary = "$receiptPath.tmp"
     $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $receiptTemporary -Encoding UTF8
     Move-Item -LiteralPath $receiptTemporary -Destination $receiptPath -Force

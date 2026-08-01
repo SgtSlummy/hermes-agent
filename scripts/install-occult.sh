@@ -7,7 +7,7 @@
 
 set -eu
 
-version="1.0.5"
+version="1.0.6"
 install_root="${XDG_DATA_HOME:-$HOME/.local/share}/occult"
 initialize_local=0
 skip_council=0
@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 Usage: install-occult.sh [options]
 
-  --version VERSION       Tarot Router GitHub release (default: 1.0.5)
+  --version VERSION       Tarot Router GitHub release (default: 1.0.6)
   --install-root PATH     Per-user installation root
   --initialize-local      Explicitly pull the approved Ollama model and enable Occult
   --skip-council          Verify and install Hermes without Agents Council
@@ -83,12 +83,12 @@ case "$version" in
 esac
 case "$version" in
   *[!0-9.]*)
-    fail "--version must be a semantic version such as 1.0.5"
+    fail "--version must be a semantic version such as 1.0.6"
     ;;
 esac
 printf '%s\n' "$version" |
   awk -F. 'NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { ok=1 } END { exit(ok ? 0 : 1) }' ||
-  fail "--version must be a semantic version such as 1.0.5"
+  fail "--version must be a semantic version such as 1.0.6"
 [ -n "$model" ] || fail "--model cannot be empty"
 [ -f "$0" ] || fail "download the script to a file before running it; direct pipe-to-shell is not supported"
 
@@ -400,6 +400,252 @@ case "$install_root" in
 esac
 bin_root="$install_root/bin"
 hermes_environments="$install_root/hermes-environments"
+receipt="$install_root/occult-install-receipt.json"
+existing_receipt_seen=0
+existing_metadata=""
+if [ -f "$receipt" ]; then
+  existing_receipt_seen=1
+  expected_council_tag=$council_tag
+  expected_council_hash=$council_hash
+  if existing_metadata=$(
+    "$uv_cmd" run --no-project --python 3.11 python -c '
+import json, re, sys
+
+(
+    receipt_path,
+    version,
+    hermes_cli_version,
+    wheel_asset,
+    wheel_hash,
+    requirements_asset,
+    requirements_hash,
+    sigstore_asset,
+    sigstore_hash,
+    manifest_hash,
+    council_tag,
+    council_hash,
+    contract_version,
+    state_schema,
+) = sys.argv[1:]
+
+try:
+    receipt = json.load(open(receipt_path, encoding="utf-8-sig"))
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+required = {
+    "schema_version",
+    "occult_release_version",
+    "hermes_cli_version",
+    "hermes_wheel",
+    "hermes_wheel_sha256",
+    "hermes_requirements",
+    "hermes_requirements_sha256",
+    "sigstore_requirements",
+    "sigstore_requirements_sha256",
+    "hermes_environment",
+    "install_manifest_sha256",
+    "council_release",
+    "council_archive_sha256",
+    "council_environment",
+    "contract_version",
+    "council_state_schema",
+    "occult_initialized",
+    "occult_enabled",
+}
+if not isinstance(receipt, dict) or not required.issubset(receipt):
+    raise SystemExit(1)
+
+expected = {
+    "schema_version": "1.0.0",
+    "occult_release_version": version,
+    "hermes_cli_version": hermes_cli_version,
+    "hermes_wheel": wheel_asset,
+    "hermes_wheel_sha256": wheel_hash,
+    "hermes_requirements": requirements_asset,
+    "hermes_requirements_sha256": requirements_hash,
+    "sigstore_requirements": sigstore_asset,
+    "sigstore_requirements_sha256": sigstore_hash,
+    "install_manifest_sha256": manifest_hash,
+    "council_release": council_tag,
+    "council_archive_sha256": council_hash,
+    "contract_version": contract_version,
+}
+for key, expected_value in expected.items():
+    actual = receipt.get(key)
+    actual_text = "" if actual is None else str(actual)
+    if actual_text != expected_value:
+        raise SystemExit(1)
+if receipt.get("council_state_schema") != int(state_schema):
+    raise SystemExit(1)
+
+def safe_leaf(value):
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", value)
+        and ".." not in value
+    )
+
+hermes_environment = receipt.get("hermes_environment")
+council_environment = receipt.get("council_environment")
+if not safe_leaf(hermes_environment):
+    raise SystemExit(1)
+if council_tag:
+    if not safe_leaf(council_environment):
+        raise SystemExit(1)
+elif council_environment not in (None, ""):
+    raise SystemExit(1)
+
+print(hermes_environment)
+print(council_environment or "")
+' \
+      "$receipt" \
+      "$version" \
+      "$(json_get "$manifest_path" hermes_cli_version)" \
+      "$wheel_asset" \
+      "$wheel_hash" \
+      "$requirements_asset" \
+      "$requirements_hash" \
+      "$sigstore_requirements_asset" \
+      "$sigstore_requirements_sha256" \
+      "$manifest_hash" \
+      "$expected_council_tag" \
+      "$expected_council_hash" \
+      "$(json_get "$manifest_path" council.contract_version)" \
+      "$(json_get "$manifest_path" council.state_schema)"
+  ); then
+    :
+  else
+    existing_metadata=""
+  fi
+fi
+
+if [ -n "$existing_metadata" ]; then
+  existing_hermes_environment=$(printf '%s\n' "$existing_metadata" | sed -n '1p')
+  existing_council_environment=$(printf '%s\n' "$existing_metadata" | sed -n '2p')
+  existing_hermes_root="$hermes_environments/$existing_hermes_environment"
+  existing_venv_python="$existing_hermes_root/bin/python"
+  existing_venv_hermes="$existing_hermes_root/bin/hermes"
+  hermes_executable="$bin_root/hermes"
+  reuse_ok=1
+  [ -x "$existing_venv_python" ] || reuse_ok=0
+  [ -x "$existing_venv_hermes" ] || reuse_ok=0
+  [ -x "$hermes_executable" ] || reuse_ok=0
+  if [ "$reuse_ok" -eq 1 ]; then
+    [ "$(sha256_file "$existing_venv_hermes")" = "$(sha256_file "$hermes_executable")" ] ||
+      reuse_ok=0
+  fi
+  hermes_cli_version=$(json_get "$manifest_path" hermes_cli_version)
+  hermes_version_output=""
+  if [ "$reuse_ok" -eq 1 ]; then
+    if hermes_version_output=$("$hermes_executable" --version 2>/dev/null); then
+      case "$hermes_version_output" in
+        *"$hermes_cli_version"*) ;;
+        *) reuse_ok=0 ;;
+      esac
+    else
+      reuse_ok=0
+    fi
+  fi
+
+  council_version_output=""
+  if [ "$reuse_ok" -eq 1 ] && [ "$skip_council" -eq 0 ]; then
+    existing_council_root="$install_root/council-environments/$existing_council_environment"
+    existing_packaged_council="$existing_council_root/cli/council"
+    council_executable="$bin_root/council"
+    [ -f "$existing_packaged_council" ] || reuse_ok=0
+    [ -x "$council_executable" ] || reuse_ok=0
+    if [ "$reuse_ok" -eq 1 ]; then
+      [ "$(sha256_file "$existing_packaged_council")" = "$(sha256_file "$council_executable")" ] ||
+        reuse_ok=0
+    fi
+    if [ "$reuse_ok" -eq 1 ]; then
+      if council_version_output=$("$council_executable" --version 2>/dev/null); then
+        case "$council_version_output" in
+          *"${council_tag#v}"*) ;;
+          *) reuse_ok=0 ;;
+        esac
+      else
+        reuse_ok=0
+      fi
+    fi
+  fi
+
+  if [ "$reuse_ok" -eq 1 ]; then
+    if [ "$initialize_local" -eq 1 ]; then
+      command -v ollama >/dev/null 2>&1 ||
+        fail "Ollama is required for --initialize-local. Install it from https://ollama.com/download and rerun this command"
+      step "Pulling the explicitly requested local model $model"
+      ollama pull "$model" || fail "Ollama could not pull $model"
+      step "Explicitly initializing the local Occult profile"
+      "$hermes_executable" occult init --model "$model" ||
+        fail "hermes occult init failed"
+    fi
+
+    state=$(
+      "$existing_venv_python" -c '
+from hermes_cli import config
+raw = config.read_raw_config() or {}
+occult = raw.get("occult")
+initialized = isinstance(occult, dict) and bool(occult.get("local_model"))
+enabled = initialized and occult.get("enabled") is True
+print(("true" if initialized else "false") + " " + ("true" if enabled else "false"))
+'
+    ) || fail "could not inspect the preserved Occult initialization state"
+    set -- $state
+    initialized=${1:-false}
+    enabled=${2:-false}
+    case "$initialized:$enabled" in
+      true:true|true:false|false:false) ;;
+      *) fail "the preserved Occult initialization state was invalid" ;;
+    esac
+
+    if [ "$initialize_local" -eq 1 ]; then
+      "$existing_venv_python" -c '
+import json, os, sys
+path, initialized, enabled = sys.argv[1:]
+with open(path, encoding="utf-8-sig") as handle:
+    receipt = json.load(handle)
+receipt["occult_initialized"] = initialized == "true"
+receipt["occult_enabled"] = enabled == "true"
+temporary = path + ".tmp"
+with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
+    json.dump(receipt, handle, indent=2)
+    handle.write("\n")
+os.replace(temporary, path)
+' "$receipt" "$initialized" "$enabled" ||
+        fail "could not update the preserved install receipt"
+    fi
+
+    user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+    mkdir -p "$user_bin"
+    ln -sfn "$hermes_executable" "$user_bin/hermes"
+    if [ "$skip_council" -eq 0 ]; then
+      ln -sfn "$bin_root/council" "$user_bin/council"
+    fi
+    step "Verified existing Occult release v$version; no application files changed"
+    printf '%s\n' "$hermes_version_output"
+    if [ -n "$council_version_output" ]; then
+      printf 'Agents Council %s\n' "$council_version_output"
+    fi
+    if [ "$initialize_local" -eq 1 ]; then
+      step "Local initialization completed explicitly with $model"
+    elif [ "$initialized" = true ]; then
+      step "Existing Occult initialization was preserved and remains $([ "$enabled" = true ] && printf enabled || printf disabled)"
+    else
+      step "Occult remains disabled. Run this installer again with --initialize-local when ready"
+    fi
+    case ":$PATH:" in
+      *":$user_bin:"*) ;;
+      *) printf 'Add the installed commands to this shell: export PATH="%s:$PATH"\n' "$user_bin" ;;
+    esac
+    exit 0
+  fi
+fi
+if [ "$existing_receipt_seen" -eq 1 ]; then
+  step "Existing installation does not match the verified release; staging a repair"
+fi
+
 mkdir -p "$bin_root" "$hermes_environments"
 hermes_venv=$(mktemp -d "$hermes_environments/$version.XXXXXX") ||
   fail "could not create the staged Hermes environment"
@@ -517,8 +763,7 @@ else
   council_json="\"$council_tag\""
   council_hash_json="\"$council_hash\""
 fi
-receipt_tmp="$install_root/occult-install-receipt.json.tmp"
-receipt="$install_root/occult-install-receipt.json"
+receipt_tmp="$receipt.tmp"
 cat >"$receipt_tmp" <<EOF
 {
   "schema_version": "1.0.0",

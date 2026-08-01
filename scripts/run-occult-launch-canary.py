@@ -30,7 +30,7 @@ from typing import Any
 
 
 HERMES_CLI_VERSION = "0.14.0"
-HERMES_RELEASE = "v1.0.5"
+HERMES_RELEASE = "v1.0.6"
 COUNCIL_VERSION = "0.5.5"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
@@ -53,7 +53,7 @@ class CanaryFailure(RuntimeError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the redacted Tarot Router v1.0.5 Windows launch canary."
+        description="Run the redacted Tarot Router v1.0.6 Windows launch canary."
     )
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)
@@ -108,6 +108,30 @@ def assert_file(path: Path, label: str) -> Path:
     if not resolved.is_file():
         raise CanaryFailure(f"{label} is missing")
     return resolved
+
+
+def validate_installer_idempotency_contract(
+    installer_powershell: Path,
+    installer_posix: Path,
+) -> None:
+    powershell = installer_powershell.read_text(encoding="utf-8-sig")
+    posix = installer_posix.read_text(encoding="utf-8")
+    required_powershell = (
+        "$requiredReceiptProperties",
+        "Test-SafeLeafName $existingReceipt.hermes_environment",
+        "Verified existing Occult release v$normalizedVersion; no application files changed",
+        "Get-FileHash -Algorithm SHA256 -LiteralPath $existingVenvHermes",
+    )
+    required_posix = (
+        "required.issubset(receipt)",
+        "existing_receipt_seen=0",
+        "Verified existing Occult release v$version; no application files changed",
+        'sha256_file "$existing_venv_hermes"',
+    )
+    if any(marker not in powershell for marker in required_powershell):
+        raise CanaryFailure("Windows installer idempotency contract is incomplete")
+    if any(marker not in posix for marker in required_posix):
+        raise CanaryFailure("POSIX installer idempotency contract is incomplete")
 
 
 def assert_directory(path: Path, label: str) -> Path:
@@ -658,12 +682,17 @@ def main() -> int:
     validate_ollama(args.ollama_base_url, model, args.timeout_seconds)
 
     checks: dict[str, str] = {}
+    validate_installer_idempotency_contract(
+        installer_powershell,
+        installer_posix,
+    )
+    checks["installer_idempotency_contract"] = "passed"
     observed_outputs: list[str] = []
     prompt_marker = "OCCULT_CANARY_PRIVATE_PROMPT_" + uuid.uuid4().hex
     gateway: subprocess.Popen[bytes] | None = None
     gateway_log: Any | None = None
     with tempfile.TemporaryDirectory(
-        prefix="tarot-router-v105-canary-",
+        prefix="tarot-router-v106-canary-",
         ignore_cleanup_errors=True,
     ) as temporary:
         root = Path(temporary)
