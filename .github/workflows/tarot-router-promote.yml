@@ -1,0 +1,182 @@
+name: Tarot Router public canary promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Public Hermes release verified by the clean-machine canary
+        required: true
+        default: "1.0.6"
+        type: string
+      council_ref:
+        description: Signed Agents Council release pinned by Hermes
+        required: true
+        default: v0.5.5
+        type: string
+      public_canary_report_sha256:
+        description: SHA-256 of the redacted report attached to the Hermes release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tarot-router-public-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote-latest:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: occult-production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Download the already-published release bytes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_INPUT: ${{ inputs.version }}
+          COUNCIL_REF: ${{ inputs.council_ref }}
+          REPORT_SHA256: ${{ inputs.public_canary_report_sha256 }}
+        run: |
+          set -euo pipefail
+          VERSION="${VERSION_INPUT#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$COUNCIL_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$REPORT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          TAG="v${VERSION}"
+          REPORT="public-launch-canary-v${VERSION}.json"
+          EXPECTED_COUNCIL="$(
+            jq -r '.council.release_tag' scripts/occult-install-manifest.json
+          )"
+          test "$COUNCIL_REF" = "$EXPECTED_COUNCIL"
+          mkdir -p public-assets council-assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
+          gh release download "$COUNCIL_REF" \
+            --repo SgtSlummy/agents-council \
+            --dir council-assets
+          test -f "public-assets/$REPORT"
+          echo "$REPORT_SHA256  public-assets/$REPORT" | sha256sum -c -
+          RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          test "$(jq -r '.draft' <<<"$RELEASE_JSON")" = false
+          test "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" = false
+          test "$(jq -r '.target_commitish' <<<"$RELEASE_JSON")" = "$(git rev-parse HEAD)"
+          jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$RELEASE_JSON" |
+            while IFS=$'\t' read -r name digest; do
+              test -f "public-assets/$name"
+              test "$digest" = "sha256:$(sha256sum "public-assets/$name" | cut -d' ' -f1)"
+            done
+          jq -e \
+            --arg hermes "$TAG" \
+            --arg council "${COUNCIL_REF#v}" \
+            '.candidate_status == "passed"
+             and .overall_status == "passed"
+             and .promotion_eligible == true
+             and .checks.installer_idempotent_rerun == "passed"
+             and .checks.installer_tamper_repair == "passed"
+             and .contains_secrets == false
+             and .release.hermes == $hermes
+             and .release.agents_council == $council' \
+            "public-assets/$REPORT"
+          jq -r '.release_artifacts | to_entries[] | [.key, .value.name, .value.sha256] | @tsv' \
+            "public-assets/$REPORT" |
+            while IFS=$'\t' read -r key name expected; do
+              case "$key" in
+                council_windows_x64) path="council-assets/$name" ;;
+                *) path="public-assets/$name" ;;
+              esac
+              test -f "$path"
+              echo "$expected  $path" | sha256sum -c -
+            done
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "COUNCIL_REF=$COUNCIL_REF" >> "$GITHUB_ENV"
+          echo "REPORT=$REPORT" >> "$GITHUB_ENV"
+      - name: Verify Sigstore identities and signed checksum manifests offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv --no-config --python 3.11 "$RUNNER_TEMP/sigstore-verifier"
+          uv pip sync \
+            --no-config \
+            --python "$RUNNER_TEMP/sigstore-verifier/bin/python" \
+            --require-hashes \
+            public-assets/occult-sigstore-requirements.lock
+          SIGSTORE="$RUNNER_TEMP/sigstore-verifier/bin/sigstore"
+          HERMES_IDENTITY="https://github.com/$GITHUB_REPOSITORY/.github/workflows/occult-production-gate.yml@refs/heads/main"
+          COUNCIL_IDENTITY="https://github.com/SgtSlummy/agents-council/.github/workflows/release.yml@refs/tags/$COUNCIL_REF"
+          ISSUER="https://token.actions.githubusercontent.com"
+          verify_identity() {
+            subject=$1
+            bundle=$2
+            identity=$3
+            "$SIGSTORE" verify identity \
+              --bundle "$bundle" \
+              --cert-identity "$identity" \
+              --cert-oidc-issuer "$ISSUER" \
+              --offline \
+              "$subject"
+          }
+          verify_identity \
+            public-assets/OCCULT-INSTALL-SHA256SUMS.txt \
+            public-assets/OCCULT-INSTALL-SHA256SUMS.txt.sigstore.json \
+            "$HERMES_IDENTITY"
+          verify_identity \
+            public-assets/SHA256SUMS.txt \
+            public-assets/SHA256SUMS.txt.sigstore.json \
+            "$HERMES_IDENTITY"
+          verify_identity \
+            "public-assets/occult-system-${TAG}.tar.gz.sha256" \
+            "public-assets/occult-system-${TAG}.tar.gz.sha256.sigstore.json" \
+            "$HERMES_IDENTITY"
+          verify_identity \
+            council-assets/RELEASE-SHA256SUMS.txt \
+            council-assets/RELEASE-SHA256SUMS.txt.sigstore.json \
+            "$COUNCIL_IDENTITY"
+          (
+            cd public-assets
+            sha256sum -c OCCULT-INSTALL-SHA256SUMS.txt
+            sha256sum -c "occult-system-${TAG}.tar.gz.sha256"
+          )
+          COUNCIL_ASSET="$(
+            jq -r '.council.assets["windows-x64"]' scripts/occult-install-manifest.json
+          )"
+          (
+            cd council-assets
+            grep -F "  $COUNCIL_ASSET" RELEASE-SHA256SUMS.txt | sha256sum -c -
+          )
+      - name: Verify the signed release bundle contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE="public-assets/occult-system-${TAG}.tar.gz"
+          mkdir -p "$RUNNER_TEMP/release-bundle"
+          tar -tzf "$BUNDLE" | while IFS= read -r entry; do
+            case "$entry" in
+              /*|../*|*/../*|*/..) exit 1 ;;
+            esac
+          done
+          tar -xzf "$BUNDLE" -C "$RUNNER_TEMP/release-bundle"
+          (
+            cd "$RUNNER_TEMP/release-bundle"
+            sha256sum -c SHA256SUMS.txt
+          )
+      - name: Promote Hermes after the verified Council release is latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view --repo SgtSlummy/agents-council --json tagName --jq .tagName)" = "$COUNCIL_REF"
+          gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --latest
+          test "$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)" = "$TAG"

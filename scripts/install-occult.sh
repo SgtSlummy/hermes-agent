@@ -101,171 +101,6 @@ print(("true" if initialized else "false") + " " + ("true" if enabled else "fals
 '
 }
 
-verify_environment_records() {
-  environment_records_root=$1
-  environment_requirements=$2
-  environment_wheel=$3
-  "$sigstore_venv/bin/python" -c '
-import base64
-import csv
-import hashlib
-import hmac
-import sys
-import sysconfig
-from email.parser import BytesParser
-from importlib.util import source_from_cache
-from pathlib import Path, PurePosixPath
-from zipfile import ZipFile
-
-from packaging.requirements import Requirement
-from packaging.utils import canonicalize_name
-
-root = Path(sys.argv[1]).resolve()
-requirements = Path(sys.argv[2]).resolve()
-wheel = Path(sys.argv[3]).resolve()
-
-expected_inventory = {}
-for raw_line in requirements.read_text(encoding="utf-8-sig").splitlines():
-    if not raw_line or raw_line[0].isspace() or raw_line.lstrip().startswith("#"):
-        continue
-    requirement_line = raw_line.rstrip()
-    if requirement_line.endswith("\\"):
-        requirement_line = requirement_line[:-1].rstrip()
-    requirement = Requirement(requirement_line)
-    if requirement.marker is not None and not requirement.marker.evaluate():
-        continue
-    specifiers = list(requirement.specifier)
-    if (
-        requirement.url is not None
-        or len(specifiers) != 1
-        or specifiers[0].operator != "=="
-        or specifiers[0].version.endswith(".*")
-    ):
-        raise SystemExit(1)
-    name = canonicalize_name(requirement.name)
-    if (
-        name in expected_inventory
-        and expected_inventory[name] != specifiers[0].version
-    ):
-        raise SystemExit(1)
-    expected_inventory[name] = specifiers[0].version
-
-try:
-    with ZipFile(wheel) as archive:
-        metadata_names = [
-            name for name in archive.namelist()
-            if name.endswith(".dist-info/METADATA")
-        ]
-        if len(metadata_names) != 1:
-            raise SystemExit(1)
-        wheel_metadata = BytesParser().parsebytes(
-            archive.read(metadata_names[0]), headersonly=True
-        )
-except (OSError, ValueError):
-    raise SystemExit(1)
-wheel_name = canonicalize_name(wheel_metadata.get("Name", ""))
-wheel_version = wheel_metadata.get("Version", "")
-if not wheel_name or not wheel_version or wheel_name in expected_inventory:
-    raise SystemExit(1)
-expected_inventory[wheel_name] = wheel_version
-
-records = sorted(root.rglob("*.dist-info/RECORD"))
-if not records:
-    raise SystemExit(1)
-checked = 0
-installed = {}
-recorded_files = set()
-site_roots = set()
-for record in records:
-    base = record.parent.parent
-    site_roots.add(base.resolve())
-    try:
-        metadata = BytesParser().parsebytes(
-            (record.parent / "METADATA").read_bytes(), headersonly=True
-        )
-    except OSError:
-        raise SystemExit(1)
-    name = canonicalize_name(metadata.get("Name", ""))
-    version = metadata.get("Version", "")
-    if not name or not version or name in installed:
-        raise SystemExit(1)
-    installed[name] = version
-    try:
-        stream = record.open(encoding="utf-8", newline="")
-    except OSError:
-        raise SystemExit(1)
-    with stream:
-        for row in csv.reader(stream):
-            if len(row) < 3:
-                raise SystemExit(1)
-            relative, hash_spec, size = row[:3]
-            candidate = (base.joinpath(*PurePosixPath(relative).parts)).resolve()
-            try:
-                candidate.relative_to(root)
-            except ValueError:
-                raise SystemExit(1)
-            if not hash_spec:
-                if candidate != record.resolve():
-                    raise SystemExit(1)
-                recorded_files.add(candidate)
-                continue
-            algorithm, separator, encoded = hash_spec.partition("=")
-            if algorithm != "sha256" or not separator or not encoded:
-                raise SystemExit(1)
-            if not candidate.is_file():
-                raise SystemExit(1)
-            data = candidate.read_bytes()
-            if size and (not size.isdigit() or len(data) != int(size)):
-                raise SystemExit(1)
-            padding = "=" * (-len(encoded) % 4)
-            try:
-                expected_digest = base64.urlsafe_b64decode(encoded + padding)
-            except (ValueError, TypeError):
-                raise SystemExit(1)
-            if not hmac.compare_digest(
-                hashlib.sha256(data).digest(), expected_digest
-            ):
-                raise SystemExit(1)
-            recorded_files.add(candidate)
-            checked += 1
-if checked == 0 or installed != expected_inventory or len(site_roots) != 1:
-    raise SystemExit(1)
-
-site_root = next(iter(site_roots))
-trusted_site = Path(sysconfig.get_paths()["purelib"]).resolve()
-trusted_bootstrap = {}
-for bootstrap_name in ("_virtualenv.pth", "_virtualenv.py"):
-    trusted = trusted_site / bootstrap_name
-    if not trusted.is_file():
-        raise SystemExit(1)
-    trusted_bootstrap[bootstrap_name] = hashlib.sha256(trusted.read_bytes()).digest()
-
-for candidate in site_root.rglob("*"):
-    if not candidate.is_file():
-        continue
-    resolved = candidate.resolve()
-    if resolved in recorded_files:
-        continue
-    if candidate.parent == site_root and candidate.name in trusted_bootstrap:
-        if not hmac.compare_digest(
-            hashlib.sha256(candidate.read_bytes()).digest(),
-            trusted_bootstrap[candidate.name],
-        ):
-            raise SystemExit(1)
-        continue
-    if candidate.suffix == ".pyc" and candidate.parent.name == "__pycache__":
-        try:
-            source = Path(source_from_cache(str(candidate))).resolve()
-        except (NotImplementedError, ValueError):
-            raise SystemExit(1)
-        if source in recorded_files or (
-            source.parent == site_root and source.name in trusted_bootstrap
-        ):
-            continue
-    raise SystemExit(1)
-' "$environment_records_root" "$environment_requirements" "$environment_wheel"
-}
-
 case "$version" in
   v*) version=${version#v} ;;
 esac
@@ -322,6 +157,11 @@ tmp_base=${TMPDIR:-/tmp}
 tmp=$(mktemp -d "$tmp_base/occult-install.XXXXXX") ||
   fail "could not create a temporary verification directory"
 cleanup() {
+  if [ -n "${reference_hermes_root:-}" ]; then
+    case "$reference_hermes_root" in
+      "$hermes_environments"/r*) rm -rf -- "$reference_hermes_root" ;;
+    esac
+  fi
   case "$tmp" in
     "$tmp_base"/occult-install.*)
       rm -rf -- "$tmp"
@@ -530,6 +370,19 @@ running_script_hash=$(sha256_file "$0")
 [ "$running_script_hash" = "$signed_script_hash" ] ||
   fail "the running installer does not match the Sigstore-verified release copy"
 
+environment_verifier_asset=$(
+  safe_asset_name "$(json_get "$manifest_path" environment_verifier_asset)"
+)
+environment_verifier="$tmp/$environment_verifier_asset"
+download \
+  "$hermes_release_base/$environment_verifier_asset" \
+  "$environment_verifier" \
+  "the authenticated environment verifier"
+verify_hash \
+  "$install_checksums" \
+  "$environment_verifier_asset" \
+  "$environment_verifier" >/dev/null
+
 wheel_asset=$(safe_asset_name "$(json_get "$manifest_path" hermes_wheel_asset)")
 wheel_path="$tmp/$wheel_asset"
 download "$hermes_release_base/$wheel_asset" "$wheel_path" "the Hermes wheel"
@@ -735,11 +588,40 @@ if [ -n "$existing_metadata" ]; then
       reuse_ok=0
   fi
   if [ "$reuse_ok" -eq 1 ]; then
-    verify_environment_records \
-      "$existing_hermes_root" \
-      "$requirements_path" \
-      "$wheel_path" >/dev/null 2>&1 ||
+    reference_length=${#existing_hermes_environment}
+    [ "$reference_length" -ge 6 ] || reuse_ok=0
+  fi
+  if [ "$reuse_ok" -eq 1 ]; then
+    reference_template=$(printf '%*s' "$reference_length" '' | tr ' ' X)
+    reference_hermes_root=$(mktemp -d "$hermes_environments/$reference_template") ||
+      fail "the isolated Hermes reference path is unavailable"
+    "$uv_cmd" venv \
+      --no-config \
+      --allow-existing \
+      --python 3.11 \
+      "$reference_hermes_root" ||
+      fail "Hermes reference environment creation failed"
+    reference_python="$reference_hermes_root/bin/python"
+    "$uv_cmd" pip sync \
+      --no-config \
+      --python "$reference_python" \
+      --require-hashes \
+      "$requirements_path" ||
+      fail "Hermes reference dependencies failed verification"
+    "$uv_cmd" pip install \
+      --no-config \
+      --python "$reference_python" \
+      --no-deps \
+      --no-index \
+      "$wheel_path" ||
+      fail "Hermes reference wheel installation failed"
+    "$sigstore_venv/bin/python" \
+      "$environment_verifier" \
+      --existing "$existing_hermes_root" \
+      --reference "$reference_hermes_root" >/dev/null 2>&1 ||
       reuse_ok=0
+    rm -rf -- "$reference_hermes_root"
+    reference_hermes_root=""
   fi
   hermes_version_output=""
   if [ "$reuse_ok" -eq 1 ]; then
@@ -758,6 +640,19 @@ if [ -n "$existing_metadata" ]; then
     council_executable="$bin_root/council"
     [ -f "$existing_packaged_council" ] || reuse_ok=0
     [ -x "$council_executable" ] || reuse_ok=0
+    if [ "$reuse_ok" -eq 1 ]; then
+      reference_council_root="$tmp/council-reference"
+      mkdir -p "$reference_council_root"
+      assert_safe_tar_archive "$council_archive"
+      tar -xzf "$council_archive" -C "$reference_council_root" ||
+        fail "Council reference extraction failed"
+      reference_packaged_council="$reference_council_root/cli/council"
+      [ -f "$reference_packaged_council" ] || reuse_ok=0
+    fi
+    if [ "$reuse_ok" -eq 1 ]; then
+      [ "$(sha256_file "$reference_packaged_council")" = "$(sha256_file "$existing_packaged_council")" ] ||
+        reuse_ok=0
+    fi
     if [ "$reuse_ok" -eq 1 ]; then
       [ "$(sha256_file "$existing_packaged_council")" = "$(sha256_file "$council_executable")" ] ||
         reuse_ok=0

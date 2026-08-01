@@ -155,193 +155,6 @@ print(json.dumps({"initialized": initialized, "enabled": enabled}))
     }
 }
 
-function Test-HermesEnvironmentRecords {
-    param(
-        [Parameter(Mandatory = $true)][string]$Python,
-        [Parameter(Mandatory = $true)][string]$Environment,
-        [Parameter(Mandatory = $true)][string]$Requirements,
-        [Parameter(Mandatory = $true)][string]$Wheel,
-        [Parameter(Mandatory = $true)][string]$TemporaryRoot
-    )
-    $recordScript = @'
-import base64
-import csv
-import hashlib
-import hmac
-import sys
-import sysconfig
-from email.parser import BytesParser
-from importlib.util import source_from_cache
-from pathlib import Path, PurePosixPath
-from zipfile import ZipFile
-
-from packaging.requirements import Requirement
-from packaging.utils import canonicalize_name
-
-root = Path(sys.argv[1]).resolve()
-requirements = Path(sys.argv[2]).resolve()
-wheel = Path(sys.argv[3]).resolve()
-
-expected_inventory = {}
-for raw_line in requirements.read_text(encoding="utf-8-sig").splitlines():
-    if not raw_line or raw_line[0].isspace() or raw_line.lstrip().startswith("#"):
-        continue
-    requirement_line = raw_line.rstrip()
-    if requirement_line.endswith("\\"):
-        requirement_line = requirement_line[:-1].rstrip()
-    requirement = Requirement(requirement_line)
-    if requirement.marker is not None and not requirement.marker.evaluate():
-        continue
-    specifiers = list(requirement.specifier)
-    if (
-        requirement.url is not None
-        or len(specifiers) != 1
-        or specifiers[0].operator != "=="
-        or specifiers[0].version.endswith(".*")
-    ):
-        raise SystemExit(1)
-    name = canonicalize_name(requirement.name)
-    if name in expected_inventory and expected_inventory[name] != specifiers[0].version:
-        raise SystemExit(1)
-    expected_inventory[name] = specifiers[0].version
-
-try:
-    with ZipFile(wheel) as archive:
-        metadata_names = [
-            name for name in archive.namelist()
-            if name.endswith(".dist-info/METADATA")
-        ]
-        if len(metadata_names) != 1:
-            raise SystemExit(1)
-        wheel_metadata = BytesParser().parsebytes(
-            archive.read(metadata_names[0]), headersonly=True
-        )
-except (OSError, ValueError):
-    raise SystemExit(1)
-wheel_name = canonicalize_name(wheel_metadata.get("Name", ""))
-wheel_version = wheel_metadata.get("Version", "")
-if not wheel_name or not wheel_version or wheel_name in expected_inventory:
-    raise SystemExit(1)
-expected_inventory[wheel_name] = wheel_version
-
-records = sorted(root.rglob("*.dist-info/RECORD"))
-if not records:
-    raise SystemExit(1)
-checked = 0
-installed = {}
-recorded_files = set()
-site_roots = set()
-for record in records:
-    base = record.parent.parent
-    site_roots.add(base.resolve())
-    try:
-        metadata = BytesParser().parsebytes(
-            (record.parent / "METADATA").read_bytes(), headersonly=True
-        )
-    except OSError:
-        raise SystemExit(1)
-    name = canonicalize_name(metadata.get("Name", ""))
-    version = metadata.get("Version", "")
-    if not name or not version or name in installed:
-        raise SystemExit(1)
-    installed[name] = version
-    try:
-        stream = record.open(encoding="utf-8", newline="")
-    except OSError:
-        raise SystemExit(1)
-    with stream:
-        for row in csv.reader(stream):
-            if len(row) < 3:
-                raise SystemExit(1)
-            relative, hash_spec, size = row[:3]
-            candidate = (base.joinpath(*PurePosixPath(relative).parts)).resolve()
-            try:
-                candidate.relative_to(root)
-            except ValueError:
-                raise SystemExit(1)
-            if not hash_spec:
-                if candidate != record.resolve():
-                    raise SystemExit(1)
-                recorded_files.add(candidate)
-                continue
-            algorithm, separator, encoded = hash_spec.partition("=")
-            if algorithm != "sha256" or not separator or not encoded:
-                raise SystemExit(1)
-            if not candidate.is_file():
-                raise SystemExit(1)
-            data = candidate.read_bytes()
-            if size and (not size.isdigit() or len(data) != int(size)):
-                raise SystemExit(1)
-            padding = "=" * (-len(encoded) % 4)
-            try:
-                expected_digest = base64.urlsafe_b64decode(encoded + padding)
-            except (ValueError, TypeError):
-                raise SystemExit(1)
-            if not hmac.compare_digest(
-                hashlib.sha256(data).digest(), expected_digest
-            ):
-                raise SystemExit(1)
-            recorded_files.add(candidate)
-            checked += 1
-if checked == 0 or installed != expected_inventory or len(site_roots) != 1:
-    raise SystemExit(1)
-
-site_root = next(iter(site_roots))
-trusted_site = Path(sysconfig.get_paths()["purelib"]).resolve()
-trusted_bootstrap = {}
-for bootstrap_name in ("_virtualenv.pth", "_virtualenv.py"):
-    trusted = trusted_site / bootstrap_name
-    if not trusted.is_file():
-        raise SystemExit(1)
-    trusted_bootstrap[bootstrap_name] = hashlib.sha256(trusted.read_bytes()).digest()
-
-for candidate in site_root.rglob("*"):
-    if not candidate.is_file():
-        continue
-    resolved = candidate.resolve()
-    if resolved in recorded_files:
-        continue
-    if candidate.parent == site_root and candidate.name in trusted_bootstrap:
-        if not hmac.compare_digest(
-            hashlib.sha256(candidate.read_bytes()).digest(),
-            trusted_bootstrap[candidate.name],
-        ):
-            raise SystemExit(1)
-        continue
-    if candidate.suffix == ".pyc" and candidate.parent.name == "__pycache__":
-        try:
-            source = Path(source_from_cache(str(candidate))).resolve()
-        except (NotImplementedError, ValueError):
-            raise SystemExit(1)
-        if source in recorded_files or (
-            source.parent == site_root and source.name in trusted_bootstrap
-        ):
-            continue
-    raise SystemExit(1)
-'@
-    $recordScriptPath = Join-Path (
-        $TemporaryRoot
-    ) ("verify-hermes-records-" + [Guid]::NewGuid().ToString("N") + ".py")
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText(
-        $recordScriptPath,
-        $recordScript,
-        $utf8NoBom
-    )
-    $savedErrorActionPreference = $ErrorActionPreference
-    $succeeded = $false
-    try {
-        $ErrorActionPreference = "Continue"
-        & $Python $recordScriptPath $Environment $Requirements $Wheel 1>$null 2>$null
-        $succeeded = $LASTEXITCODE -eq 0
-    } catch {
-        $succeeded = $false
-    } finally {
-        $ErrorActionPreference = $savedErrorActionPreference
-    }
-    return $succeeded
-}
-
 function Assert-SafeTarArchive {
     param(
         [Parameter(Mandatory = $true)][string]$Tar,
@@ -613,6 +426,19 @@ try {
         Fail "the running installer does not match the Sigstore-verified release copy"
     }
 
+    $environmentVerifierAsset = Get-SafeAssetName (
+        [string]$manifest.environment_verifier_asset
+    )
+    $environmentVerifierPath = Join-Path $temporaryRoot $environmentVerifierAsset
+    Download-Asset `
+        -Url "$hermesReleaseBase/$environmentVerifierAsset" `
+        -Destination $environmentVerifierPath `
+        -Label "the authenticated environment verifier"
+    $null = Assert-FileHash `
+        -ChecksumFile $installChecksums `
+        -AssetName $environmentVerifierAsset `
+        -FilePath $environmentVerifierPath
+
     $wheelAsset = Get-SafeAssetName ([string]$manifest.hermes_wheel_asset)
     $wheelPath = Join-Path $temporaryRoot $wheelAsset
     Download-Asset `
@@ -777,12 +603,73 @@ try {
             )
         }
         if ($metadataMatches) {
-            $metadataMatches = Test-HermesEnvironmentRecords `
-                -Python $sigstoreVerifierPython `
-                -Environment $existingHermesVenv `
-                -Requirements $requirementsPath `
-                -Wheel $wheelPath `
-                -TemporaryRoot $temporaryRoot
+            try {
+                $referenceLength = (
+                    [string]$existingReceipt.hermes_environment
+                ).Length
+                $referenceSeed = [Guid]::NewGuid().ToString("N")
+                $referenceRepeat = [int][Math]::Ceiling(
+                    $referenceLength / $referenceSeed.Length
+                )
+                $referenceLeaf = (
+                    $referenceSeed * $referenceRepeat
+                ).Substring(0, $referenceLength)
+                $referenceHermesVenv = Join-Path `
+                    $hermesEnvironmentsRoot `
+                    $referenceLeaf
+                if (Test-Path -LiteralPath $referenceHermesVenv) {
+                    Fail "the isolated Hermes reference path is unavailable"
+                }
+                Invoke-Checked `
+                    -Executable $uv `
+                    -Arguments @(
+                        "venv", "--no-config", "--python", "3.11",
+                        $referenceHermesVenv
+                    ) `
+                    -FailureMessage "Hermes reference environment creation failed"
+                $referencePython = Join-Path `
+                    $referenceHermesVenv `
+                    "Scripts\python.exe"
+                Invoke-Checked `
+                    -Executable $uv `
+                    -Arguments @(
+                        "pip", "sync", "--no-config", "--python",
+                        $referencePython, "--require-hashes", $requirementsPath
+                    ) `
+                    -FailureMessage "Hermes reference dependencies failed verification"
+                Invoke-Checked `
+                    -Executable $uv `
+                    -Arguments @(
+                        "pip", "install", "--no-config", "--python",
+                        $referencePython, "--no-deps", "--no-index", $wheelPath
+                    ) `
+                    -FailureMessage "Hermes reference wheel installation failed"
+                $savedErrorActionPreference = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = "Continue"
+                    & $sigstoreVerifierPython `
+                        $environmentVerifierPath `
+                        "--existing" $existingHermesVenv `
+                        "--reference" $referenceHermesVenv `
+                        1>$null 2>$null
+                    $metadataMatches = $LASTEXITCODE -eq 0
+                } catch {
+                    $metadataMatches = $false
+                } finally {
+                    $ErrorActionPreference = $savedErrorActionPreference
+                }
+            } finally {
+                if (
+                    $referenceHermesVenv -and
+                    (Test-Path -LiteralPath $referenceHermesVenv)
+                ) {
+                    Remove-Item `
+                        -LiteralPath $referenceHermesVenv `
+                        -Recurse `
+                        -Force `
+                        -ErrorAction SilentlyContinue
+                }
+            }
         }
         $hermesProbeSucceeded = $false
         if ($metadataMatches) {
@@ -813,6 +700,27 @@ try {
             $metadataMatches = Test-SafeLeafName `
                 $existingReceipt.council_environment
             if ($metadataMatches) {
+                $referenceCouncilRoot = Join-Path $temporaryRoot "council-reference"
+                New-Item `
+                    -ItemType Directory `
+                    -Path $referenceCouncilRoot `
+                    -Force | Out-Null
+                $referenceTar = Get-Command tar.exe -ErrorAction SilentlyContinue
+                if (-not $referenceTar) {
+                    Fail "Windows tar.exe is required to verify Agents Council"
+                }
+                Assert-SafeTarArchive `
+                    -Tar $referenceTar.Source `
+                    -Archive $councilArchive
+                Invoke-Checked `
+                    -Executable $referenceTar.Source `
+                    -Arguments @(
+                        "-xzf", $councilArchive, "-C", $referenceCouncilRoot
+                    ) `
+                    -FailureMessage "Council reference extraction failed"
+                $referencePackagedCouncil = Join-Path `
+                    $referenceCouncilRoot `
+                    "cli\council.exe"
                 $existingCouncilRoot = Join-Path `
                     (Join-Path $resolvedInstallRoot "council-environments") `
                     ([string]$existingReceipt.council_environment)
@@ -823,6 +731,9 @@ try {
                 $metadataMatches = (
                     (Test-Path -LiteralPath $existingPackagedCouncil -PathType Leaf) -and
                     (Test-Path -LiteralPath $councilExecutable -PathType Leaf) -and
+                    (Test-Path -LiteralPath $referencePackagedCouncil -PathType Leaf) -and
+                    (Get-FileHash -Algorithm SHA256 -LiteralPath $referencePackagedCouncil).Hash -eq
+                        (Get-FileHash -Algorithm SHA256 -LiteralPath $existingPackagedCouncil).Hash -and
                     (Get-FileHash -Algorithm SHA256 -LiteralPath $existingPackagedCouncil).Hash -eq
                         (Get-FileHash -Algorithm SHA256 -LiteralPath $councilExecutable).Hash
                 )

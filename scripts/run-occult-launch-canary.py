@@ -9,6 +9,8 @@ inside a temporary directory that is removed before the report is written.
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
 import hashlib
 import json
 import os
@@ -56,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-council-archive", type=Path, required=True)
     parser.add_argument("--installer-powershell", type=Path, required=True)
     parser.add_argument("--installer-posix", type=Path, required=True)
+    parser.add_argument("--environment-verifier", type=Path, required=True)
     parser.add_argument("--sigstore-requirements-lock", type=Path, required=True)
     parser.add_argument("--previous-hermes-wheel", type=Path, required=True)
     parser.add_argument("--previous-council-archive", type=Path, required=True)
@@ -94,8 +97,11 @@ def run(
     )
     succeeded = completed.returncode == 0
     if succeeded != expect_success:
+        operation = Path(command[0]).name
+        if len(command) > 1 and re.fullmatch(r"[A-Za-z0-9_.+-]{1,32}", command[1]):
+            operation += " " + command[1]
         raise CanaryFailure(
-            f"command failed its expected outcome: {Path(command[0]).name}"
+            f"command failed its expected outcome: {operation}"
         )
     return completed
 
@@ -107,7 +113,7 @@ def assert_file(path: Path, label: str) -> Path:
     return resolved
 
 
-def validate_installer_source_contract(
+def validate_installer_interface(
     installer_powershell: Path,
     installer_posix: Path,
 ) -> None:
@@ -119,21 +125,21 @@ def validate_installer_source_contract(
             f"an installer script could not be read: {error.__class__.__name__}"
         ) from None
     required_powershell = (
-        "$requiredReceiptProperties",
-        "Test-SafeLeafName $existingReceipt.hermes_environment",
-        "Verified existing Occult release v$normalizedVersion; no application files changed",
-        "Get-FileHash -Algorithm SHA256 -LiteralPath $existingVenvHermes",
+        "[switch]$InitializeLocal",
+        "[switch]$SkipCouncil",
+        "[switch]$VerifyOnly",
+        "environment_verifier_asset",
     )
     required_posix = (
-        "required.issubset(receipt)",
-        "existing_receipt_seen=0",
-        "Verified existing Occult release v$version; no application files changed",
-        'sha256_file "$existing_venv_hermes"',
+        "--initialize-local",
+        "--skip-council",
+        "--verify-only",
+        "environment_verifier_asset",
     )
     if any(marker not in powershell for marker in required_powershell):
-        raise CanaryFailure("Windows installer idempotency contract is incomplete")
+        raise CanaryFailure("Windows installer interface is incomplete")
     if any(marker not in posix for marker in required_posix):
-        raise CanaryFailure("POSIX installer idempotency contract is incomplete")
+        raise CanaryFailure("POSIX installer interface is incomplete")
 
 
 def validate_public_installer_rerun(
@@ -143,7 +149,7 @@ def validate_public_installer_rerun(
     env: dict[str, str],
     timeout: int,
 ) -> list[str]:
-    """Install the signed public bytes twice without retaining user PATH changes."""
+    """Exercise exact rerun and authenticated tamper repair on public bytes."""
     import winreg
 
     powershell_name = shutil.which("powershell.exe") or shutil.which("powershell")
@@ -193,6 +199,22 @@ def validate_public_installer_rerun(
     def fingerprint(path: Path) -> tuple[str, int, int]:
         stat = path.stat()
         return sha256_file(path), stat.st_size, stat.st_mtime_ns
+
+    def update_record(record: Path, target: Path, site_root: Path) -> None:
+        relative = target.relative_to(site_root).as_posix()
+        rows = list(csv.reader(record.read_text(encoding="utf-8").splitlines()))
+        matched = False
+        data = target.read_bytes()
+        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode()
+        for row in rows:
+            if row and row[0] == relative:
+                row[1] = "sha256=" + digest.rstrip("=")
+                row[2] = str(len(data))
+                matched = True
+        if not matched:
+            raise CanaryFailure("the Hermes RECORD omitted its authenticated module")
+        with record.open("w", encoding="utf-8", newline="") as stream:
+            csv.writer(stream, lineterminator="\n").writerows(rows)
 
     try:
         first = run(
@@ -245,6 +267,103 @@ def validate_public_installer_rerun(
             raise CanaryFailure("an exact installer rerun changed the install receipt")
         if receipt.stat().st_mtime_ns != first_receipt_mtime:
             raise CanaryFailure("an exact installer rerun rewrote the install receipt")
+
+        council_environment = receipt_data.get("council_environment")
+        hermes_environment = receipt_data.get("hermes_environment")
+        if not isinstance(council_environment, str) or not council_environment:
+            raise CanaryFailure("the public installer receipt omitted Council state")
+        if not isinstance(hermes_environment, str) or not hermes_environment:
+            raise CanaryFailure("the public installer receipt omitted Hermes state")
+        packaged_council = assert_file(
+            install_root
+            / "council-environments"
+            / council_environment
+            / "cli"
+            / "council.exe",
+            "packaged Council",
+        )
+        trusted_council = council.read_bytes()
+        council.write_bytes(trusted_council + b"occult-canary-tamper")
+        packaged_council.write_bytes(
+            packaged_council.read_bytes() + b"occult-canary-tamper"
+        )
+        council_repair = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(council_repair.stdout + council_repair.stderr)
+        if council.read_bytes() != trusted_council:
+            raise CanaryFailure("the installer did not repair a modified Council binary")
+
+        repaired_receipt = json.loads(receipt.read_text(encoding="utf-8-sig"))
+        repaired_hermes_environment = repaired_receipt.get("hermes_environment")
+        if not isinstance(repaired_hermes_environment, str):
+            raise CanaryFailure("the repaired receipt omitted Hermes state")
+        site_root = (
+            install_root
+            / "hermes-environments"
+            / repaired_hermes_environment
+            / "Lib"
+            / "site-packages"
+        )
+        source = assert_file(
+            site_root / "hermes_cli" / "__init__.py",
+            "installed Hermes module",
+        )
+        records = list(site_root.glob("hermes_agent-*.dist-info/RECORD"))
+        if len(records) != 1:
+            raise CanaryFailure("the installed Hermes RECORD is ambiguous")
+        trusted_source = source.read_bytes()
+        source.write_bytes(trusted_source + b"\n# occult canary tamper\n")
+        update_record(records[0], source, site_root)
+        caches = sorted((site_root / "hermes_cli" / "__pycache__").glob("*.pyc"))
+        if caches:
+            bytecode = bytearray(caches[0].read_bytes())
+            bytecode[-1] ^= 1
+            caches[0].write_bytes(bytecode)
+        hermes_repair = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(hermes_repair.stdout + hermes_repair.stderr)
+        final_receipt = receipt.read_bytes()
+        final_receipt_mtime = receipt.stat().st_mtime_ns
+        final_commands = {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        }
+        final_receipt_data = json.loads(final_receipt.decode("utf-8-sig"))
+        final_site_root = (
+            install_root
+            / "hermes-environments"
+            / final_receipt_data["hermes_environment"]
+            / "Lib"
+            / "site-packages"
+        )
+        final_source = assert_file(
+            final_site_root / "hermes_cli" / "__init__.py",
+            "repaired Hermes module",
+        )
+        if final_source.read_bytes() != trusted_source:
+            raise CanaryFailure("the installer did not repair modified Hermes code")
+
+        post_repair_rerun = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(post_repair_rerun.stdout + post_repair_rerun.stderr)
+        if {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        } != final_commands:
+            raise CanaryFailure("a post-repair rerun changed an active command")
+        if receipt.read_bytes() != final_receipt:
+            raise CanaryFailure("a post-repair rerun changed the install receipt")
+        if receipt.stat().st_mtime_ns != final_receipt_mtime:
+            raise CanaryFailure("a post-repair rerun rewrote the install receipt")
 
         hermes_version = run([str(hermes), "--version"], env=installer_env, timeout=timeout)
         council_version = run(
@@ -840,6 +959,10 @@ def main() -> int:
         "PowerShell installer",
     )
     installer_posix = assert_file(args.installer_posix, "POSIX installer")
+    environment_verifier = assert_file(
+        args.environment_verifier,
+        "environment verifier",
+    )
     sigstore_requirements_lock = assert_file(
         args.sigstore_requirements_lock,
         "Sigstore requirements lock",
@@ -854,11 +977,11 @@ def main() -> int:
     )
     council_repository = assert_directory(args.council_repository, "Council repository")
     checks: dict[str, str] = {}
-    validate_installer_source_contract(
+    validate_installer_interface(
         installer_powershell,
         installer_posix,
     )
-    checks["installer_source_contract"] = "passed"
+    checks["installer_interface"] = "passed"
     assert_port_available("127.0.0.1", 8642)
     validate_ollama(args.ollama_base_url, model, args.timeout_seconds)
 
@@ -900,6 +1023,7 @@ def main() -> int:
                 )
             )
             checks["installer_idempotent_rerun"] = "passed"
+            checks["installer_tamper_repair"] = "passed"
 
         hermes = install_hermes_environment(
             environment=root / "candidate-main-hermes",
@@ -1209,6 +1333,10 @@ def main() -> int:
             "installer_posix": {
                 "name": installer_posix.name,
                 "sha256": sha256_file(installer_posix),
+            },
+            "environment_verifier": {
+                "name": environment_verifier.name,
+                "sha256": sha256_file(environment_verifier),
             },
             "council_windows_x64": {
                 "name": candidate_council_archive.name,

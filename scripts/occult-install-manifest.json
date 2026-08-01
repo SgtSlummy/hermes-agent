@@ -4,6 +4,7 @@
   "hermes_cli_version": "0.14.0",
   "hermes_wheel_asset": "hermes_agent-0.14.0-py3-none-any.whl",
   "hermes_requirements_asset": "occult-requirements.lock",
+  "environment_verifier_asset": "verify-occult-environment.py",
   "sigstore_requirements_asset": "occult-sigstore-requirements.lock",
   "sigstore_requirements_sha256": "99a5d5d682282ce6f4c51bccf5c2050e1dae96f1ade4a0dfa85fd35f3676dee2",
   "council": {

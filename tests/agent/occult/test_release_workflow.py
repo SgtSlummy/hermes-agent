@@ -10,6 +10,12 @@ WORKFLOW = (
     / "workflows"
     / "occult-production-gate.yml"
 )
+PROMOTION_WORKFLOW = (
+    Path(__file__).resolve().parents[3]
+    / ".github"
+    / "workflows"
+    / "tarot-router-promote.yml"
+)
 
 
 def _workflow_text() -> str:
@@ -65,7 +71,7 @@ def test_occult_production_workflow_preserves_release_invariants():
         '.candidate_status == "passed"',
         '.overall_status == "candidate_passed"',
         ".promotion_eligible == false",
-        ".checks.installer_source_contract",
+        ".checks.installer_interface",
         ".release.ollama_model == $model",
         'test "$COUNCIL_REF" = "$EXPECTED_COUNCIL_REF"',
         "git -C council rev-parse HEAD",
@@ -102,3 +108,39 @@ def test_occult_production_workflow_preserves_release_invariants():
     assert "npm run build" not in promote
     assert "uv build" not in promote
     assert "docker build" not in promote
+
+
+def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest():
+    text = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
+    payload = yaml.load(text, Loader=yaml.BaseLoader)
+
+    assert set(payload["jobs"]) == {"promote-latest"}
+    job = payload["jobs"]["promote-latest"]
+    assert job["environment"] == "occult-production"
+    assert "github.ref == 'refs/heads/main'" in job["if"]
+    for line in text.splitlines():
+        if "uses:" in line:
+            assert "@" in line
+            assert len(line.rsplit("@", 1)[1].split()[0]) == 40
+    for expected in (
+        "public_canary_report_sha256",
+        'overall_status == "passed"',
+        "promotion_eligible == true",
+        "installer_idempotent_rerun",
+        "installer_tamper_repair",
+        "contains_secrets == false",
+        "gh release download",
+        ".assets[] | [.name, .digest]",
+        "OCCULT-INSTALL-SHA256SUMS.txt",
+        "RELEASE-SHA256SUMS.txt",
+        "sigstore-verifier",
+        "--offline",
+        "sha256sum -c SHA256SUMS.txt",
+        "gh release edit",
+        "--latest",
+    ):
+        assert expected in text
+    council_latest_check = (
+        'gh release view --repo SgtSlummy/agents-council --json tagName'
+    )
+    assert text.index(council_latest_check) < text.index('gh release edit "$TAG"')

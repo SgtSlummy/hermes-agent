@@ -1,8 +1,16 @@
+import base64
+import csv
 import hashlib
 import json
+import os
+import py_compile
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
+
+import pytest
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION
 
@@ -18,6 +26,7 @@ LEGACY_QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
 SIGSTORE_INPUT = ROOT / "scripts" / "occult-sigstore-requirements.in"
 SIGSTORE_LOCK = ROOT / "scripts" / "occult-sigstore-requirements.lock"
+ENVIRONMENT_VERIFIER = ROOT / "scripts" / "verify-occult-environment.py"
 
 REQUIRED_RECEIPT_FIELDS = {
     "schema_version",
@@ -80,6 +89,7 @@ def test_install_manifest_has_safe_cross_platform_release_metadata():
         rollback["council_windows_x64_sha256"],
     )
     assert manifest["hermes_requirements_asset"].endswith(".lock")
+    assert manifest["environment_verifier_asset"] == ENVIRONMENT_VERIFIER.name
     assert manifest["sigstore_requirements_asset"].endswith(".lock")
     assert re.fullmatch(
         r"[0-9a-f]{64}",
@@ -110,6 +120,112 @@ def test_sigstore_verifier_lock_pins_inventory_parser_and_matches_installers():
     assert manifest["sigstore_requirements_sha256"] == lock_hash
     assert lock_hash in _text(POWERSHELL)
     assert lock_hash in _text(SHELL)
+
+
+def _record_digest(data: bytes) -> str:
+    encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode()
+    return "sha256=" + encoded.rstrip("=")
+
+
+def _write_test_environment(root: Path) -> tuple[Path, Path, Path]:
+    if os.name == "nt":
+        site = root / "Lib" / "site-packages"
+        launcher = root / "Scripts" / "hermes.exe"
+    else:
+        site = root / "lib" / "python3.11" / "site-packages"
+        launcher = root / "bin" / "hermes"
+    package = site / "demo"
+    metadata = site / "demo-1.0.0.dist-info"
+    package.mkdir(parents=True)
+    metadata.mkdir()
+    launcher.parent.mkdir(parents=True)
+    source = package / "__init__.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8", newline="\n")
+    metadata_file = metadata / "METADATA"
+    metadata_file.write_text(
+        "Metadata-Version: 2.1\nName: demo\nVersion: 1.0.0\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    launcher.write_bytes(f"launcher:{root}\n".encode())
+    launcher.chmod(0o755)
+    record = metadata / "RECORD"
+    relative_launcher = os.path.relpath(launcher, site).replace(os.sep, "/")
+    rows = [
+        (
+            source.relative_to(site).as_posix(),
+            _record_digest(source.read_bytes()),
+            str(source.stat().st_size),
+        ),
+        (
+            metadata_file.relative_to(site).as_posix(),
+            _record_digest(metadata_file.read_bytes()),
+            str(metadata_file.stat().st_size),
+        ),
+        (
+            relative_launcher,
+            _record_digest(launcher.read_bytes()),
+            str(launcher.stat().st_size),
+        ),
+        (record.relative_to(site).as_posix(), "", ""),
+    ]
+    with record.open("w", encoding="utf-8", newline="") as stream:
+        csv.writer(stream, lineterminator="\n").writerows(rows)
+    py_compile.compile(str(source), doraise=True)
+    return source, record, launcher
+
+
+def _run_environment_verifier(existing: Path, reference: Path) -> int:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ENVIRONMENT_VERIFIER),
+            "--existing",
+            str(existing),
+            "--reference",
+            str(reference),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return completed.returncode
+
+
+def test_environment_verifier_accepts_an_authenticated_equivalent(tmp_path: Path):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    _write_test_environment(existing)
+    _write_test_environment(reference)
+
+    assert _run_environment_verifier(existing, reference) == 0
+
+
+@pytest.mark.parametrize("tamper", ["record_and_source", "bytecode", "launcher", "extra"])
+def test_environment_verifier_rejects_tampered_reuse(tmp_path: Path, tamper: str):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    source, record, launcher = _write_test_environment(existing)
+    _write_test_environment(reference)
+
+    if tamper == "record_and_source":
+        source.write_text("VALUE = 2\n", encoding="utf-8", newline="\n")
+        rows = list(csv.reader(record.read_text(encoding="utf-8").splitlines()))
+        rows[0][1] = _record_digest(source.read_bytes())
+        rows[0][2] = str(source.stat().st_size)
+        with record.open("w", encoding="utf-8", newline="") as stream:
+            csv.writer(stream, lineterminator="\n").writerows(rows)
+    elif tamper == "bytecode":
+        cache = next(source.parent.glob("__pycache__/*.pyc"))
+        data = bytearray(cache.read_bytes())
+        data[-1] ^= 1
+        cache.write_bytes(data)
+    elif tamper == "launcher":
+        launcher.write_bytes(launcher.read_bytes() + b"tampered")
+    else:
+        (source.parent / "untrusted.pth").write_text("payload\n", encoding="utf-8")
+
+    assert _run_environment_verifier(existing, reference) == 1
 
 
 def test_windows_installer_verifies_before_writing_application_files():
@@ -144,27 +260,11 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "New-SigstoreVerifier" in text
     assert "$SigstoreRequirementsSha256" in text
     assert "hermes_requirements_asset" in text
-    assert "hermes-environments" in text
     assert '"--clear"' not in text
-    assert '"hermes.new-$environmentId.exe"' in text
-    assert '"council.new-" + [Guid]::NewGuid().ToString("N") + ".exe"' in text
-    assert "hermes.exe.new-" not in text
-    assert "council.exe.new-" not in text
-    assert "function Get-OccultState" in text
-    assert "function Test-SafeLeafName" in text
-    assert "function Test-VersionToken" in text
-    assert "function Test-HermesEnvironmentRecords" in text
-    assert "*.dist-info/RECORD" in text
-    assert "installed != expected_inventory" in text
-    assert 'for bootstrap_name in ("_virtualenv.pth", "_virtualenv.py")' in text
-    assert "-Requirements $requirementsPath" in text
-    assert "-Wheel $wheelPath" in text
-    assert '"inspect-occult-state-" + [Guid]::NewGuid().ToString("N")' in text
-    assert "[System.IO.File]::WriteAllText" in text
-    assert "& $Python $stateScriptPath" in text
-    assert "& $venvPython -c $stateScript" not in text
+    assert "environment_verifier_asset" in text
+    assert '"--existing" $existingHermesVenv' in text
+    assert '"--reference" $referenceHermesVenv' in text
     assert "$requiredReceiptProperties" in text
-    assert "$missingReceiptProperties.Count -eq 0" in text
     receipt_fields_match = re.search(
         r"\$requiredReceiptProperties = @\((.*?)\n\s*\)",
         text,
@@ -174,41 +274,13 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert set(re.findall(r'"([a-z0-9_]+)"', receipt_fields_match.group(1))) == (
         REQUIRED_RECEIPT_FIELDS
     )
-    assert "Test-SafeLeafName $existingReceipt.hermes_environment" in text
-    assert "Test-SafeLeafName `\n                $existingReceipt.council_environment" in text
-    assert "$expectedCouncilEnvironmentMatches" in text
-    assert "Verified existing Occult release v$normalizedVersion; no application files changed" in text
-    assert text.index("$requiredReceiptProperties") < text.index(
-        '$environmentId = "$normalizedVersion-"'
-    )
-    assert "Existing Occult initialization was preserved" in text
-    assert "$existingReceipt.occult_initialized -is [System.Boolean]" in text
-    assert "$existingReceipt.occult_enabled -is [System.Boolean]" in text
-    assert "-Expected $expectedCouncilRelease.TrimStart(\"v\")" in text
-    assert "occult_enabled = $enabled" in text
     assert text.index("Assert-SigstoreIdentity") < text.index(
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert text.index("if ($VerifyOnly)") < text.index(
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
-    reuse_initialize_block = text.index("if ($InitializeLocal)")
-    reuse_initialize_call = text.index(
-        '"occult", "init", "--model", $Model',
-        reuse_initialize_block,
-    )
-    assert "$hermesExecutable" in text[
-        reuse_initialize_block:reuse_initialize_call
-    ]
-    staged_install = text.index('$environmentId = "$normalizedVersion-"')
-    initialize_block = text.index("if ($InitializeLocal)", staged_install)
-    initialize_call = text.index(
-        '"occult", "init", "--model", $Model',
-        initialize_block,
-    )
-    activation = text.index('Write-Step "Activating the fully staged local commands"')
-    assert "$hermesStagedExecutable" in text[initialize_block:initialize_call]
-    assert initialize_call < activation
+    assert "$referencePackagedCouncil" in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -239,10 +311,7 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert "tool run" not in text
     assert "sigstore_requirements_sha256" in text
     assert "hermes_requirements_asset" in text
-    assert "hermes-environments" in text
     assert "--clear" not in text
-    assert "hermes.new.$$" in text
-    assert "existing_receipt_seen=0" in text
     assert "required.issubset(receipt)" in text
     receipt_fields_match = re.search(
         r"required = \{(.*?)\n\}",
@@ -253,49 +322,16 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert set(re.findall(r'"([a-z0-9_]+)"', receipt_fields_match.group(1))) == (
         REQUIRED_RECEIPT_FIELDS
     )
-    assert 're.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", value)' in text
-    assert 'type(receipt.get("occult_initialized")) is not bool' in text
-    assert 'type(receipt.get("occult_enabled")) is not bool' in text
-    assert "version_output_matches" in text
-    assert "verify_environment_records" in text
-    assert "installed != expected_inventory" in text
-    assert 'for bootstrap_name in ("_virtualenv.pth", "_virtualenv.py")' in text
-    assert '"$requirements_path"' in text
-    assert '"$wheel_path"' in text
-    assert "*.dist-info/RECORD" in text
-    assert '[ "$(readlink "$user_bin/hermes")" = "$hermes_executable" ]' in text
-    assert '[ "$existing_receipt_initialized" = "$initialized" ]' in text
-    assert "Verified existing Occult release v$version; no application files changed" in text
-    assert text.index("existing_receipt_seen=0") < text.index(
-        'hermes_venv=$(mktemp -d "$hermes_environments/$version.XXXXXX")'
-    )
-    assert "Existing Occult initialization was preserved" in text
-    assert '"occult_enabled": $enabled' in text
-    assert "grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$'" in text
+    assert "environment_verifier_asset" in text
+    assert '--existing "$existing_hermes_root"' in text
+    assert '--reference "$reference_hermes_root"' in text
     assert text.index("verify_sigstore") < text.index(
         'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert text.index('if [ "$verify_only" -eq 1 ]') < text.index(
         'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
-    reuse_initialize_block = text.index('if [ "$initialize_local" -eq 1 ]')
-    reuse_initialize_call = text.index(
-        '"$hermes_executable" occult init --model "$model"',
-        reuse_initialize_block,
-    )
-    assert reuse_initialize_call > reuse_initialize_block
-    staged_install = text.index(
-        'hermes_venv=$(mktemp -d "$hermes_environments/$version.XXXXXX")'
-    )
-    initialize_block = text.index(
-        'if [ "$initialize_local" -eq 1 ]', staged_install
-    )
-    initialize_call = text.index(
-        '"$hermes_staged" occult init --model "$model"',
-        initialize_block,
-    )
-    activation = text.index('step "Activating the fully staged local commands"')
-    assert initialize_call < activation
+    assert 'reference_packaged_council="$reference_council_root/cli/council"' in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -359,8 +395,9 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
         "backup_restore",
         "rollback_previous_checksummed_releases",
         "temporary_secret_cleanup",
-        "installer_source_contract",
+        "installer_interface",
         "installer_idempotent_rerun",
+        "installer_tamper_repair",
     ):
         assert check in text
     assert '"contains_secrets": False' in text
@@ -370,6 +407,7 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "--candidate-council-archive" in text
     assert "--install-manifest" in text
     assert "--sigstore-requirements-lock" in text
+    assert "--environment-verifier" in text
     assert "--public-installer-rerun" in text
     assert "def validate_public_installer_rerun" in text
     assert "first_receipt_mtime" in text
@@ -400,7 +438,7 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert "installer_idempotent_rerun" not in evidence["checks"]
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
-    assert evidence["checks"]["installer_source_contract"] == "passed"
+    assert evidence["checks"]["installer_interface"] == "passed"
     manifest = json.loads(_text(MANIFEST))
     assert evidence["release"]["hermes"] == (
         f"v{manifest['occult_release_version']}"
@@ -414,6 +452,7 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
         "sigstore_requirements_lock",
         "installer_powershell",
         "installer_posix",
+        "environment_verifier",
         "council_windows_x64",
     }
     assert all(
