@@ -186,9 +186,32 @@ jobs:
           path: nix-package.tar.gz
           if-no-files-found: error
 
+  sigstore-verifier:
+    name: Sigstore verifier lock (macOS x64)
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Require a binary-only Intel macOS verifier environment
+        run: |
+          uv venv --no-config --python 3.11 "$RUNNER_TEMP/sigstore-verifier"
+          uv pip sync \
+            --no-config \
+            --python "$RUNNER_TEMP/sigstore-verifier/bin/python" \
+            --require-hashes \
+            --only-binary :all: \
+            scripts/occult-sigstore-requirements.lock
+
   stage:
     name: Assemble immutable release
-    needs: [platform, council, nix]
+    needs: [platform, council, nix, sigstore-verifier]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

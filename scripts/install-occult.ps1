@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "1.0.7",
+    [string]$Version = "1.0.8",
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
     [switch]$SkipCouncil,
@@ -24,7 +24,7 @@ $BootstrapUvWindowsAsset = "uv-x86_64-pc-windows-msvc.zip"
 $BootstrapUvWindowsSha256 = "0a23463216d09c6a72ff80ef5dc5a795f07dc1575cb84d24596c2f124a441b7b"
 $PinnedSigstoreVersion = "4.5.0"
 $SigstoreRequirementsAsset = "occult-sigstore-requirements.lock"
-$SigstoreRequirementsSha256 = "99a5d5d682282ce6f4c51bccf5c2050e1dae96f1ade4a0dfa85fd35f3676dee2"
+$SigstoreRequirementsSha256 = "a6381e9415344393a827d264cc5bda5c2fa00e95fb92e49b67fcd1aa94285916"
 $ExpectedIssuer = "https://token.actions.githubusercontent.com"
 
 function Write-Step {
@@ -391,6 +391,7 @@ function New-SigstoreVerifier {
             "--no-config",
             "--python", $verifierPython,
             "--require-hashes",
+            "--only-binary", ":all:",
             $requirements
         ) `
         -FailureMessage "Sigstore verifier dependency installation failed"
@@ -450,7 +451,7 @@ if ($normalizedVersion.StartsWith("v")) {
     $normalizedVersion = $normalizedVersion.Substring(1)
 }
 if ($normalizedVersion -notmatch '^\d+\.\d+\.\d+$') {
-    Fail "--version must be a semantic version such as 1.0.7"
+    Fail "--version must be a semantic version such as 1.0.8"
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     Fail "--model cannot be empty"

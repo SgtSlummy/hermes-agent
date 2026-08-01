@@ -1,2 +1,4 @@
-sigstore==4.5.0
+# 49.0.0 has no Intel or universal2 macOS wheel for the Python 3.11 verifier.
+cryptography==48.0.0
 packaging==25.0
+sigstore==4.5.0

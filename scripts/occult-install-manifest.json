@@ -1,12 +1,12 @@
 {
   "schema_version": "1.0.0",
-  "occult_release_version": "1.0.7",
+  "occult_release_version": "1.0.8",
   "hermes_cli_version": "0.14.0",
   "hermes_wheel_asset": "hermes_agent-0.14.0-py3-none-any.whl",
   "hermes_requirements_asset": "occult-requirements.lock",
   "environment_verifier_asset": "verify-occult-environment.py",
   "sigstore_requirements_asset": "occult-sigstore-requirements.lock",
-  "sigstore_requirements_sha256": "99a5d5d682282ce6f4c51bccf5c2050e1dae96f1ade4a0dfa85fd35f3676dee2",
+  "sigstore_requirements_sha256": "a6381e9415344393a827d264cc5bda5c2fa00e95fb92e49b67fcd1aa94285916",
   "council": {
     "release_tag": "v0.5.5",
     "commit_sha": "7966ccc9d65a400bdd184c13669a23919f606da3",

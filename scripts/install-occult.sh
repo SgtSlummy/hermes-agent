@@ -7,7 +7,7 @@
 
 set -eu
 
-version="1.0.7"
+version="1.0.8"
 install_root="${XDG_DATA_HOME:-$HOME/.local/share}/occult"
 initialize_local=0
 skip_council=0
@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 Usage: install-occult.sh [options]
 
-  --version VERSION       Tarot Router GitHub release (default: 1.0.7)
+  --version VERSION       Tarot Router GitHub release (default: 1.0.8)
   --install-root PATH     Per-user installation root
   --initialize-local      Explicitly pull the approved Ollama model and enable Occult
   --skip-council          Verify and install Hermes without Agents Council
@@ -135,12 +135,12 @@ case "$version" in
 esac
 case "$version" in
   *[!0-9.]*)
-    fail "--version must be a semantic version such as 1.0.7"
+    fail "--version must be a semantic version such as 1.0.8"
     ;;
 esac
 printf '%s\n' "$version" |
   awk -F. 'NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { ok=1 } END { exit(ok ? 0 : 1) }' ||
-  fail "--version must be a semantic version such as 1.0.7"
+  fail "--version must be a semantic version such as 1.0.8"
 [ -n "$model" ] || fail "--model cannot be empty"
 [ -f "$0" ] || fail "download the script to a file before running it; direct pipe-to-shell is not supported"
 
@@ -177,7 +177,7 @@ council_repository="SgtSlummy/agents-council"
 bootstrap_uv_version="0.11.28"
 pinned_sigstore_version="4.5.0"
 sigstore_requirements_asset="occult-sigstore-requirements.lock"
-sigstore_requirements_sha256="99a5d5d682282ce6f4c51bccf5c2050e1dae96f1ade4a0dfa85fd35f3676dee2"
+sigstore_requirements_sha256="a6381e9415344393a827d264cc5bda5c2fa00e95fb92e49b67fcd1aa94285916"
 expected_issuer="https://token.actions.githubusercontent.com"
 release_tag="v$version"
 hermes_release_base="https://github.com/$hermes_repository/releases/download/$release_tag"
@@ -324,6 +324,7 @@ sigstore_venv="$tmp/sigstore-verifier"
   --no-config \
   --python "$sigstore_venv/bin/python" \
   --require-hashes \
+  --only-binary :all: \
   "$sigstore_requirements" ||
   fail "Sigstore verifier dependency installation failed"
 sigstore_cmd="$sigstore_venv/bin/sigstore"
