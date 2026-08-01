@@ -17,6 +17,27 @@ QUICKSTART = ROOT / "docs" / "tarot-router" / "quickstart.md"
 LEGACY_QUICKSTART = ROOT / "docs" / "occult" / "quickstart.md"
 README = ROOT / "README.md"
 
+REQUIRED_RECEIPT_FIELDS = {
+    "schema_version",
+    "occult_release_version",
+    "hermes_cli_version",
+    "hermes_wheel",
+    "hermes_wheel_sha256",
+    "hermes_requirements",
+    "hermes_requirements_sha256",
+    "sigstore_requirements",
+    "sigstore_requirements_sha256",
+    "hermes_environment",
+    "install_manifest_sha256",
+    "council_release",
+    "council_archive_sha256",
+    "council_environment",
+    "contract_version",
+    "council_state_schema",
+    "occult_initialized",
+    "occult_enabled",
+}
+
 
 def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -115,6 +136,15 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "& $venvPython -c $stateScript" not in text
     assert "$requiredReceiptProperties" in text
     assert "$missingReceiptProperties.Count -eq 0" in text
+    receipt_fields_match = re.search(
+        r"\$requiredReceiptProperties = @\((.*?)\n\s*\)",
+        text,
+        flags=re.DOTALL,
+    )
+    assert receipt_fields_match is not None
+    assert set(re.findall(r'"([a-z0-9_]+)"', receipt_fields_match.group(1))) == (
+        REQUIRED_RECEIPT_FIELDS
+    )
     assert "Test-SafeLeafName $existingReceipt.hermes_environment" in text
     assert "Test-SafeLeafName `\n                $existingReceipt.council_environment" in text
     assert "Verified existing Occult release v$normalizedVersion; no application files changed" in text
@@ -181,6 +211,15 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert "hermes.new.$$" in text
     assert "existing_receipt_seen=0" in text
     assert "required.issubset(receipt)" in text
+    receipt_fields_match = re.search(
+        r"required = \{(.*?)\n\}",
+        text,
+        flags=re.DOTALL,
+    )
+    assert receipt_fields_match is not None
+    assert set(re.findall(r'"([a-z0-9_]+)"', receipt_fields_match.group(1))) == (
+        REQUIRED_RECEIPT_FIELDS
+    )
     assert 're.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", value)' in text
     assert "Verified existing Occult release v$version; no application files changed" in text
     assert text.index("existing_receipt_seen=0") < text.index(
@@ -242,8 +281,20 @@ def test_quickstart_is_the_single_public_tarot_router_entrypoint():
     assert "agents-council.com" not in quickstart
     assert "agents-council@latest" not in quickstart
     assert 'sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local' in quickstart
-    assert _sha256(POWERSHELL) in quickstart
-    assert _sha256(SHELL) in quickstart
+    powershell_block = re.search(
+        r"```powershell\n(?P<body>.*?install-occult\.ps1.*?)\n```",
+        quickstart,
+        flags=re.DOTALL,
+    )
+    assert powershell_block is not None
+    assert _sha256(POWERSHELL) in powershell_block.group("body")
+    posix_block = re.search(
+        r"```bash\n(?P<body>.*?install-occult\.sh.*?)\n```",
+        quickstart,
+        flags=re.DOTALL,
+    )
+    assert posix_block is not None
+    assert _sha256(SHELL) in posix_block.group("body")
     assert "Hermes Occult `v1.0.3`" in quickstart
     assert "Agents Council `v0.5.2`" in quickstart
 
@@ -295,6 +346,7 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["overall_status"] == "passed"
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
+    assert evidence["checks"]["installer_idempotency_contract"] == "passed"
     manifest = json.loads(_text(MANIFEST))
     assert evidence["release"]["hermes"] == (
         f"v{manifest['occult_release_version']}"

@@ -131,7 +131,11 @@ print(json.dumps({"initialized": initialized, "enabled": enabled}))
     if ($LASTEXITCODE -ne 0) {
         Fail "could not inspect the preserved Occult initialization state"
     }
-    $state = $stateJson | ConvertFrom-Json
+    try {
+        $state = $stateJson | ConvertFrom-Json
+    } catch {
+        Fail "the Occult initialization state probe returned unreadable output"
+    }
     return [pscustomobject]@{
         initialized = [bool]$state.initialized
         enabled = [bool]$state.enabled
@@ -565,12 +569,22 @@ try {
                     (Get-FileHash -Algorithm SHA256 -LiteralPath $hermesExecutable).Hash
             )
         }
+        $hermesProbeSucceeded = $false
         if ($metadataMatches) {
-            $hermesVersionOutput = (
-                & $hermesExecutable --version | Out-String
-            ).Trim()
+            $savedErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $hermesVersionOutput = (
+                    & $hermesExecutable --version 2>$null | Out-String
+                ).Trim()
+                $hermesProbeSucceeded = $LASTEXITCODE -eq 0
+            } catch {
+                $hermesProbeSucceeded = $false
+            } finally {
+                $ErrorActionPreference = $savedErrorActionPreference
+            }
             $metadataMatches = (
-                $LASTEXITCODE -eq 0 -and
+                $hermesProbeSucceeded -and
                 $hermesVersionOutput -match [Regex]::Escape(
                     [string]$manifest.hermes_cli_version
                 )
@@ -596,11 +610,21 @@ try {
                 )
             }
             if ($metadataMatches) {
-                $councilVersionOutput = (
-                    & $councilExecutable --version | Out-String
-                ).Trim()
+                $councilProbeSucceeded = $false
+                $savedErrorActionPreference = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = "Continue"
+                    $councilVersionOutput = (
+                        & $councilExecutable --version 2>$null | Out-String
+                    ).Trim()
+                    $councilProbeSucceeded = $LASTEXITCODE -eq 0
+                } catch {
+                    $councilProbeSucceeded = $false
+                } finally {
+                    $ErrorActionPreference = $savedErrorActionPreference
+                }
                 $metadataMatches = (
-                    $LASTEXITCODE -eq 0 -and
+                    $councilProbeSucceeded -and
                     $councilVersionOutput -match [Regex]::Escape(
                         $expectedCouncilRelease.TrimStart("v")
                     )

@@ -401,6 +401,9 @@ esac
 bin_root="$install_root/bin"
 hermes_environments="$install_root/hermes-environments"
 receipt="$install_root/occult-install-receipt.json"
+hermes_cli_version=$(json_get "$manifest_path" hermes_cli_version)
+council_contract_version=$(json_get "$manifest_path" council.contract_version)
+council_state_schema=$(json_get "$manifest_path" council.state_schema)
 existing_receipt_seen=0
 existing_metadata=""
 if [ -f "$receipt" ]; then
@@ -501,7 +504,7 @@ print(council_environment or "")
 ' \
       "$receipt" \
       "$version" \
-      "$(json_get "$manifest_path" hermes_cli_version)" \
+      "$hermes_cli_version" \
       "$wheel_asset" \
       "$wheel_hash" \
       "$requirements_asset" \
@@ -511,8 +514,8 @@ print(council_environment or "")
       "$manifest_hash" \
       "$expected_council_tag" \
       "$expected_council_hash" \
-      "$(json_get "$manifest_path" council.contract_version)" \
-      "$(json_get "$manifest_path" council.state_schema)"
+      "$council_contract_version" \
+      "$council_state_schema"
   ); then
     :
   else
@@ -535,7 +538,6 @@ if [ -n "$existing_metadata" ]; then
     [ "$(sha256_file "$existing_venv_hermes")" = "$(sha256_file "$hermes_executable")" ] ||
       reuse_ok=0
   fi
-  hermes_cli_version=$(json_get "$manifest_path" hermes_cli_version)
   hermes_version_output=""
   if [ "$reuse_ok" -eq 1 ]; then
     if hermes_version_output=$("$hermes_executable" --version 2>/dev/null); then

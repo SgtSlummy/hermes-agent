@@ -114,8 +114,13 @@ def validate_installer_idempotency_contract(
     installer_powershell: Path,
     installer_posix: Path,
 ) -> None:
-    powershell = installer_powershell.read_text(encoding="utf-8-sig")
-    posix = installer_posix.read_text(encoding="utf-8")
+    try:
+        powershell = installer_powershell.read_text(encoding="utf-8-sig")
+        posix = installer_posix.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise CanaryFailure(
+            f"an installer script could not be read: {error.__class__.__name__}"
+        ) from None
     required_powershell = (
         "$requiredReceiptProperties",
         "Test-SafeLeafName $existingReceipt.hermes_environment",
@@ -678,15 +683,15 @@ def main() -> int:
         "previous Council archive",
     )
     council_repository = assert_directory(args.council_repository, "Council repository")
-    assert_port_available("127.0.0.1", 8642)
-    validate_ollama(args.ollama_base_url, model, args.timeout_seconds)
-
     checks: dict[str, str] = {}
     validate_installer_idempotency_contract(
         installer_powershell,
         installer_posix,
     )
     checks["installer_idempotency_contract"] = "passed"
+    assert_port_available("127.0.0.1", 8642)
+    validate_ollama(args.ollama_base_url, model, args.timeout_seconds)
+
     observed_outputs: list[str] = []
     prompt_marker = "OCCULT_CANARY_PRIVATE_PROMPT_" + uuid.uuid4().hex
     gateway: subprocess.Popen[bytes] | None = None

@@ -32,7 +32,7 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "9e6822e5ff09d0b9f2ea4d6b45705cf6e83da0cbf171ad482481afdfb352e8bb"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "e10b629d7edfc2a7dabe42d8025494c86af8dae26ccf68ad95a7cc87ac2cb630"; Invoke-WebRequest "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
 ```
 
 This literal checksum is pinned in the immutable `v1.0.6` quickstart and
@@ -71,7 +71,7 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="0a0109bc71f95ae6ffcfe65d6eddce3e81741aa9d64ca458a9f8565edc3e73cb"
+  expected="22a5262649d084fb139f4379068d1f0efe2abd1edc4beee723e928a6475d1634"
   curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.6/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
@@ -273,10 +273,27 @@ The previous immutable releases are:
 - Agents Council `v0.5.2`
 
 Download them from their GitHub release pages, verify their published checksum
-files before extraction, disable Tarot Router, and retain the `v1.0.6` receipt and
-backup. The Hermes `v1.0.3` universal archive contains its platform wheel; use
-that wheel to replace the `uv` tool environment under the same install root.
-Replace Council with the matching `v0.5.2` platform archive.
+files before extraction, disable Tarot Router, and retain the `v1.0.6` receipt
+outside the active install root. On Windows, move it before replacing files:
+
+```powershell
+$rollback = Join-Path $env:USERPROFILE "TarotRouterRollback"
+New-Item -ItemType Directory -Force -Path $rollback | Out-Null
+Move-Item -LiteralPath "$env:LOCALAPPDATA\Occult\occult-install-receipt.json" -Destination "$rollback\occult-install-receipt-v1.0.6.json"
+```
+
+On Linux or macOS:
+
+```bash
+rollback="$HOME/TarotRouterRollback"
+mkdir -p "$rollback"
+mv "${XDG_DATA_HOME:-$HOME/.local/share}/occult/occult-install-receipt.json" "$rollback/occult-install-receipt-v1.0.6.json"
+```
+
+Do not leave a receipt claiming `v1.0.6` in the active install root after the
+rollback. The Hermes `v1.0.3` universal archive contains its platform wheel;
+use that wheel to replace the `uv` tool environment under the same install
+root. Replace Council with the matching `v0.5.2` platform archive.
 
 Runtime contract `1.0.0` and Council state schema `3` are unchanged in these
 patch releases. State restoration is therefore not normally required, but the
