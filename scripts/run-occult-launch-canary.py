@@ -279,30 +279,26 @@ def validate_public_installer_rerun(
         if not isinstance(hermes_environment, str) or not hermes_environment:
             raise CanaryFailure("the public installer receipt omitted Hermes state")
 
-        run(
-            [
-                str(hermes),
-                "tarot",
-                "init",
-                "--base-url",
-                ollama_base_url,
-                "--model",
-                model,
-            ],
-            env=installer_env,
-            timeout=timeout,
-        )
-        initialized_status = load_json_output(
+        initialization = load_json_output(
             run(
-                [str(hermes), "tarot", "status"],
+                [
+                    str(hermes),
+                    "tarot",
+                    "init",
+                    "--base-url",
+                    ollama_base_url,
+                    "--model",
+                    model,
+                ],
                 env=installer_env,
                 timeout=timeout,
             ).stdout,
-            "public installer initialized status",
+            "public installer initialization",
         )
         if (
-            initialized_status.get("initialized") is not True
-            or initialized_status.get("enabled") is not True
+            initialization.get("enabled") is not True
+            or initialization.get("provider") != "ollama-local"
+            or initialization.get("model") != model
         ):
             raise CanaryFailure("the public installer profile state did not change")
         mutable_state_rerun = run(

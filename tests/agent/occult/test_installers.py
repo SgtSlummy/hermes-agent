@@ -864,7 +864,16 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "--environment-verifier" in text
     assert "--public-installer-rerun" in text
     assert "def validate_public_installer_rerun" in text
-    assert '"tarot",\n                "init"' in text
+    public_rerun = text[
+        text.index("def validate_public_installer_rerun") : text.index(
+            "def validate_packaged_council_mcp_flow"
+        )
+    ]
+    assert re.search(r'"tarot",\s+"init"', public_rerun)
+    assert '[str(hermes), "tarot", "status"]' not in public_rerun
+    assert '"public installer initialization"' in public_rerun
+    assert 'initialization.get("provider") != "ollama-local"' in public_rerun
+    assert 'initialization.get("model") != model' in public_rerun
     assert "mutable_state_rerun" in text
     assert "mutable profile state rerun changed an active command" in text
     assert "preserve and record mutable profile state" in text
