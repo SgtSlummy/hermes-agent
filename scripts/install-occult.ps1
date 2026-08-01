@@ -128,11 +128,11 @@ import stat
 import sys
 
 status = os.lstat(sys.argv[1])
-reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
 safe = (
     stat.S_ISREG(status.st_mode)
     and status.st_nlink == 1
-    and not (getattr(status, "st_file_attributes", 0) & reparse)
+    and not (getattr(status, 'st_file_attributes', 0) & reparse)
 )
 raise SystemExit(0 if safe else 1)
 '@
@@ -159,10 +159,10 @@ import stat
 import sys
 
 status = os.lstat(sys.argv[1])
-reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+reparse = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)
 safe = (
     stat.S_ISDIR(status.st_mode)
-    and not (getattr(status, "st_file_attributes", 0) & reparse)
+    and not (getattr(status, 'st_file_attributes', 0) & reparse)
 )
 raise SystemExit(0 if safe else 1)
 '@

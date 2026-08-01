@@ -18,7 +18,7 @@
     "zero_cost_major_arcana_invocation": "passed"
   },
   "contains_secrets": false,
-  "generated_at": "2026-08-01T08:13:11.505316Z",
+  "generated_at": "2026-08-01T08:24:03.606588Z",
   "overall_status": "candidate_passed",
   "platform": {
     "architecture": "x86_64",
@@ -61,7 +61,7 @@
     },
     "installer_powershell": {
       "name": "install-occult.ps1",
-      "sha256": "e3621ee0ffd5d7afcf560ad68099eec7c1fb4b5edc4927509ad14ceb3e40df49"
+      "sha256": "c714069cadc0f9ca2ba761532cf800f4510d91733375ad6427bcd3414b0b4028"
     },
     "sigstore_requirements_lock": {
       "name": "occult-sigstore-requirements.lock",

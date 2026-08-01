@@ -628,31 +628,33 @@ def test_windows_installer_verifies_before_writing_application_files():
 
 
 @pytest.mark.skipif(os.name != "nt", reason="requires Windows PowerShell")
-def test_windows_path_state_probe_survives_powershell_native_argument_parsing(
+def test_windows_path_probes_survive_powershell_native_argument_parsing(
     tmp_path: Path,
 ):
     text = _text(POWERSHELL)
-    match = re.search(
-        r"function Get-PathNodeState\s*\{.*?\$probe = @'\r?\n"
-        r"(?P<probe>.*?)\r?\n'@",
-        text,
-        flags=re.DOTALL,
-    )
-    assert match is not None
     powershell = shutil.which("powershell.exe") or shutil.which("powershell")
     if powershell is None:
         pytest.skip("Windows PowerShell is unavailable")
 
-    encoded_probe = base64.b64encode(match.group("probe").encode("utf-8")).decode(
-        "ascii"
-    )
-    command = (
-        "$probe=[Text.Encoding]::UTF8.GetString("
-        f"[Convert]::FromBase64String('{encoded_probe}')); "
-        "& $env:PROBE_PYTHON -c $probe $env:PROBE_TARGET"
-    )
-
-    def probe(target: Path) -> subprocess.CompletedProcess[str]:
+    def probe(
+        function_name: str,
+        target: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        match = re.search(
+            rf"function {re.escape(function_name)}\s*\{{.*?\$probe = @'\r?\n"
+            r"(?P<probe>.*?)\r?\n'@",
+            text,
+            flags=re.DOTALL,
+        )
+        assert match is not None
+        encoded_probe = base64.b64encode(
+            match.group("probe").encode("utf-8")
+        ).decode("ascii")
+        command = (
+            "$probe=[Text.Encoding]::UTF8.GetString("
+            f"[Convert]::FromBase64String('{encoded_probe}')); "
+            "& $env:PROBE_PYTHON -c $probe $env:PROBE_TARGET"
+        )
         env = dict(os.environ)
         env.update({
             "PROBE_PYTHON": sys.executable,
@@ -675,14 +677,26 @@ def test_windows_path_state_probe_survives_powershell_native_argument_parsing(
         )
 
     target = tmp_path / "managed command.exe"
-    absent = probe(target)
+    absent = probe("Get-PathNodeState", target)
     assert absent.returncode == 0, absent.stderr
     assert absent.stdout.strip() == "absent"
 
     target.write_bytes(b"independent command")
-    present = probe(target)
+    present = probe("Get-PathNodeState", target)
     assert present.returncode == 0, present.stderr
     assert present.stdout.strip() == "present"
+
+    regular_file = probe("Test-IndependentRegularFile", target)
+    assert regular_file.returncode == 0, regular_file.stderr
+    wrong_file_type = probe("Test-IndependentDirectory", target)
+    assert wrong_file_type.returncode == 1, wrong_file_type.stderr
+
+    directory = tmp_path / "managed environment"
+    directory.mkdir()
+    independent_directory = probe("Test-IndependentDirectory", directory)
+    assert independent_directory.returncode == 0, independent_directory.stderr
+    wrong_directory_type = probe("Test-IndependentRegularFile", directory)
+    assert wrong_directory_type.returncode == 1, wrong_directory_type.stderr
 
 
 def test_unix_installer_verifies_before_writing_application_files():
