@@ -111,23 +111,26 @@ def _file_map(site_root: Path) -> dict[str, str]:
     root_mode = site_root.stat().st_mode & 0o777
     result: dict[str, str] = {".": f"directory:{root_mode:o}"}
     for path in sorted(site_root.rglob("*")):
+        relative_path = path.relative_to(site_root)
+        if "__pycache__" in relative_path.parts:
+            # Import probes can create reproducible caches after installation.
+            # Their structure, permissions, links, and content are validated
+            # independently instead of requiring reference inventory equality.
+            continue
         if path.is_symlink():
             target = os.readlink(path)
-            result[path.relative_to(site_root).as_posix()] = "symlink:" + target
+            result[relative_path.as_posix()] = "symlink:" + target
             continue
         if path.is_dir():
             mode = path.stat().st_mode & 0o777
-            result[path.relative_to(site_root).as_posix()] = f"directory:{mode:o}"
+            result[relative_path.as_posix()] = f"directory:{mode:o}"
             continue
         if not path.is_file():
             raise IntegrityError("package root contains an unsupported node")
         if path.stat().st_nlink != 1:
             raise IntegrityError("package root contains a hard-linked file")
-        relative = path.relative_to(site_root).as_posix()
+        relative = relative_path.as_posix()
         mode = path.stat().st_mode & 0o777
-        if path.suffix == ".pyc":
-            result[relative] = f"bytecode:{mode:o}"
-            continue
         if path.name == "RECORD":
             result[relative] = f"record:{mode:o}"
             continue
@@ -194,9 +197,34 @@ def _pyc_mode(flags: int) -> py_compile.PycInvalidationMode:
 def _validate_bytecode(site_root: Path, trusted_files: set[str]) -> None:
     with tempfile.TemporaryDirectory(prefix="occult-pyc-") as temporary:
         comparisons: list[dict[str, str]] = []
+        cache_files: list[Path] = []
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        for cache_root in sorted(site_root.rglob("__pycache__")):
+            status = cache_root.lstat()
+            if (
+                not stat.S_ISDIR(status.st_mode)
+                or getattr(status, "st_file_attributes", 0) & reparse_flag
+                or (os.name != "nt" and stat.S_IMODE(status.st_mode) & 0o022)
+            ):
+                raise IntegrityError("bytecode cache directory is unsafe")
+            for cache in sorted(cache_root.iterdir()):
+                cache_status = cache.lstat()
+                if (
+                    cache.suffix != ".pyc"
+                    or not stat.S_ISREG(cache_status.st_mode)
+                    or getattr(cache_status, "st_file_attributes", 0) & reparse_flag
+                    or cache_status.st_nlink != 1
+                    or (
+                        os.name != "nt"
+                        and stat.S_IMODE(cache_status.st_mode) & 0o022
+                    )
+                ):
+                    raise IntegrityError("bytecode cache contains an unsafe node")
+                cache_files.append(cache)
         for cache in sorted(site_root.rglob("*.pyc")):
             if cache.parent.name != "__pycache__":
                 raise IntegrityError("sourceless bytecode is not allowed")
+        for cache in cache_files:
             try:
                 source = Path(source_from_cache(str(cache))).resolve()
             except (NotImplementedError, ValueError) as error:

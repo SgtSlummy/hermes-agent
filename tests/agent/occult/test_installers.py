@@ -6,6 +6,7 @@ import json
 import os
 import py_compile
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -273,7 +274,7 @@ def test_environment_verifier_authenticates_package_file_modes(tmp_path: Path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX generated-file modes matter")
-@pytest.mark.parametrize("target", ["bytecode", "record"])
+@pytest.mark.parametrize("target", ["bytecode", "bytecode_directory", "record"])
 def test_environment_verifier_authenticates_generated_file_modes(
     tmp_path: Path, target: str
 ):
@@ -281,14 +282,28 @@ def test_environment_verifier_authenticates_generated_file_modes(
     reference = tmp_path / "reference"
     source, record, _ = _write_test_environment(existing)
     _write_test_environment(reference)
-    generated = (
-        next(source.parent.glob("__pycache__/*.pyc"))
-        if target == "bytecode"
-        else record
-    )
+    if target == "bytecode":
+        generated = next(source.parent.glob("__pycache__/*.pyc"))
+    elif target == "bytecode_directory":
+        generated = source.parent / "__pycache__"
+    else:
+        generated = record
     generated.chmod(0o777)
 
     assert _run_environment_verifier(existing, reference) == 1
+
+
+def test_environment_verifier_allows_reproducible_cache_inventory_difference(
+    tmp_path: Path,
+):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    _write_test_environment(existing)
+    _write_test_environment(reference)
+    for cache_root in reference.rglob("__pycache__"):
+        shutil.rmtree(cache_root)
+
+    assert _run_environment_verifier(existing, reference) == 0
 
 
 @pytest.mark.skipif(not hasattr(os, "link"), reason="hard links are unavailable")
