@@ -729,6 +729,11 @@ try {
             )
         }
         $councilVersionOutput = $null
+        if ($metadataMatches -and $SkipCouncil) {
+            $metadataMatches = -not (
+                Test-Path -LiteralPath (Join-Path $binRoot "council.exe")
+            )
+        }
         if ($metadataMatches -and -not $SkipCouncil) {
             $metadataMatches = Test-SafeLeafName `
                 $existingReceipt.council_environment
@@ -984,8 +989,15 @@ try {
         -LiteralPath $hermesStagedExecutable `
         -Destination $hermesExecutable `
         -Force
-    if (-not $SkipCouncil) {
-        $councilExecutable = Join-Path $binRoot "council.exe"
+    $councilExecutable = Join-Path $binRoot "council.exe"
+    if ($SkipCouncil) {
+        if (Test-Path -LiteralPath $councilExecutable -PathType Container) {
+            Fail "the stale managed Council command is not a file"
+        }
+        if (Test-Path -LiteralPath $councilExecutable) {
+            Remove-Item -LiteralPath $councilExecutable -Force
+        }
+    } else {
         Move-Item `
             -LiteralPath $councilStagedExecutable `
             -Destination $councilExecutable `

@@ -125,33 +125,38 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert all(value["required"] == "true" for value in inputs.values())
     assert all(value["type"] == "string" for value in inputs.values())
     assert payload["permissions"] == {"contents": "read"}
-    assert set(payload["jobs"]) == {"promote-latest"}
-    job = payload["jobs"]["promote-latest"]
-    assert job["runs-on"] == "ubuntu-latest"
-    assert job["environment"] == "occult-production"
-    assert job["permissions"] == {"contents": "write"}
-    assert "github.ref == 'refs/heads/main'" in job["if"]
+    assert set(payload["jobs"]) == {
+        "verify-release",
+        "verify-posix",
+        "promote-latest",
+    }
+    jobs = payload["jobs"]
+    for job in jobs.values():
+        assert "github.ref == 'refs/heads/main'" in job["if"]
+        for step in job["steps"]:
+            action = step.get("uses")
+            if action and not action.startswith("./.github/actions/"):
+                assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", action)
 
-    steps = job["steps"]
-    for step in steps:
-        action = step.get("uses")
-        if action and not action.startswith("./.github/actions/"):
-            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", action)
-
-    named_steps = {step["name"]: step for step in steps if "name" in step}
-    critical_order = [
+    release = jobs["verify-release"]
+    assert release["runs-on"] == "ubuntu-latest"
+    assert "environment" not in release
+    assert release["permissions"] == {"contents": "read"}
+    release_steps = release["steps"]
+    release_named = {
+        step["name"]: step for step in release_steps if "name" in step
+    }
+    release_order = [
         "Download the already-published release bytes",
         "Verify Sigstore identities and signed checksum manifests offline",
         "Verify the signed release bundle contents",
-        "Exercise signed POSIX installer reuse and repair",
-        "Promote Hermes after the verified Council release is latest",
     ]
-    actual_order = [step.get("name") for step in steps]
-    assert [actual_order.index(name) for name in critical_order] == sorted(
-        actual_order.index(name) for name in critical_order
+    actual_release_order = [step.get("name") for step in release_steps]
+    assert [actual_release_order.index(name) for name in release_order] == sorted(
+        actual_release_order.index(name) for name in release_order
     )
 
-    download = named_steps[critical_order[0]]
+    download = release_named[release_order[0]]
     assert download["env"] == {
         "GH_TOKEN": "${{ github.token }}",
         "VERSION_INPUT": "${{ inputs.version }}",
@@ -200,19 +205,77 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert "with_entries(.value = .value.name)" in download_run
     assert ".assets[] | [.name, .digest]" in download_run
 
-    sigstore_run = named_steps[critical_order[1]]["run"]
+    sigstore_run = release_named[release_order[1]]["run"]
     assert sigstore_run.count("verify_identity \\") == 4
     assert "--offline" in sigstore_run
     assert "OCCULT-INSTALL-SHA256SUMS.txt" in sigstore_run
     assert "RELEASE-SHA256SUMS.txt" in sigstore_run
 
-    bundle_run = named_steps[critical_order[2]]["run"]
+    bundle_run = release_named[release_order[2]]["run"]
     assert bundle_run.index("tar -tzf") < bundle_run.index("tar -xzf")
     assert bundle_run.index("tar -xzf") < bundle_run.index(
         "sha256sum -c SHA256SUMS.txt"
     )
 
-    posix = named_steps[critical_order[3]]
+    posix_job = jobs["verify-posix"]
+    assert posix_job["needs"] == "verify-release"
+    assert posix_job["permissions"] == {"contents": "read"}
+    assert posix_job["timeout-minutes"] == "90"
+    assert "matrix.runner" in posix_job["runs-on"]
+    assert posix_job["strategy"]["fail-fast"] == "false"
+    assert posix_job["strategy"]["matrix"]["include"] == [
+        {
+            "runner": "ubuntu-24.04",
+            "platform": "linux",
+            "architecture": "x64",
+            "system": "Linux",
+            "machine": "x86_64",
+        },
+        {
+            "runner": "ubuntu-24.04-arm",
+            "platform": "linux",
+            "architecture": "arm64",
+            "system": "Linux",
+            "machine": "aarch64",
+        },
+        {
+            "runner": "macos-15-intel",
+            "platform": "darwin",
+            "architecture": "x64",
+            "system": "Darwin",
+            "machine": "x86_64",
+        },
+        {
+            "runner": "macos-15",
+            "platform": "darwin",
+            "architecture": "arm64",
+            "system": "Darwin",
+            "machine": "arm64",
+        },
+    ]
+    posix_named = {
+        step["name"]: step for step in posix_job["steps"] if "name" in step
+    }
+    authenticate = posix_named["Authenticate the exact POSIX installer"]
+    authenticate_run = authenticate["run"]
+    assert authenticate["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "VERSION_INPUT": "${{ inputs.version }}",
+        "RELEASE_COMMIT_INPUT": "${{ inputs.release_commit }}",
+        "EXPECTED_SYSTEM": "${{ matrix.system }}",
+        "EXPECTED_MACHINE": "${{ matrix.machine }}",
+    }
+    assert authenticate_run.index('test "$(git rev-parse HEAD)"') < (
+        authenticate_run.index('gh release download "$TAG"')
+    )
+    assert authenticate_run.index("sigstore\" verify identity") < (
+        authenticate_run.index("expected=\"$(awk")
+    )
+    assert "--offline" in authenticate_run
+
+    posix = posix_named[
+        "Exercise signed POSIX installer reuse, repair, and skip transition"
+    ]
     assert posix["env"] == {
         "HOME": "${{ runner.temp }}/tarot-posix-home",
         "XDG_BIN_HOME": "${{ runner.temp }}/tarot-posix-bin",
@@ -224,15 +287,29 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
         for match in re.finditer(r"^run_installer$", posix_run, re.MULTILINE)
     ]
     assert len(installer_calls) == 4
+    skip_calls = [
+        match.start()
+        for match in re.finditer(r"^run_skip_installer$", posix_run, re.MULTILINE)
+    ]
+    assert len(skip_calls) == 2
     tamper = posix_run.index("tampered by protected POSIX canary")
     repair_assertion = posix_run.index("repaired_hermes_environment")
     assert installer_calls[1] < tamper < installer_calls[2] < repair_assertion
     assert repair_assertion < installer_calls[3]
-    assert posix_run.count(".occult_initialized == false") == 2
+    assert installer_calls[3] < skip_calls[0] < skip_calls[1]
+    assert posix_run.count(".occult_initialized == false") == 3
     assert "first_receipt_mtime" in posix_run
     assert "repaired_receipt_mtime" in posix_run
+    assert ".council_release == null" in posix_run
+    assert 'test ! -L "$XDG_BIN_HOME/council"' in posix_run
 
-    promote_run = named_steps[critical_order[4]]["run"]
+    promote = jobs["promote-latest"]
+    assert promote["needs"] == ["verify-release", "verify-posix"]
+    assert promote["runs-on"] == "ubuntu-latest"
+    assert promote["environment"] == "occult-production"
+    assert promote["permissions"] == {"contents": "write"}
+    assert len(promote["steps"]) == 1
+    promote_run = promote["steps"][0]["run"]
     assert promote_run.index(
         "gh release view --repo SgtSlummy/agents-council"
     ) < promote_run.index('gh release edit "$TAG"')

@@ -676,6 +676,15 @@ if [ -n "$existing_metadata" ]; then
   fi
 
   user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+  if [ "$reuse_ok" -eq 1 ] && [ "$skip_council" -eq 1 ]; then
+    if [ -e "$bin_root/council" ] || [ -L "$bin_root/council" ]; then
+      reuse_ok=0
+    fi
+    if [ -L "$user_bin/council" ] &&
+      [ "$(readlink "$user_bin/council")" = "$bin_root/council" ]; then
+      reuse_ok=0
+    fi
+  fi
   if [ "$reuse_ok" -eq 1 ]; then
     [ -L "$user_bin/hermes" ] || reuse_ok=0
     if [ "$reuse_ok" -eq 1 ]; then
@@ -859,12 +868,23 @@ esac
 step "Activating the fully staged local commands"
 mv -f "$hermes_staged" "$hermes_executable" ||
   fail "Hermes command activation failed"
-if [ "$skip_council" -eq 0 ]; then
+user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
+if [ "$skip_council" -eq 1 ]; then
+  if [ -d "$bin_root/council" ] && [ ! -L "$bin_root/council" ]; then
+    fail "the stale managed Council command is not a file"
+  fi
+  rm -f -- "$bin_root/council" ||
+    fail "the stale managed Council command could not be removed"
+  if [ -L "$user_bin/council" ] &&
+    [ "$(readlink "$user_bin/council")" = "$bin_root/council" ]; then
+    rm -f -- "$user_bin/council" ||
+      fail "the stale managed Council command link could not be removed"
+  fi
+else
   mv -f "$council_staged" "$bin_root/council" ||
     fail "Council command activation failed"
 fi
 
-user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
 mkdir -p "$user_bin"
 ln -sfn "$hermes_executable" "$user_bin/hermes"
 if [ "$skip_council" -eq 0 ]; then

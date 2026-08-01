@@ -432,6 +432,10 @@ def test_windows_installer_verifies_before_writing_application_files():
         'Write-Step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert "$referencePackagedCouncil" in text
+    assert "if ($metadataMatches -and $SkipCouncil)" in text
+    assert 'Join-Path $binRoot "council.exe"' in text
+    assert "Remove-Item -LiteralPath $councilExecutable -Force" in text
+    assert "the stale managed Council command is not a file" in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -485,6 +489,10 @@ def test_unix_installer_verifies_before_writing_application_files():
         'step "Installing the verified Hermes wheel and hash-locked dependencies per-user"'
     )
     assert 'reference_packaged_council="$reference_council_root/cli/council"' in text
+    assert '[ -e "$bin_root/council" ] || [ -L "$bin_root/council" ]' in text
+    assert 'rm -f -- "$bin_root/council"' in text
+    assert 'rm -f -- "$user_bin/council"' in text
+    assert "the stale managed Council command is not a file" in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -576,6 +584,9 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "def call_packaged_council_tool" in text
     assert "def validate_packaged_council_mcp_flow" in text
     assert "first_receipt_mtime" in text
+    assert 'skip_command = [*installer_command, "-SkipCouncil"]' in text
+    assert "--skip-council left a stale Council command" in text
+    assert "--skip-council rerun changed the install receipt" in text
     assert text.count("installer_command,") >= 2
     assert "release_artifacts" in text
     assert "install_hermes_environment" in text

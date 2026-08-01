@@ -30,12 +30,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  promote-latest:
+  verify-release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: occult-production
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -212,7 +211,100 @@ jobs:
             cd "$RUNNER_TEMP/release-bundle"
             sha256sum -c SHA256SUMS.txt
           )
-      - name: Exercise signed POSIX installer reuse and repair
+
+  verify-posix:
+    name: Signed POSIX installer (${{ matrix.platform }}-${{ matrix.architecture }})
+    needs: verify-release
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            architecture: x64
+            system: Linux
+            machine: x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            architecture: arm64
+            system: Linux
+            machine: aarch64
+          - runner: macos-15-intel
+            platform: darwin
+            architecture: x64
+            system: Darwin
+            machine: x86_64
+          - runner: macos-15
+            platform: darwin
+            architecture: arm64
+            system: Darwin
+            machine: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release_commit }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Authenticate the exact POSIX installer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_INPUT: ${{ inputs.version }}
+          RELEASE_COMMIT_INPUT: ${{ inputs.release_commit }}
+          EXPECTED_SYSTEM: ${{ matrix.system }}
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: |
+          set -euo pipefail
+          VERSION="${VERSION_INPUT#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          RELEASE_COMMIT="$RELEASE_COMMIT_INPUT"
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+          test "$(uname -s)" = "$EXPECTED_SYSTEM"
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          TAG="v${VERSION}"
+          mkdir -p public-assets
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir public-assets \
+            --pattern install-occult.sh \
+            --pattern OCCULT-INSTALL-SHA256SUMS.txt \
+            --pattern OCCULT-INSTALL-SHA256SUMS.txt.sigstore.json
+          RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          test "$(jq -r '.target_commitish' <<<"$RELEASE_JSON")" = "$RELEASE_COMMIT"
+          jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$RELEASE_JSON" |
+            while IFS=$'\t' read -r name digest; do
+              if test -f "public-assets/$name"; then
+                actual="$(python -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "public-assets/$name")"
+                test "$digest" = "sha256:$actual"
+              fi
+            done
+          uv venv --no-config --python 3.11 "$RUNNER_TEMP/sigstore-verifier"
+          uv pip sync \
+            --no-config \
+            --python "$RUNNER_TEMP/sigstore-verifier/bin/python" \
+            --require-hashes \
+            scripts/occult-sigstore-requirements.lock
+          "$RUNNER_TEMP/sigstore-verifier/bin/sigstore" verify identity \
+            --bundle public-assets/OCCULT-INSTALL-SHA256SUMS.txt.sigstore.json \
+            --cert-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/occult-production-gate.yml@refs/heads/main" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            --offline \
+            public-assets/OCCULT-INSTALL-SHA256SUMS.txt
+          expected="$(awk '$2 == "install-occult.sh" {print $1}' public-assets/OCCULT-INSTALL-SHA256SUMS.txt)"
+          test -n "$expected"
+          actual="$(python -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' public-assets/install-occult.sh)"
+          test "$actual" = "$expected"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+      - name: Exercise signed POSIX installer reuse, repair, and skip transition
         shell: bash
         env:
           HOME: ${{ runner.temp }}/tarot-posix-home
@@ -230,11 +322,21 @@ jobs:
           run_installer() {
             sh "$INSTALLER" --version "$VERSION" --install-root "$INSTALL_ROOT"
           }
+          run_skip_installer() {
+            sh "$INSTALLER" --version "$VERSION" \
+              --install-root "$INSTALL_ROOT" --skip-council
+          }
+          hash_file() {
+            shasum -a 256 "$1" | awk '{print $1}'
+          }
           receipt_hash() {
-            sha256sum "$RECEIPT" | cut -d' ' -f1
+            hash_file "$RECEIPT"
           }
           receipt_mtime() {
-            stat -c '%y' "$RECEIPT"
+            python -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$RECEIPT"
+          }
+          real_path() {
+            python -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "$1"
           }
           hermes_module() {
             environment_name=$(jq -er '.hermes_environment' "$RECEIPT")
@@ -260,9 +362,9 @@ jobs:
           first_packaged_council=$(packaged_council)
           test -f "$first_hermes_module"
           test -x "$first_packaged_council"
-          first_hermes_module_hash=$(sha256sum "$first_hermes_module" | cut -d' ' -f1)
-          first_council_hash=$(sha256sum "$COUNCIL_COMMAND" | cut -d' ' -f1)
-          test "$first_council_hash" = "$(sha256sum "$first_packaged_council" | cut -d' ' -f1)"
+          first_hermes_module_hash=$(hash_file "$first_hermes_module")
+          first_council_hash=$(hash_file "$COUNCIL_COMMAND")
+          test "$first_council_hash" = "$(hash_file "$first_packaged_council")"
 
           sleep 1
           run_installer
@@ -284,26 +386,67 @@ jobs:
           test "$repaired_council_environment" != "$first_council_environment"
           repaired_hermes_module=$(hermes_module)
           repaired_packaged_council=$(packaged_council)
-          test "$(sha256sum "$repaired_hermes_module" | cut -d' ' -f1)" = "$first_hermes_module_hash"
-          test "$(sha256sum "$COUNCIL_COMMAND" | cut -d' ' -f1)" = "$first_council_hash"
-          test "$(sha256sum "$repaired_packaged_council" | cut -d' ' -f1)" = "$first_council_hash"
+          test "$(hash_file "$repaired_hermes_module")" = "$first_hermes_module_hash"
+          test "$(hash_file "$COUNCIL_COMMAND")" = "$first_council_hash"
+          test "$(hash_file "$repaired_packaged_council")" = "$first_council_hash"
 
           repaired_receipt_hash=$(receipt_hash)
           repaired_receipt_mtime=$(receipt_mtime)
-          repaired_hermes_target=$(readlink -f "$HERMES_COMMAND")
+          repaired_hermes_target=$(real_path "$HERMES_COMMAND")
           sleep 1
           run_installer
           test "$(receipt_hash)" = "$repaired_receipt_hash"
           test "$(receipt_mtime)" = "$repaired_receipt_mtime"
-          test "$(readlink -f "$HERMES_COMMAND")" = "$repaired_hermes_target"
-          test "$(sha256sum "$COUNCIL_COMMAND" | cut -d' ' -f1)" = "$first_council_hash"
+          test "$(real_path "$HERMES_COMMAND")" = "$repaired_hermes_target"
+          test "$(hash_file "$COUNCIL_COMMAND")" = "$first_council_hash"
+
+          run_skip_installer
+          test ! -e "$COUNCIL_COMMAND"
+          test ! -L "$COUNCIL_COMMAND"
+          test ! -L "$XDG_BIN_HOME/council"
+          jq -e \
+            '.council_release == null
+             and .council_archive_sha256 == null
+             and .council_environment == null
+             and .occult_initialized == false
+             and .occult_enabled == false' \
+            "$RECEIPT"
+          skip_receipt_hash=$(receipt_hash)
+          skip_receipt_mtime=$(receipt_mtime)
+          skip_hermes_target=$(real_path "$HERMES_COMMAND")
+          sleep 1
+          run_skip_installer
+          test ! -e "$COUNCIL_COMMAND"
+          test ! -L "$COUNCIL_COMMAND"
+          test ! -L "$XDG_BIN_HOME/council"
+          test "$(receipt_hash)" = "$skip_receipt_hash"
+          test "$(receipt_mtime)" = "$skip_receipt_mtime"
+          test "$(real_path "$HERMES_COMMAND")" = "$skip_hermes_target"
+
+  promote-latest:
+    needs: [verify-release, verify-posix]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: occult-production
+    permissions:
+      contents: write
+    steps:
       - name: Promote Hermes after the verified Council release is latest
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION_INPUT: ${{ inputs.version }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          COUNCIL_REF: ${{ inputs.council_ref }}
         run: |
           set -euo pipefail
+          VERSION="${VERSION_INPUT#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$COUNCIL_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          TAG="v${VERSION}"
           test "$(gh release view --repo SgtSlummy/agents-council --json tagName --jq .tagName)" = "$COUNCIL_REF"
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$RELEASE_COMMIT"
           gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --latest

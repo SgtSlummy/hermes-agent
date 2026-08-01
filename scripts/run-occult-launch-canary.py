@@ -389,6 +389,44 @@ def validate_public_installer_rerun(
                 council_version.stdout + council_version.stderr,
             ]
         )
+
+        skip_command = [*installer_command, "-SkipCouncil"]
+        skip_transition = run(
+            skip_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(skip_transition.stdout + skip_transition.stderr)
+        if council.exists():
+            raise CanaryFailure("--skip-council left a stale Council command")
+        skip_receipt = receipt.read_bytes()
+        skip_receipt_mtime = receipt.stat().st_mtime_ns
+        skip_hermes = fingerprint(hermes)
+        skip_receipt_data = json.loads(skip_receipt.decode("utf-8-sig"))
+        if any(
+            skip_receipt_data.get(field) is not None
+            for field in (
+                "council_release",
+                "council_archive_sha256",
+                "council_environment",
+            )
+        ):
+            raise CanaryFailure("--skip-council preserved Council receipt metadata")
+
+        skip_rerun = run(
+            skip_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(skip_rerun.stdout + skip_rerun.stderr)
+        if council.exists():
+            raise CanaryFailure("a --skip-council rerun restored a Council command")
+        if fingerprint(hermes) != skip_hermes:
+            raise CanaryFailure("a --skip-council rerun changed the Hermes command")
+        if receipt.read_bytes() != skip_receipt:
+            raise CanaryFailure("a --skip-council rerun changed the install receipt")
+        if receipt.stat().st_mtime_ns != skip_receipt_mtime:
+            raise CanaryFailure("a --skip-council rerun rewrote the install receipt")
         return outputs
     finally:
         with winreg.CreateKeyEx(
