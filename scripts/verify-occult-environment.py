@@ -32,6 +32,13 @@ class IntegrityError(RuntimeError):
     """The installed environment differs from the verified reference."""
 
 
+def _is_reparse(status: os.stat_result) -> bool:
+    return bool(
+        getattr(status, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
+
+
 def _canonical_name(value: str) -> str:
     return re.sub(r"[-_.]+", "-", value).lower()
 
@@ -108,7 +115,10 @@ def _normalized_uv_cache(path: Path) -> bytes:
 
 
 def _file_map(site_root: Path) -> dict[str, str]:
-    root_mode = site_root.stat().st_mode & 0o777
+    root_status = site_root.lstat()
+    if not stat.S_ISDIR(root_status.st_mode) or _is_reparse(root_status):
+        raise IntegrityError("package root must be a real directory")
+    root_mode = root_status.st_mode & 0o777
     result: dict[str, str] = {".": f"directory:{root_mode:o}"}
     for path in sorted(site_root.rglob("*")):
         relative_path = path.relative_to(site_root)
@@ -117,20 +127,23 @@ def _file_map(site_root: Path) -> dict[str, str]:
             # Their structure, permissions, links, and content are validated
             # independently instead of requiring reference inventory equality.
             continue
-        if path.is_symlink():
+        status = path.lstat()
+        if _is_reparse(status):
+            raise IntegrityError("package root contains a reparse point")
+        if stat.S_ISLNK(status.st_mode):
             target = os.readlink(path)
             result[relative_path.as_posix()] = "symlink:" + target
             continue
-        if path.is_dir():
-            mode = path.stat().st_mode & 0o777
+        if stat.S_ISDIR(status.st_mode):
+            mode = status.st_mode & 0o777
             result[relative_path.as_posix()] = f"directory:{mode:o}"
             continue
-        if not path.is_file():
+        if not stat.S_ISREG(status.st_mode):
             raise IntegrityError("package root contains an unsupported node")
-        if path.stat().st_nlink != 1:
+        if status.st_nlink != 1:
             raise IntegrityError("package root contains a hard-linked file")
         relative = relative_path.as_posix()
-        mode = path.stat().st_mode & 0o777
+        mode = status.st_mode & 0o777
         if path.name == "RECORD":
             result[relative] = f"record:{mode:o}"
             continue
@@ -198,12 +211,11 @@ def _validate_bytecode(site_root: Path, trusted_files: set[str]) -> None:
     with tempfile.TemporaryDirectory(prefix="occult-pyc-") as temporary:
         comparisons: list[dict[str, str]] = []
         cache_files: list[Path] = []
-        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
         for cache_root in sorted(site_root.rglob("__pycache__")):
             status = cache_root.lstat()
             if (
                 not stat.S_ISDIR(status.st_mode)
-                or getattr(status, "st_file_attributes", 0) & reparse_flag
+                or _is_reparse(status)
                 or (os.name != "nt" and stat.S_IMODE(status.st_mode) & 0o022)
             ):
                 raise IntegrityError("bytecode cache directory is unsafe")
@@ -212,7 +224,7 @@ def _validate_bytecode(site_root: Path, trusted_files: set[str]) -> None:
                 if (
                     cache.suffix != ".pyc"
                     or not stat.S_ISREG(cache_status.st_mode)
-                    or getattr(cache_status, "st_file_attributes", 0) & reparse_flag
+                    or _is_reparse(cache_status)
                     or cache_status.st_nlink != 1
                     or (
                         os.name != "nt"
@@ -510,14 +522,20 @@ def _normalized_environment_file(path: Path, environment: Path) -> bytes:
 
 
 def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, str]:
-    root_mode = environment.stat().st_mode & 0o777
+    root_status = environment.lstat()
+    if not stat.S_ISDIR(root_status.st_mode) or _is_reparse(root_status):
+        raise IntegrityError("environment root must be a real directory")
+    root_mode = root_status.st_mode & 0o777
     result: dict[str, str] = {".": f"directory:{root_mode:o}"}
     for path in sorted(environment.rglob("*")):
         if _inside(path, site_root):
             continue
         relative = path.relative_to(environment).as_posix()
-        mode = path.lstat().st_mode & 0o777
-        if path.is_symlink():
+        status = path.lstat()
+        if _is_reparse(status):
+            raise IntegrityError("environment contains a reparse point")
+        mode = status.st_mode & 0o777
+        if stat.S_ISLNK(status.st_mode):
             # Bind the environment to the same host runtime path as the fresh
             # reference. Integrity of that shared host prerequisite is outside
             # what either virtual environment can independently establish.
@@ -526,11 +544,11 @@ def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, st
                 errors="surrogateescape"
             )
             result[relative] = f"symlink:{mode:o}:{normalized}"
-        elif path.is_dir():
+        elif stat.S_ISDIR(status.st_mode):
             result[relative] = f"directory:{mode:o}"
             continue
-        elif path.is_file():
-            if path.stat().st_nlink != 1:
+        elif stat.S_ISREG(status.st_mode):
+            if status.st_nlink != 1:
                 raise IntegrityError("environment contains a hard-linked file")
             normalized = _normalized_environment_file(path, environment)
             result[relative] = (
@@ -551,12 +569,11 @@ def verify_environment(existing: Path, reference: Path) -> None:
         reference_status = reference.lstat()
     except OSError as error:
         raise IntegrityError("environment paths are unreadable") from error
-    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
     if (
         not stat.S_ISDIR(existing_status.st_mode)
         or not stat.S_ISDIR(reference_status.st_mode)
-        or getattr(existing_status, "st_file_attributes", 0) & reparse_flag
-        or getattr(reference_status, "st_file_attributes", 0) & reparse_flag
+        or _is_reparse(existing_status)
+        or _is_reparse(reference_status)
     ):
         raise IntegrityError("environment roots must be real directories")
     existing = existing.resolve(strict=True)

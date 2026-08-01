@@ -612,6 +612,7 @@ if [ -n "$existing_metadata" ]; then
   existing_venv_hermes="$existing_hermes_root/bin/hermes"
   hermes_executable="$bin_root/hermes"
   reuse_ok=1
+  receipt_state_changed=0
   [ -x "$existing_venv_python" ] || reuse_ok=0
   [ -x "$existing_venv_hermes" ] || reuse_ok=0
   [ -x "$hermes_executable" ] || reuse_ok=0
@@ -755,8 +756,10 @@ if [ -n "$existing_metadata" ]; then
       true:true|true:false|false:false) ;;
       *) fail "the preserved Occult initialization state was invalid" ;;
     esac
-    [ "$existing_receipt_initialized" = "$initialized" ] || reuse_ok=0
-    [ "$existing_receipt_enabled" = "$enabled" ] || reuse_ok=0
+    if [ "$existing_receipt_initialized" != "$initialized" ] ||
+      [ "$existing_receipt_enabled" != "$enabled" ]; then
+      receipt_state_changed=1
+    fi
   fi
 
   if [ "$reuse_ok" -eq 1 ]; then
@@ -779,7 +782,7 @@ if [ -n "$existing_metadata" ]; then
       esac
     fi
 
-    if [ "$initialize_local" -eq 1 ]; then
+    if [ "$initialize_local" -eq 1 ] || [ "$receipt_state_changed" -eq 1 ]; then
       "$existing_venv_python" -c '
 import json, os, sys
 path, initialized, enabled = sys.argv[1:]
@@ -803,6 +806,8 @@ os.replace(temporary, path)
     fi
     if [ "$initialize_local" -eq 1 ]; then
       step "Local initialization completed explicitly with $model"
+    elif [ "$receipt_state_changed" -eq 1 ]; then
+      step "Mutable Occult state was refreshed in the preserved install receipt"
     elif [ "$initialized" = true ]; then
       step "Existing Occult initialization was preserved and remains $([ "$enabled" = true ] && printf enabled || printf disabled)"
     else

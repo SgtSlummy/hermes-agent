@@ -147,9 +147,11 @@ def validate_public_installer_rerun(
     installer_powershell: Path,
     root: Path,
     env: dict[str, str],
+    model: str,
+    ollama_base_url: str,
     timeout: int,
 ) -> list[str]:
-    """Exercise exact rerun and authenticated tamper repair on public bytes."""
+    """Exercise exact rerun, mutable state, and tamper repair on public bytes."""
     import winreg
 
     powershell_name = shutil.which("powershell.exe") or shutil.which("powershell")
@@ -276,6 +278,54 @@ def validate_public_installer_rerun(
             raise CanaryFailure("the public installer receipt omitted Council state")
         if not isinstance(hermes_environment, str) or not hermes_environment:
             raise CanaryFailure("the public installer receipt omitted Hermes state")
+
+        run(
+            [
+                str(hermes),
+                "tarot",
+                "init",
+                "--base-url",
+                ollama_base_url,
+                "--model",
+                model,
+            ],
+            env=installer_env,
+            timeout=timeout,
+        )
+        initialized_status = load_json_output(
+            run(
+                [str(hermes), "tarot", "status"],
+                env=installer_env,
+                timeout=timeout,
+            ).stdout,
+            "public installer initialized status",
+        )
+        if (
+            initialized_status.get("initialized") is not True
+            or initialized_status.get("enabled") is not True
+        ):
+            raise CanaryFailure("the public installer profile state did not change")
+        mutable_state_rerun = run(
+            installer_command,
+            env=installer_env,
+            timeout=timeout,
+        )
+        outputs.append(mutable_state_rerun.stdout + mutable_state_rerun.stderr)
+        if {
+            "hermes": fingerprint(hermes),
+            "council": fingerprint(council),
+        } != first_commands:
+            raise CanaryFailure("a mutable profile state rerun changed an active command")
+        refreshed_receipt = json.loads(receipt.read_text(encoding="utf-8-sig"))
+        if (
+            refreshed_receipt.get("hermes_environment") != hermes_environment
+            or refreshed_receipt.get("council_environment") != council_environment
+            or refreshed_receipt.get("occult_initialized") is not True
+            or refreshed_receipt.get("occult_enabled") is not True
+        ):
+            raise CanaryFailure(
+                "the public installer did not preserve and record mutable profile state"
+            )
         packaged_council = assert_file(
             install_root
             / "council-environments"
@@ -1345,6 +1395,8 @@ def main() -> int:
                     installer_powershell=installer_powershell,
                     root=root,
                     env=env,
+                    model=model,
+                    ollama_base_url=args.ollama_base_url,
                     timeout=args.timeout_seconds,
                 )
             )

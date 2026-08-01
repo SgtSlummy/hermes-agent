@@ -354,9 +354,12 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert "occult-release-manifest.json" in promote_run
     assert ".release_version == $version" in promote_run
     assert ".commit_sha == $commit" in promote_run
-    assert promote_run.count(
-        "gh release view --repo SgtSlummy/agents-council"
-    ) == 2
+    assert promote_run.count('gh release view "$COUNCIL_REF"') == 2
+    assert promote_run.count("--repo SgtSlummy/agents-council") == 3
+    assert "gh release view --repo SgtSlummy/agents-council" not in promote_run
+    assert promote_run.count("--json tagName,isDraft,isPrerelease") == 2
+    assert promote_run.count(".isDraft") >= 2
+    assert promote_run.count(".isPrerelease") >= 2
     for binding in (
         '.schema_version == "1.0.0"',
         '.scope == "public Windows x64 launch canary"',
@@ -375,6 +378,6 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
         'gh release edit "$TAG"'
     )
     assert promote_run.index(
-        "gh release view --repo SgtSlummy/agents-council"
+        'gh release view "$COUNCIL_REF"'
     ) < promote_run.index('gh release edit "$TAG"')
     assert "--latest" in promote_run

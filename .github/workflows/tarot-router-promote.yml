@@ -526,7 +526,14 @@ jobs:
           test "$(
             gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha
           )" = "$RELEASE_COMMIT"
-          test "$(gh release view --repo SgtSlummy/agents-council --json tagName --jq .tagName)" = "$COUNCIL_REF"
+          COUNCIL_RELEASE_STATE="$(
+            gh release view "$COUNCIL_REF" \
+              --repo SgtSlummy/agents-council \
+              --json tagName,isDraft,isPrerelease
+          )"
+          test "$(jq -r '.tagName' <<<"$COUNCIL_RELEASE_STATE")" = "$COUNCIL_REF"
+          test "$(jq -r '.isDraft' <<<"$COUNCIL_RELEASE_STATE")" = false
+          test "$(jq -r '.isPrerelease' <<<"$COUNCIL_RELEASE_STATE")" = false
 
           WORK="$(mktemp -d)"
           trap 'rm -rf -- "$WORK"' EXIT
@@ -545,6 +552,9 @@ jobs:
           test "$(jq -r '.draft' <<<"$RELEASE_JSON")" = false
           test "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" = false
           test "$(jq -r '.target_commitish' <<<"$RELEASE_JSON")" = "$RELEASE_COMMIT"
+          test "$(jq -r '.tag_name' <<<"$COUNCIL_JSON")" = "$COUNCIL_REF"
+          test "$(jq -r '.draft' <<<"$COUNCIL_JSON")" = false
+          test "$(jq -r '.prerelease' <<<"$COUNCIL_JSON")" = false
           RELEASE_ASSET_SNAPSHOT="$(
             jq -c '[.assets[] | {id,name,digest,size,updated_at}] | sort_by(.name)' \
               <<<"$RELEASE_JSON"
@@ -730,9 +740,14 @@ jobs:
           test "$(
             gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha
           )" = "$RELEASE_COMMIT"
-          test "$(
-            gh release view --repo SgtSlummy/agents-council --json tagName --jq .tagName
-          )" = "$COUNCIL_REF"
+          CURRENT_COUNCIL_RELEASE_STATE="$(
+            gh release view "$COUNCIL_REF" \
+              --repo SgtSlummy/agents-council \
+              --json tagName,isDraft,isPrerelease
+          )"
+          test "$(jq -r '.tagName' <<<"$CURRENT_COUNCIL_RELEASE_STATE")" = "$COUNCIL_REF"
+          test "$(jq -r '.isDraft' <<<"$CURRENT_COUNCIL_RELEASE_STATE")" = false
+          test "$(jq -r '.isPrerelease' <<<"$CURRENT_COUNCIL_RELEASE_STATE")" = false
           gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --latest

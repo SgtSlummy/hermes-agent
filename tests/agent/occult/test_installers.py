@@ -339,6 +339,49 @@ def test_environment_verifier_rejects_linked_environment_root(tmp_path: Path):
     assert _run_environment_verifier(existing, reference) == 1
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction semantics required")
+@pytest.mark.parametrize("location", ["package", "runtime"])
+def test_environment_verifier_rejects_internal_windows_junctions(
+    tmp_path: Path, location: str
+):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    source, _, _ = _write_test_environment(existing)
+    _write_test_environment(reference)
+    if location == "package":
+        linked_directory = source.parent
+    else:
+        linked_directory = existing / "runtime-data"
+        reference_directory = reference / "runtime-data"
+        linked_directory.mkdir()
+        reference_directory.mkdir()
+        (linked_directory / "state.bin").write_bytes(b"authenticated runtime state")
+        (reference_directory / "state.bin").write_bytes(
+            b"authenticated runtime state"
+        )
+    external = tmp_path / f"external-{location}"
+    shutil.copytree(linked_directory, external)
+    shutil.rmtree(linked_directory)
+    created = subprocess.run(
+        [
+            "cmd.exe",
+            "/d",
+            "/c",
+            "mklink",
+            "/J",
+            str(linked_directory),
+            str(external),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if created.returncode != 0:
+        pytest.skip("Windows directory junctions are unavailable")
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
 def test_direct_url_normalization_preserves_authenticated_origin(tmp_path: Path):
     verifier = _load_environment_verifier()
     first = tmp_path / "first.json"
@@ -573,6 +616,13 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "the managed Council command path is a directory" in text
     assert "the managed Hermes command path is not an independent file" in text
     assert "the managed Council command path is not an independent file" in text
+    assert "$receiptStateChanged = (" in text
+    assert "$InitializeLocal -or $receiptStateChanged" in text
+    assert "Mutable Occult state was refreshed" in text
+    assert (
+        "[bool]$existingReceipt.occult_initialized -eq [bool]$state.initialized"
+        not in text
+    )
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -647,6 +697,13 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert '"$(readlink "$hermes_executable")" = "$existing_venv_hermes"' in text
     assert "the user Hermes command link could not be verified" in text
     assert "the user Council command link could not be verified" in text
+    assert 'receipt_state_changed=1' in text
+    assert (
+        'if [ "$initialize_local" -eq 1 ] || [ "$receipt_state_changed" -eq 1 ]'
+        in text
+    )
+    assert "Mutable Occult state was refreshed" in text
+    assert '[ "$existing_receipt_initialized" = "$initialized" ] || reuse_ok=0' not in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -735,6 +792,10 @@ def test_launch_canary_is_redacted_and_covers_the_operator_flow():
     assert "--environment-verifier" in text
     assert "--public-installer-rerun" in text
     assert "def validate_public_installer_rerun" in text
+    assert '"tarot",\n                "init"' in text
+    assert "mutable_state_rerun" in text
+    assert "mutable profile state rerun changed an active command" in text
+    assert "preserve and record mutable profile state" in text
     assert "def call_packaged_council_tool" in text
     assert "def validate_packaged_council_mcp_flow" in text
     assert "first_receipt_mtime" in text

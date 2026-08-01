@@ -617,6 +617,7 @@ try {
     $hermesEnvironmentsRoot = Join-Path $resolvedInstallRoot "hermes-environments"
     $receiptPath = Join-Path $resolvedInstallRoot "occult-install-receipt.json"
     $existingReceipt = $null
+    $receiptStateChanged = $false
     if (Test-Path -LiteralPath $receiptPath -PathType Leaf) {
         try {
             $existingReceipt = Get-Content `
@@ -691,6 +692,8 @@ try {
             $expectedCouncilEnvironmentMatches -and
             [string]$existingReceipt.contract_version -eq [string]$manifest.council.contract_version -and
             [string]$existingReceipt.council_state_schema -eq [string]$manifest.council.state_schema -and
+            $existingReceipt.occult_initialized -is [System.Boolean] -and
+            $existingReceipt.occult_enabled -is [System.Boolean] -and
             (Test-SafeLeafName $existingReceipt.hermes_environment)
         )
         $existingHermesVenv = $null
@@ -917,11 +920,9 @@ try {
             $state = Get-OccultState `
                 -Python $existingVenvPython `
                 -TemporaryRoot $temporaryRoot
-            $metadataMatches = (
-                $existingReceipt.occult_initialized -is [System.Boolean] -and
-                $existingReceipt.occult_enabled -is [System.Boolean] -and
-                [bool]$existingReceipt.occult_initialized -eq [bool]$state.initialized -and
-                [bool]$existingReceipt.occult_enabled -eq [bool]$state.enabled
+            $receiptStateChanged = (
+                [bool]$existingReceipt.occult_initialized -ne [bool]$state.initialized -or
+                [bool]$existingReceipt.occult_enabled -ne [bool]$state.enabled
             )
         }
         if ($metadataMatches) {
@@ -944,7 +945,7 @@ try {
                     -Python $existingVenvPython `
                     -TemporaryRoot $temporaryRoot
             }
-            if ($InitializeLocal) {
+            if ($InitializeLocal -or $receiptStateChanged) {
                 $existingReceipt.occult_initialized = [bool]$state.initialized
                 $existingReceipt.occult_enabled = [bool]$state.enabled
                 $receiptTemporary = "$receiptPath.tmp"
@@ -964,6 +965,8 @@ try {
             }
             if ($InitializeLocal) {
                 Write-Step "Local initialization completed explicitly with $Model"
+            } elseif ($receiptStateChanged) {
+                Write-Step "Mutable Occult state was refreshed in the preserved install receipt"
             } elseif ($state.initialized) {
                 $stateLabel = if ($state.enabled) { "enabled" } else { "disabled" }
                 Write-Step "Existing Occult initialization was preserved and remains $stateLabel"
