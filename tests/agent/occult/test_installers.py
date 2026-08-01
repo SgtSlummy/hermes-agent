@@ -271,6 +271,17 @@ def test_environment_verifier_rejects_tampered_reuse(tmp_path: Path, tamper: str
     assert _run_environment_verifier(existing, reference) == 1
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows does not expose os.mkfifo")
+def test_environment_verifier_rejects_special_nodes(tmp_path: Path):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    source, _, _ = _write_test_environment(existing)
+    _write_test_environment(reference)
+    os.mkfifo(source.parent / "evil.pth")
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
 def test_windows_installer_verifies_before_writing_application_files():
     text = _text(POWERSHELL)
 

@@ -17,6 +17,7 @@ import os
 import py_compile
 import re
 import struct
+import subprocess
 import sys
 import tempfile
 from email.parser import BytesParser
@@ -101,8 +102,10 @@ def _file_map(site_root: Path) -> dict[str, str]:
             target = os.readlink(path)
             result[path.relative_to(site_root).as_posix()] = "symlink:" + target
             continue
-        if not path.is_file():
+        if path.is_dir():
             continue
+        if not path.is_file():
+            raise IntegrityError("package root contains an unsupported node")
         relative = path.relative_to(site_root).as_posix()
         if path.suffix == ".pyc" or path.name == "RECORD":
             continue
@@ -168,6 +171,7 @@ def _pyc_mode(flags: int) -> py_compile.PycInvalidationMode:
 
 def _validate_bytecode(site_root: Path, trusted_files: set[str]) -> None:
     with tempfile.TemporaryDirectory(prefix="occult-pyc-") as temporary:
+        comparisons: list[dict[str, str]] = []
         for cache in sorted(site_root.rglob("*.pyc")):
             if cache.parent.name != "__pycache__":
                 raise IntegrityError("sourceless bytecode is not allowed")
@@ -204,11 +208,68 @@ def _validate_bytecode(site_root: Path, trusted_files: set[str]) -> None:
             except (OSError, py_compile.PyCompileError) as error:
                 raise IntegrityError("bytecode could not be reproduced") from error
             expected_data = expected.read_bytes()
-            if data != expected_data:
+            if data[:16] != expected_data[:16]:
                 relative_cache = cache.relative_to(site_root).as_posix()
                 raise IntegrityError(
                     "bytecode differs from authenticated source: " + relative_cache
                 )
+            if data[16:] != expected_data[16:]:
+                comparisons.append(
+                    {
+                        "actual": str(cache),
+                        "expected": str(expected),
+                    }
+                )
+        if comparisons:
+            manifest = Path(temporary) / "bytecode-comparisons.json"
+            manifest.write_text(
+                json.dumps(comparisons, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            try:
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-I",
+                        str(Path(__file__).resolve()),
+                        "--compare-bytecode-manifest",
+                        str(manifest),
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=30,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise IntegrityError("bytecode comparison failed safely") from error
+            if completed.returncode != 0:
+                raise IntegrityError("bytecode differs from authenticated source")
+
+
+def _compare_bytecode_manifest(manifest: Path) -> int:
+    """Compare marshal payloads in a disposable isolated child process."""
+    import marshal
+
+    try:
+        comparisons = json.loads(manifest.read_text(encoding="utf-8"))
+        if not isinstance(comparisons, list):
+            return 1
+        for comparison in comparisons:
+            if not isinstance(comparison, dict):
+                return 1
+            actual_path = Path(comparison["actual"])
+            expected_path = Path(comparison["expected"])
+            actual = actual_path.read_bytes()
+            expected = expected_path.read_bytes()
+            size_limit = max(len(expected) * 2, len(expected) + 1_000_000)
+            if len(actual) > size_limit or len(actual) < 16 or len(expected) < 16:
+                return 1
+            if marshal.loads(actual[16:]) != marshal.loads(expected[16:]):
+                return 1
+    except (EOFError, KeyError, OSError, TypeError, ValueError):
+        return 1
+    return 0
 
 
 def _launcher(environment: Path) -> Path:
@@ -266,16 +327,23 @@ def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, st
         relative = path.relative_to(environment).as_posix()
         mode = path.lstat().st_mode & 0o777
         if path.is_symlink():
+            # Bind the environment to the same host runtime path as the fresh
+            # reference. Integrity of that shared host prerequisite is outside
+            # what either virtual environment can independently establish.
             target = os.readlink(path).encode()
             normalized = _replace_environment_paths(target, environment).decode(
                 errors="surrogateescape"
             )
             result[relative] = f"symlink:{mode:o}:{normalized}"
+        elif path.is_dir():
+            continue
         elif path.is_file():
             normalized = _normalized_environment_file(path, environment)
             result[relative] = (
                 f"file:{mode:o}:" + hashlib.sha256(normalized).hexdigest()
             )
+        else:
+            raise IntegrityError("environment contains an unsupported node")
     return result
 
 
@@ -308,6 +376,8 @@ def verify_environment(existing: Path, reference: Path) -> None:
 
 
 def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "--compare-bytecode-manifest":
+        return _compare_bytecode_manifest(Path(sys.argv[2]))
     parser = argparse.ArgumentParser()
     parser.add_argument("--existing", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
