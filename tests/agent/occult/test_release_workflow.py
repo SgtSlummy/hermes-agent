@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -114,44 +115,125 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     text = PROMOTION_WORKFLOW.read_text(encoding="utf-8")
     payload = yaml.load(text, Loader=yaml.BaseLoader)
 
+    inputs = payload["on"]["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {
+        "version",
+        "release_commit",
+        "council_ref",
+        "public_canary_report_sha256",
+    }
+    assert all(value["required"] == "true" for value in inputs.values())
+    assert all(value["type"] == "string" for value in inputs.values())
+    assert payload["permissions"] == {"contents": "read"}
     assert set(payload["jobs"]) == {"promote-latest"}
     job = payload["jobs"]["promote-latest"]
+    assert job["runs-on"] == "ubuntu-latest"
     assert job["environment"] == "occult-production"
+    assert job["permissions"] == {"contents": "write"}
     assert "github.ref == 'refs/heads/main'" in job["if"]
-    for line in text.splitlines():
-        if "uses:" in line and "./.github/actions/" not in line:
-            assert "@" in line
-            assert len(line.rsplit("@", 1)[1].split()[0]) == 40
-    for expected in (
-        "public_canary_report_sha256",
-        "release_commit",
-        '[[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]',
-        'git checkout --detach "$RELEASE_COMMIT"',
-        "'.target_commitish'",
-        'overall_status == "passed"',
-        "promotion_eligible == true",
-        "installer_idempotent_rerun",
-        "installer_tamper_repair",
-        "contains_secrets == false",
-        "EXPECTED_CHECK_KEYS",
-        ".checks | keys",
-        "EXPECTED_ARTIFACT_NAMES",
-        "with_entries(.value = .value.name)",
-        "EXPECTED_COUNCIL_COMMIT",
-        "RESOLVED_COUNCIL_COMMIT",
-        'agents-council/commits/$COUNCIL_REF',
-        "gh release download",
-        ".assets[] | [.name, .digest]",
-        "OCCULT-INSTALL-SHA256SUMS.txt",
-        "RELEASE-SHA256SUMS.txt",
-        "sigstore-verifier",
-        "--offline",
-        "sha256sum -c SHA256SUMS.txt",
-        "gh release edit",
-        "--latest",
-    ):
-        assert expected in text
-    council_latest_check = (
-        'gh release view --repo SgtSlummy/agents-council --json tagName'
+
+    steps = job["steps"]
+    for step in steps:
+        action = step.get("uses")
+        if action and not action.startswith("./.github/actions/"):
+            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", action)
+
+    named_steps = {step["name"]: step for step in steps if "name" in step}
+    critical_order = [
+        "Download the already-published release bytes",
+        "Verify Sigstore identities and signed checksum manifests offline",
+        "Verify the signed release bundle contents",
+        "Exercise signed POSIX installer reuse and repair",
+        "Promote Hermes after the verified Council release is latest",
+    ]
+    actual_order = [step.get("name") for step in steps]
+    assert [actual_order.index(name) for name in critical_order] == sorted(
+        actual_order.index(name) for name in critical_order
     )
-    assert text.index(council_latest_check) < text.index('gh release edit "$TAG"')
+
+    download = named_steps[critical_order[0]]
+    assert download["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "VERSION_INPUT": "${{ inputs.version }}",
+        "RELEASE_COMMIT_INPUT": "${{ inputs.release_commit }}",
+        "COUNCIL_REF": "${{ inputs.council_ref }}",
+        "REPORT_SHA256": "${{ inputs.public_canary_report_sha256 }}",
+    }
+    download_run = download["run"]
+    assert re.search(
+        r'^\[\[ "\$RELEASE_COMMIT" =~ \^\[0-9a-f\]\{40\}\$ \]\]$',
+        download_run,
+        re.MULTILINE,
+    )
+    assert download_run.index('git checkout --detach "$RELEASE_COMMIT"') < download_run.index(
+        'gh release download "$TAG"'
+    )
+    assert download_run.index("EXPECTED_COUNCIL_COMMIT=") < download_run.index(
+        'gh release download "$TAG"'
+    )
+    assert re.search(r"and \.overall_status == \"passed\"", download_run)
+    assert re.search(r"and \.promotion_eligible == true", download_run)
+    assert re.search(r"and \.contains_secrets == false", download_run)
+    check_keys_match = re.search(
+        r"EXPECTED_CHECK_KEYS='([^']+)'", download_run
+    )
+    assert check_keys_match is not None
+    assert set(json.loads(check_keys_match.group(1))) == {
+        "audit_redaction",
+        "backup_restore",
+        "candidate_artifact_installation",
+        "council_pause_restart_resume",
+        "council_source_provenance",
+        "default_model_binding",
+        "disabled_before_initialization",
+        "explicit_local_initialization",
+        "gateway_restart",
+        "installer_idempotent_rerun",
+        "installer_interface",
+        "installer_tamper_repair",
+        "packaged_council_mcp_flow",
+        "rollback_previous_checksummed_releases",
+        "temporary_secret_cleanup",
+        "versions",
+        "zero_cost_major_arcana_invocation",
+    }
+    assert "with_entries(.value = .value.name)" in download_run
+    assert ".assets[] | [.name, .digest]" in download_run
+
+    sigstore_run = named_steps[critical_order[1]]["run"]
+    assert sigstore_run.count("verify_identity \\") == 4
+    assert "--offline" in sigstore_run
+    assert "OCCULT-INSTALL-SHA256SUMS.txt" in sigstore_run
+    assert "RELEASE-SHA256SUMS.txt" in sigstore_run
+
+    bundle_run = named_steps[critical_order[2]]["run"]
+    assert bundle_run.index("tar -tzf") < bundle_run.index("tar -xzf")
+    assert bundle_run.index("tar -xzf") < bundle_run.index(
+        "sha256sum -c SHA256SUMS.txt"
+    )
+
+    posix = named_steps[critical_order[3]]
+    assert posix["env"] == {
+        "HOME": "${{ runner.temp }}/tarot-posix-home",
+        "XDG_BIN_HOME": "${{ runner.temp }}/tarot-posix-bin",
+        "HERMES_HOME": "${{ runner.temp }}/tarot-posix-hermes-home",
+    }
+    posix_run = posix["run"]
+    installer_calls = [
+        match.start()
+        for match in re.finditer(r"^run_installer$", posix_run, re.MULTILINE)
+    ]
+    assert len(installer_calls) == 4
+    tamper = posix_run.index("tampered by protected POSIX canary")
+    repair_assertion = posix_run.index("repaired_hermes_environment")
+    assert installer_calls[1] < tamper < installer_calls[2] < repair_assertion
+    assert repair_assertion < installer_calls[3]
+    assert posix_run.count(".occult_initialized == false") == 2
+    assert "first_receipt_mtime" in posix_run
+    assert "repaired_receipt_mtime" in posix_run
+
+    promote_run = named_steps[critical_order[4]]["run"]
+    assert promote_run.index(
+        "gh release view --repo SgtSlummy/agents-council"
+    ) < promote_run.index('gh release edit "$TAG"')
+    assert "--latest" in promote_run

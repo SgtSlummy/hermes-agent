@@ -1,6 +1,7 @@
 import base64
 import csv
 import hashlib
+import importlib.util
 import json
 import os
 import py_compile
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
 import pytest
 
@@ -214,6 +216,28 @@ def _run_environment_verifier(existing: Path, reference: Path) -> int:
     return completed.returncode
 
 
+def _load_environment_verifier():
+    spec = importlib.util.spec_from_file_location(
+        "occult_environment_verifier", ENVIRONMENT_VERIFIER
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_zip_executable(path: Path, environment: Path, overlay: bytes = b"") -> None:
+    path.write_bytes(f"executable-prefix:{environment}\n".encode())
+    info = ZipInfo("__main__.py", date_time=(2024, 1, 1, 0, 0, 0))
+    info.compress_type = ZIP_STORED
+    info.external_attr = 0o644 << 16
+    with ZipFile(path, mode="a") as archive:
+        archive.writestr(info, f"ENVIRONMENT = {environment!r}\n")
+    if overlay:
+        with path.open("ab") as stream:
+            stream.write(overlay)
+
+
 def test_environment_verifier_accepts_an_authenticated_equivalent(tmp_path: Path):
     existing = tmp_path / "existing0"
     reference = tmp_path / "reference"
@@ -221,6 +245,55 @@ def test_environment_verifier_accepts_an_authenticated_equivalent(tmp_path: Path
     _write_test_environment(reference)
 
     assert _run_environment_verifier(existing, reference) == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX separators are meaningful on Unix")
+def test_environment_verifier_does_not_normalize_backslashes_on_posix(
+    tmp_path: Path,
+):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    _write_test_environment(existing)
+    _write_test_environment(reference)
+    launcher = existing / "bin" / "demo"
+    launcher.write_bytes(launcher.read_bytes().replace(b"/", b"\\"))
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
+def test_zip_executable_normalization_authenticates_framing_and_overlay(
+    tmp_path: Path,
+):
+    verifier = _load_environment_verifier()
+    existing_environment = tmp_path / "existing0"
+    reference_environment = tmp_path / "reference"
+    existing_environment.mkdir()
+    reference_environment.mkdir()
+    existing = existing_environment / "launcher.exe"
+    reference = reference_environment / "launcher.exe"
+    _write_zip_executable(existing, existing_environment)
+    _write_zip_executable(reference, reference_environment)
+
+    trusted = verifier._normalized_environment_file(existing, existing_environment)
+    expected = verifier._normalized_environment_file(reference, reference_environment)
+    assert trusted == expected
+
+    framed = bytearray(existing.read_bytes())
+    local_header = framed.index(b"PK\x03\x04")
+    central_header = framed.index(b"PK\x01\x02")
+    framed[local_header + 10] ^= 1
+    framed[central_header + 12] ^= 1
+    existing.write_bytes(framed)
+    assert (
+        verifier._normalized_environment_file(existing, existing_environment)
+        != expected
+    )
+
+    _write_zip_executable(existing, existing_environment, overlay=b"untrusted-overlay")
+    assert (
+        verifier._normalized_environment_file(existing, existing_environment)
+        != expected
+    )
 
 
 @pytest.mark.parametrize(

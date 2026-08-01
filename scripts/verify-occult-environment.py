@@ -288,7 +288,9 @@ def _launcher(environment: Path) -> Path:
 def _path_variants(environment: Path) -> set[str]:
     variants: set[str] = set()
     for value in (str(environment), str(environment.resolve())):
-        variants.update({value, value.replace("\\", "/"), value.replace("/", "\\")})
+        variants.add(value)
+        if os.name == "nt":
+            variants.update({value.replace("\\", "/"), value.replace("/", "\\")})
     return variants
 
 
@@ -302,21 +304,155 @@ def _replace_environment_paths(data: bytes, environment: Path) -> bytes:
     return data
 
 
-def _normalized_environment_file(path: Path, environment: Path) -> bytes:
-    data = _replace_environment_paths(path.read_bytes(), environment)
-    archive_offset = data.find(b"PK\x03\x04")
-    if archive_offset < 0 or path.suffix.lower() != ".exe":
-        return data
+def _end_of_central_directory(
+    data: bytes, start: int, member_count: int
+) -> tuple[int, int]:
+    """Locate a non-ZIP64, single-disk EOCD and its trailing-comment boundary."""
+    offset = data.find(b"PK\x05\x06", start)
+    while offset >= 0:
+        if offset + 22 <= len(data):
+            (
+                disk_number,
+                directory_disk,
+                disk_members,
+                total_members,
+                directory_size,
+                directory_offset,
+                comment_length,
+            ) = struct.unpack_from("<4H2LH", data, offset + 4)
+            archive_end = offset + 22 + comment_length
+            if (
+                disk_number == 0
+                and directory_disk == 0
+                and disk_members == member_count
+                and total_members == member_count
+                and directory_size != 0xFFFFFFFF
+                and directory_offset != 0xFFFFFFFF
+                and archive_end <= len(data)
+            ):
+                return offset, archive_end
+        offset = data.find(b"PK\x05\x06", offset + 1)
+    raise IntegrityError("environment launcher archive has no valid end record")
+
+
+def _normalized_zip_executable(
+    path: Path, environment: Path, original: bytes
+) -> bytes:
+    """Authenticate a ZIP launcher while normalizing only generated path bytes.
+
+    Embedded member data is represented by normalized content hashes. The
+    executable prefix, local and central framing, archive comment, padding, and
+    any trailing overlay remain authenticated. Dynamic CRC, size, and offset
+    fields are canonicalized because normalized member bytes can change them.
+    """
+    normalized = _replace_environment_paths(original, environment)
     try:
         with ZipFile(path) as archive:
-            members = []
-            for name in sorted(archive.namelist()):
-                member = _replace_environment_paths(archive.read(name), environment)
-                members.append((name, hashlib.sha256(member).hexdigest()))
-    except (BadZipFile, KeyError, OSError) as error:
+            infos = archive.infolist()
+            if not infos or len(infos) > 4096:
+                raise IntegrityError("environment launcher archive inventory is invalid")
+            if sum(info.file_size for info in infos) > 64 * 1024 * 1024:
+                raise IntegrityError("environment launcher archive is too large")
+            if any(
+                info.file_size >= 0xFFFFFFFF
+                or info.compress_size >= 0xFFFFFFFF
+                or info.header_offset >= 0xFFFFFFFF
+                for info in infos
+            ):
+                raise IntegrityError("ZIP64 environment launchers are unsupported")
+
+            local_infos = sorted(infos, key=lambda info: info.header_offset)
+            directory_start = archive.start_dir
+            if directory_start <= local_infos[-1].header_offset:
+                raise IntegrityError("environment launcher archive layout is invalid")
+
+            framing: list[bytes] = [normalized[: local_infos[0].header_offset]]
+            members: list[tuple[str, str]] = []
+            for index, info in enumerate(local_infos):
+                offset = info.header_offset
+                if original[offset : offset + 4] != b"PK\x03\x04" or offset + 30 > len(
+                    original
+                ):
+                    raise IntegrityError("environment launcher local header is invalid")
+                flags = struct.unpack_from("<H", original, offset + 6)[0]
+                name_length, extra_length = struct.unpack_from("<HH", original, offset + 26)
+                data_start = offset + 30 + name_length + extra_length
+                data_end = data_start + info.compress_size
+                boundary = (
+                    local_infos[index + 1].header_offset
+                    if index + 1 < len(local_infos)
+                    else directory_start
+                )
+                if data_start > data_end or data_end > boundary:
+                    raise IntegrityError("environment launcher member bounds are invalid")
+
+                header = bytearray(normalized[offset:data_start])
+                header[14:26] = b"\0" * 12
+                framing.append(bytes(header))
+                framing.append(b"<OCCULT_ZIP_MEMBER_DATA>")
+
+                descriptor_end = data_end
+                if flags & 0x08:
+                    signed_descriptor = original[data_end : data_end + 4] == b"PK\x07\x08"
+                    descriptor_size = 16 if signed_descriptor else 12
+                    descriptor_end += descriptor_size
+                    if descriptor_end > boundary:
+                        raise IntegrityError(
+                            "environment launcher data descriptor is invalid"
+                        )
+                    framing.append(
+                        b"<OCCULT_ZIP_DESCRIPTOR_SIGNED>"
+                        if signed_descriptor
+                        else b"<OCCULT_ZIP_DESCRIPTOR>"
+                    )
+                framing.append(normalized[descriptor_end:boundary])
+
+                with archive.open(info) as stream:
+                    member = _replace_environment_paths(stream.read(), environment)
+                members.append((info.filename, hashlib.sha256(member).hexdigest()))
+
+            cursor = directory_start
+            for info in infos:
+                if original[cursor : cursor + 4] != b"PK\x01\x02" or cursor + 46 > len(
+                    original
+                ):
+                    raise IntegrityError("environment launcher central header is invalid")
+                name_length, extra_length, comment_length = struct.unpack_from(
+                    "<HHH", original, cursor + 28
+                )
+                entry_end = cursor + 46 + name_length + extra_length + comment_length
+                if entry_end > len(original):
+                    raise IntegrityError("environment launcher central entry is invalid")
+                entry = bytearray(normalized[cursor:entry_end])
+                entry[16:28] = b"\0" * 12
+                entry[42:46] = b"\0" * 4
+                framing.append(bytes(entry))
+                cursor = entry_end
+
+            eocd_offset, archive_end = _end_of_central_directory(
+                original, cursor, len(infos)
+            )
+            framing.append(normalized[cursor:eocd_offset])
+            eocd = bytearray(normalized[eocd_offset:archive_end])
+            eocd[12:20] = b"\0" * 8
+            framing.append(bytes(eocd))
+            framing.append(normalized[archive_end:])
+    except IntegrityError:
+        raise
+    except (BadZipFile, KeyError, OSError, RuntimeError, struct.error) as error:
         raise IntegrityError("environment launcher archive is invalid") from error
-    encoded_members = json.dumps(members, separators=(",", ":")).encode()
-    return data[:archive_offset] + b"\n<OCCULT_ZIP>\n" + encoded_members
+
+    encoded_members = json.dumps(sorted(members), separators=(",", ":")).encode()
+    return b"".join(framing) + b"\n<OCCULT_ZIP_V2>\n" + encoded_members
+
+
+def _normalized_environment_file(path: Path, environment: Path) -> bytes:
+    original = path.read_bytes()
+    data = _replace_environment_paths(original, environment)
+    archive_offset = original.find(b"PK\x03\x04")
+    if archive_offset < 0 or path.suffix.lower() != ".exe":
+        return data
+    return _normalized_zip_executable(path, environment, original)
 
 
 def _outside_environment_map(environment: Path, site_root: Path) -> dict[str, str]:

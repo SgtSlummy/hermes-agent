@@ -212,6 +212,91 @@ jobs:
             cd "$RUNNER_TEMP/release-bundle"
             sha256sum -c SHA256SUMS.txt
           )
+      - name: Exercise signed POSIX installer reuse and repair
+        shell: bash
+        env:
+          HOME: ${{ runner.temp }}/tarot-posix-home
+          XDG_BIN_HOME: ${{ runner.temp }}/tarot-posix-bin
+          HERMES_HOME: ${{ runner.temp }}/tarot-posix-hermes-home
+        run: |
+          set -euo pipefail
+          INSTALLER="$PWD/public-assets/install-occult.sh"
+          INSTALL_ROOT="$RUNNER_TEMP/tarot-posix-install"
+          RECEIPT="$INSTALL_ROOT/occult-install-receipt.json"
+          HERMES_COMMAND="$INSTALL_ROOT/bin/hermes"
+          COUNCIL_COMMAND="$INSTALL_ROOT/bin/council"
+          VERSION="${TAG#v}"
+          mkdir -p "$HOME" "$XDG_BIN_HOME" "$HERMES_HOME"
+          run_installer() {
+            sh "$INSTALLER" --version "$VERSION" --install-root "$INSTALL_ROOT"
+          }
+          receipt_hash() {
+            sha256sum "$RECEIPT" | cut -d' ' -f1
+          }
+          receipt_mtime() {
+            stat -c '%y' "$RECEIPT"
+          }
+          hermes_module() {
+            environment_name=$(jq -er '.hermes_environment' "$RECEIPT")
+            find "$INSTALL_ROOT/hermes-environments/$environment_name" \
+              -path '*/site-packages/hermes_cli/__init__.py' \
+              -type f -print -quit
+          }
+          packaged_council() {
+            environment_name=$(jq -er '.council_environment' "$RECEIPT")
+            printf '%s/council-environments/%s/cli/council\n' \
+              "$INSTALL_ROOT" "$environment_name"
+          }
+
+          run_installer
+          jq -e \
+            '.occult_initialized == false and .occult_enabled == false' \
+            "$RECEIPT"
+          first_receipt_hash=$(receipt_hash)
+          first_receipt_mtime=$(receipt_mtime)
+          first_hermes_environment=$(jq -er '.hermes_environment' "$RECEIPT")
+          first_council_environment=$(jq -er '.council_environment' "$RECEIPT")
+          first_hermes_module=$(hermes_module)
+          first_packaged_council=$(packaged_council)
+          test -f "$first_hermes_module"
+          test -x "$first_packaged_council"
+          first_hermes_module_hash=$(sha256sum "$first_hermes_module" | cut -d' ' -f1)
+          first_council_hash=$(sha256sum "$COUNCIL_COMMAND" | cut -d' ' -f1)
+          test "$first_council_hash" = "$(sha256sum "$first_packaged_council" | cut -d' ' -f1)"
+
+          sleep 1
+          run_installer
+          test "$(receipt_hash)" = "$first_receipt_hash"
+          test "$(receipt_mtime)" = "$first_receipt_mtime"
+          test "$(jq -er '.hermes_environment' "$RECEIPT")" = "$first_hermes_environment"
+          test "$(jq -er '.council_environment' "$RECEIPT")" = "$first_council_environment"
+
+          printf '\n# tampered by protected POSIX canary\n' >> "$first_hermes_module"
+          printf '\n# tampered by protected POSIX canary\n' >> "$COUNCIL_COMMAND"
+          printf '\n# tampered by protected POSIX canary\n' >> "$first_packaged_council"
+          run_installer
+          jq -e \
+            '.occult_initialized == false and .occult_enabled == false' \
+            "$RECEIPT"
+          repaired_hermes_environment=$(jq -er '.hermes_environment' "$RECEIPT")
+          repaired_council_environment=$(jq -er '.council_environment' "$RECEIPT")
+          test "$repaired_hermes_environment" != "$first_hermes_environment"
+          test "$repaired_council_environment" != "$first_council_environment"
+          repaired_hermes_module=$(hermes_module)
+          repaired_packaged_council=$(packaged_council)
+          test "$(sha256sum "$repaired_hermes_module" | cut -d' ' -f1)" = "$first_hermes_module_hash"
+          test "$(sha256sum "$COUNCIL_COMMAND" | cut -d' ' -f1)" = "$first_council_hash"
+          test "$(sha256sum "$repaired_packaged_council" | cut -d' ' -f1)" = "$first_council_hash"
+
+          repaired_receipt_hash=$(receipt_hash)
+          repaired_receipt_mtime=$(receipt_mtime)
+          repaired_hermes_target=$(readlink -f "$HERMES_COMMAND")
+          sleep 1
+          run_installer
+          test "$(receipt_hash)" = "$repaired_receipt_hash"
+          test "$(receipt_mtime)" = "$repaired_receipt_mtime"
+          test "$(readlink -f "$HERMES_COMMAND")" = "$repaired_hermes_target"
+          test "$(sha256sum "$COUNCIL_COMMAND" | cut -d' ' -f1)" = "$first_council_hash"
       - name: Promote Hermes after the verified Council release is latest
         shell: bash
         env:
