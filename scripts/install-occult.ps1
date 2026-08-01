@@ -568,8 +568,12 @@ try {
         } else {
             [string]$councilHash
         }
+        $councilEnvironmentPresent = (
+            $receiptPropertyNames -contains "council_environment"
+        )
         $expectedCouncilEnvironmentMatches = (
             -not $SkipCouncil -or
+            -not $councilEnvironmentPresent -or
             $null -eq $existingReceipt.council_environment -or
             [string]$existingReceipt.council_environment -eq ""
         )

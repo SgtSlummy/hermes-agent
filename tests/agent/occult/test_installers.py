@@ -298,6 +298,8 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert '"--offline"' in text
     assert "Get-FileHash" in text
     assert "Invoke-WebRequest" in text
+    assert '$receiptPropertyNames -contains "council_environment"' in text
+    assert "-not $councilEnvironmentPresent -or" in text
     assert "-TimeoutSec 60" in text
     assert "$attempt -le 3" in text
     assert "uv-x86_64-pc-windows-msvc.zip" in text
