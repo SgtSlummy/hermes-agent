@@ -115,7 +115,8 @@ def _file_map(site_root: Path) -> dict[str, str]:
             data = _normalized_uv_cache(path)
         else:
             data = path.read_bytes()
-        result[relative] = hashlib.sha256(data).hexdigest()
+        mode = path.stat().st_mode & 0o777
+        result[relative] = f"{mode:o}:" + hashlib.sha256(data).hexdigest()
     return result
 
 

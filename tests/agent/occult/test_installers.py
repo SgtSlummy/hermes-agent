@@ -261,6 +261,17 @@ def test_environment_verifier_does_not_normalize_backslashes_on_posix(
     assert _run_environment_verifier(existing, reference) == 1
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX package modes are meaningful")
+def test_environment_verifier_authenticates_package_file_modes(tmp_path: Path):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    source, _, _ = _write_test_environment(existing)
+    _write_test_environment(reference)
+    source.chmod(0o777)
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
 def test_zip_executable_normalization_authenticates_framing_and_overlay(
     tmp_path: Path,
 ):
