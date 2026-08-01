@@ -179,6 +179,17 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert re.search(r"and \.overall_status == \"passed\"", download_run)
     assert re.search(r"and \.promotion_eligible == true", download_run)
     assert re.search(r"and \.contains_secrets == false", download_run)
+    for binding in (
+        '.schema_version == "1.0.0"',
+        '.scope == "public Windows x64 launch canary"',
+        '.platform == {"os":"Windows","architecture":"x86_64"}',
+        ".release.hermes_cli == $hermes_cli",
+        ".release.council_commit == $council_commit",
+        ".release.runtime_contract == $contract",
+        ".release.council_state_schema == $council_state",
+        ".release.ollama_model == $model",
+    ):
+        assert binding in download_run
     check_keys_match = re.search(
         r"EXPECTED_CHECK_KEYS='([^']+)'", download_run
     )
@@ -330,6 +341,22 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert "--offline" in promote_run
     assert "RELEASE_ASSET_SNAPSHOT" in promote_run
     assert "CURRENT_RELEASE_SNAPSHOT" in promote_run
+    assert "RELEASE_STATE_SNAPSHOT" in promote_run
+    assert "CURRENT_RELEASE_STATE" in promote_run
+    assert promote_run.count(
+        "gh release view --repo SgtSlummy/agents-council"
+    ) == 2
+    for binding in (
+        '.schema_version == "1.0.0"',
+        '.scope == "public Windows x64 launch canary"',
+        '.platform == {"os":"Windows","architecture":"x86_64"}',
+        ".release.hermes_cli == $hermes_cli",
+        ".release.council_commit == $council_commit",
+        ".release.runtime_contract == $contract",
+        ".release.council_state_schema == $council_state",
+        ".release.ollama_model == $model",
+    ):
+        assert binding in promote_run
     assert promote_run.index('gh release download "$TAG"') < promote_run.index(
         'gh release edit "$TAG"'
     )

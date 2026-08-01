@@ -102,6 +102,22 @@ print(f"{stat.S_IMODE(status.st_mode):o}")
 PY
 }
 
+real_directory_profile() {
+  "$sigstore_venv/bin/python" - "$1" <<'PY'
+import os
+import stat
+import sys
+
+status = os.lstat(sys.argv[1])
+reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+if not stat.S_ISDIR(status.st_mode) or (
+    getattr(status, "st_file_attributes", 0) & reparse
+):
+    raise SystemExit(1)
+print(f"{stat.S_IMODE(status.st_mode):o}")
+PY
+}
+
 read_occult_state() {
   python_executable=$1
   "$python_executable" -c '
@@ -600,6 +616,11 @@ if [ -n "$existing_metadata" ]; then
   [ -x "$existing_venv_hermes" ] || reuse_ok=0
   [ -x "$hermes_executable" ] || reuse_ok=0
   if [ "$reuse_ok" -eq 1 ]; then
+    [ -L "$hermes_executable" ] &&
+      [ "$(readlink "$hermes_executable")" = "$existing_venv_hermes" ] ||
+      reuse_ok=0
+  fi
+  if [ "$reuse_ok" -eq 1 ]; then
     [ "$(sha256_file "$existing_venv_hermes")" = "$(sha256_file "$hermes_executable")" ] ||
       reuse_ok=0
   fi
@@ -659,6 +680,7 @@ if [ -n "$existing_metadata" ]; then
     existing_council_root="$install_root/council-environments/$existing_council_environment"
     existing_packaged_council="$existing_council_root/cli/council"
     council_executable="$bin_root/council"
+    real_directory_profile "$existing_council_root" >/dev/null 2>&1 || reuse_ok=0
     [ -f "$existing_packaged_council" ] || reuse_ok=0
     [ -x "$council_executable" ] || reuse_ok=0
     if [ "$reuse_ok" -eq 1 ]; then
@@ -892,12 +914,24 @@ esac
 
 user_bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
 mkdir -p "$user_bin"
-if [ -d "$user_bin/hermes" ] && [ ! -L "$user_bin/hermes" ]; then
-  fail "the user Hermes command path is a directory"
+if [ -e "$user_bin/hermes" ] || [ -L "$user_bin/hermes" ]; then
+  if [ ! -L "$user_bin/hermes" ] ||
+    [ "$(readlink "$user_bin/hermes")" != "$hermes_executable" ]; then
+    fail "the user Hermes command path is not the managed Tarot Router link"
+  fi
 fi
 if [ "$skip_council" -eq 0 ] &&
-  [ -d "$user_bin/council" ] && [ ! -L "$user_bin/council" ]; then
-  fail "the user Council command path is a directory"
+  { [ -e "$user_bin/council" ] || [ -L "$user_bin/council" ]; }; then
+  if [ ! -L "$user_bin/council" ] ||
+    [ "$(readlink "$user_bin/council")" != "$bin_root/council" ]; then
+    fail "the user Council command path is not the managed Tarot Router link"
+  fi
+fi
+if [ -d "$hermes_executable" ]; then
+  fail "the managed Hermes command path is a directory"
+fi
+if [ "$skip_council" -eq 0 ] && [ -d "$bin_root/council" ]; then
+  fail "the managed Council command path is a directory"
 fi
 
 step "Activating the fully staged local commands"

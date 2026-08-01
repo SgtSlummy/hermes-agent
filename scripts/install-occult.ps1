@@ -148,6 +148,36 @@ raise SystemExit(0 if safe else 1)
     }
 }
 
+function Test-IndependentDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+    $probe = @'
+import os
+import stat
+import sys
+
+status = os.lstat(sys.argv[1])
+reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+safe = (
+    stat.S_ISDIR(status.st_mode)
+    and not (getattr(status, "st_file_attributes", 0) & reparse)
+)
+raise SystemExit(0 if safe else 1)
+'@
+    $savedErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $Python -c $probe $Path 1>$null 2>$null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+}
+
 function Get-OccultState {
     param(
         [Parameter(Mandatory = $true)][string]$Python,
@@ -801,6 +831,9 @@ try {
                     "cli\council.exe"
                 $councilExecutable = Join-Path $binRoot "council.exe"
                 $metadataMatches = (
+                    (Test-IndependentDirectory `
+                        -Python $sigstoreVerifierPython `
+                        -Path $existingCouncilRoot) -and
                     (Test-Path -LiteralPath $existingPackagedCouncil -PathType Leaf) -and
                     (Test-Path -LiteralPath $councilExecutable -PathType Leaf) -and
                     (Test-Path -LiteralPath $referencePackagedCouncil -PathType Leaf) -and
@@ -1028,6 +1061,17 @@ try {
     $enabled = [bool]$state.enabled
 
     Write-Step "Activating the fully staged local commands"
+    if (Test-Path -LiteralPath $hermesExecutable -PathType Container) {
+        Fail "the managed Hermes command path is a directory"
+    }
+    if (
+        (Test-Path -LiteralPath $hermesExecutable -PathType Leaf) -and
+        -not (Test-IndependentRegularFile `
+            -Python $sigstoreVerifierPython `
+            -Path $hermesExecutable)
+    ) {
+        Fail "the managed Hermes command path is not an independent file"
+    }
     Move-Item `
         -LiteralPath $hermesStagedExecutable `
         -Destination $hermesExecutable `
@@ -1041,6 +1085,17 @@ try {
             Remove-Item -LiteralPath $councilExecutable -Force
         }
     } else {
+        if (Test-Path -LiteralPath $councilExecutable -PathType Container) {
+            Fail "the managed Council command path is a directory"
+        }
+        if (
+            (Test-Path -LiteralPath $councilExecutable -PathType Leaf) -and
+            -not (Test-IndependentRegularFile `
+                -Python $sigstoreVerifierPython `
+                -Path $councilExecutable)
+        ) {
+            Fail "the managed Council command path is not an independent file"
+        }
         Move-Item `
             -LiteralPath $councilStagedExecutable `
             -Destination $councilExecutable `

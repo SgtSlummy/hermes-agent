@@ -124,7 +124,12 @@ def _file_map(site_root: Path) -> dict[str, str]:
         if path.stat().st_nlink != 1:
             raise IntegrityError("package root contains a hard-linked file")
         relative = path.relative_to(site_root).as_posix()
-        if path.suffix == ".pyc" or path.name == "RECORD":
+        mode = path.stat().st_mode & 0o777
+        if path.suffix == ".pyc":
+            result[relative] = f"bytecode:{mode:o}"
+            continue
+        if path.name == "RECORD":
+            result[relative] = f"record:{mode:o}"
             continue
         if path.name == "direct_url.json":
             data = _normalized_direct_url(path)
@@ -132,7 +137,6 @@ def _file_map(site_root: Path) -> dict[str, str]:
             data = _normalized_uv_cache(path)
         else:
             data = path.read_bytes()
-        mode = path.stat().st_mode & 0o777
         result[relative] = f"file:{mode:o}:" + hashlib.sha256(data).hexdigest()
     return result
 

@@ -70,6 +70,18 @@ jobs:
           EXPECTED_COUNCIL_COMMIT="$(
             jq -r '.council.commit_sha' scripts/occult-install-manifest.json
           )"
+          EXPECTED_HERMES_CLI="$(
+            jq -r '.hermes_cli_version' scripts/occult-install-manifest.json
+          )"
+          EXPECTED_CONTRACT="$(
+            jq -r '.council.contract_version' scripts/occult-install-manifest.json
+          )"
+          EXPECTED_COUNCIL_STATE_SCHEMA="$(
+            jq -r '.council.state_schema' scripts/occult-install-manifest.json
+          )"
+          EXPECTED_OLLAMA_MODEL="$(
+            jq -r '.ollama_model' scripts/occult-install-manifest.json
+          )"
           test "$COUNCIL_REF" = "$EXPECTED_COUNCIL"
           RESOLVED_COUNCIL_COMMIT="$(
             gh api "repos/SgtSlummy/agents-council/commits/$COUNCIL_REF" \
@@ -95,14 +107,27 @@ jobs:
           jq -e \
             --arg hermes "$TAG" \
             --arg council "${COUNCIL_REF#v}" \
-            '.candidate_status == "passed"
+            --arg hermes_cli "$EXPECTED_HERMES_CLI" \
+            --arg council_commit "$EXPECTED_COUNCIL_COMMIT" \
+            --arg contract "$EXPECTED_CONTRACT" \
+            --argjson council_state "$EXPECTED_COUNCIL_STATE_SCHEMA" \
+            --arg model "$EXPECTED_OLLAMA_MODEL" \
+            '.schema_version == "1.0.0"
+             and .scope == "public Windows x64 launch canary"
+             and .platform == {"os":"Windows","architecture":"x86_64"}
+             and .candidate_status == "passed"
              and .overall_status == "passed"
              and .promotion_eligible == true
              and .checks.installer_idempotent_rerun == "passed"
              and .checks.installer_tamper_repair == "passed"
              and .contains_secrets == false
              and .release.hermes == $hermes
-             and .release.agents_council == $council' \
+             and .release.hermes_cli == $hermes_cli
+             and .release.agents_council == $council
+             and .release.council_commit == $council_commit
+             and .release.runtime_contract == $contract
+             and .release.council_state_schema == $council_state
+             and .release.ollama_model == $model' \
             "public-assets/$REPORT"
           EXPECTED_CHECK_KEYS='["audit_redaction","backup_restore","candidate_artifact_installation","council_pause_restart_resume","council_source_provenance","default_model_binding","disabled_before_initialization","explicit_local_initialization","gateway_restart","installer_idempotent_rerun","installer_interface","installer_tamper_repair","packaged_council_mcp_flow","rollback_previous_checksummed_releases","temporary_secret_cleanup","versions","zero_cost_major_arcana_invocation"]'
           jq -e \
@@ -463,6 +488,18 @@ jobs:
           EXPECTED_COUNCIL_COMMIT="$(
             jq -r '.council.commit_sha' scripts/occult-install-manifest.json
           )"
+          EXPECTED_HERMES_CLI="$(
+            jq -r '.hermes_cli_version' scripts/occult-install-manifest.json
+          )"
+          EXPECTED_CONTRACT="$(
+            jq -r '.council.contract_version' scripts/occult-install-manifest.json
+          )"
+          EXPECTED_COUNCIL_STATE_SCHEMA="$(
+            jq -r '.council.state_schema' scripts/occult-install-manifest.json
+          )"
+          EXPECTED_OLLAMA_MODEL="$(
+            jq -r '.ollama_model' scripts/occult-install-manifest.json
+          )"
           test "$COUNCIL_REF" = "$EXPECTED_COUNCIL"
           test "$(
             gh api "repos/SgtSlummy/agents-council/commits/$COUNCIL_REF" --jq .sha
@@ -490,8 +527,16 @@ jobs:
             jq -c '[.assets[] | {id,name,digest,size,updated_at}] | sort_by(.name)' \
               <<<"$RELEASE_JSON"
           )"
+          RELEASE_STATE_SNAPSHOT="$(
+            jq -c '{id,tag_name,target_commitish,draft,prerelease}' \
+              <<<"$RELEASE_JSON"
+          )"
           COUNCIL_ASSET_SNAPSHOT="$(
             jq -c '[.assets[] | {id,name,digest,size,updated_at}] | sort_by(.name)' \
+              <<<"$COUNCIL_JSON"
+          )"
+          COUNCIL_STATE_SNAPSHOT="$(
+            jq -c '{id,tag_name,target_commitish,draft,prerelease}' \
               <<<"$COUNCIL_JSON"
           )"
           jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$RELEASE_JSON" |
@@ -510,14 +555,27 @@ jobs:
           jq -e \
             --arg hermes "$TAG" \
             --arg council "${COUNCIL_REF#v}" \
-            '.candidate_status == "passed"
+            --arg hermes_cli "$EXPECTED_HERMES_CLI" \
+            --arg council_commit "$EXPECTED_COUNCIL_COMMIT" \
+            --arg contract "$EXPECTED_CONTRACT" \
+            --argjson council_state "$EXPECTED_COUNCIL_STATE_SCHEMA" \
+            --arg model "$EXPECTED_OLLAMA_MODEL" \
+            '.schema_version == "1.0.0"
+             and .scope == "public Windows x64 launch canary"
+             and .platform == {"os":"Windows","architecture":"x86_64"}
+             and .candidate_status == "passed"
              and .overall_status == "passed"
              and .promotion_eligible == true
              and .checks.installer_idempotent_rerun == "passed"
              and .checks.installer_tamper_repair == "passed"
              and .contains_secrets == false
              and .release.hermes == $hermes
-             and .release.agents_council == $council' \
+             and .release.hermes_cli == $hermes_cli
+             and .release.agents_council == $council
+             and .release.council_commit == $council_commit
+             and .release.runtime_contract == $contract
+             and .release.council_state_schema == $council_state
+             and .release.ollama_model == $model' \
             "$PUBLIC/$REPORT"
           EXPECTED_CHECK_KEYS='["audit_redaction","backup_restore","candidate_artifact_installation","council_pause_restart_resume","council_source_provenance","default_model_binding","disabled_before_initialization","explicit_local_initialization","gateway_restart","installer_idempotent_rerun","installer_interface","installer_tamper_repair","packaged_council_mcp_flow","rollback_previous_checksummed_releases","temporary_secret_cleanup","versions","zero_cost_major_arcana_invocation"]'
           jq -e \
@@ -619,12 +677,28 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" |
               jq -c '[.assets[] | {id,name,digest,size,updated_at}] | sort_by(.name)'
           )"
+          CURRENT_RELEASE_STATE="$(
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" |
+              jq -c '{id,tag_name,target_commitish,draft,prerelease}'
+          )"
           CURRENT_COUNCIL_SNAPSHOT="$(
             gh api "repos/SgtSlummy/agents-council/releases/tags/$COUNCIL_REF" |
               jq -c '[.assets[] | {id,name,digest,size,updated_at}] | sort_by(.name)'
           )"
+          CURRENT_COUNCIL_STATE="$(
+            gh api "repos/SgtSlummy/agents-council/releases/tags/$COUNCIL_REF" |
+              jq -c '{id,tag_name,target_commitish,draft,prerelease}'
+          )"
           test "$CURRENT_RELEASE_SNAPSHOT" = "$RELEASE_ASSET_SNAPSHOT"
+          test "$CURRENT_RELEASE_STATE" = "$RELEASE_STATE_SNAPSHOT"
           test "$CURRENT_COUNCIL_SNAPSHOT" = "$COUNCIL_ASSET_SNAPSHOT"
+          test "$CURRENT_COUNCIL_STATE" = "$COUNCIL_STATE_SNAPSHOT"
+          test "$(
+            gh api "repos/SgtSlummy/agents-council/commits/$COUNCIL_REF" --jq .sha
+          )" = "$EXPECTED_COUNCIL_COMMIT"
+          test "$(
+            gh release view --repo SgtSlummy/agents-council --json tagName --jq .tagName
+          )" = "$COUNCIL_REF"
           gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --latest

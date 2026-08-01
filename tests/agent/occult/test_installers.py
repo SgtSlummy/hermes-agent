@@ -272,6 +272,25 @@ def test_environment_verifier_authenticates_package_file_modes(tmp_path: Path):
     assert _run_environment_verifier(existing, reference) == 1
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX generated-file modes matter")
+@pytest.mark.parametrize("target", ["bytecode", "record"])
+def test_environment_verifier_authenticates_generated_file_modes(
+    tmp_path: Path, target: str
+):
+    existing = tmp_path / "existing0"
+    reference = tmp_path / "reference"
+    source, record, _ = _write_test_environment(existing)
+    _write_test_environment(reference)
+    generated = (
+        next(source.parent.glob("__pycache__/*.pyc"))
+        if target == "bytecode"
+        else record
+    )
+    generated.chmod(0o777)
+
+    assert _run_environment_verifier(existing, reference) == 1
+
+
 @pytest.mark.skipif(not hasattr(os, "link"), reason="hard links are unavailable")
 def test_environment_verifier_rejects_hard_linked_files(tmp_path: Path):
     existing = tmp_path / "existing0"
@@ -523,6 +542,7 @@ def test_windows_installer_verifies_before_writing_application_files():
     )
     assert "$referencePackagedCouncil" in text
     assert "function Test-IndependentRegularFile" in text
+    assert "function Test-IndependentDirectory" in text
     assert "-Path $hermesExecutable" in text
     assert "-Path $referencePackagedCouncil" in text
     assert "-Path $existingPackagedCouncil" in text
@@ -531,6 +551,10 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert 'Join-Path $binRoot "council.exe"' in text
     assert "Remove-Item -LiteralPath $councilExecutable -Force" in text
     assert "the stale managed Council command is not a file" in text
+    assert "the managed Hermes command path is a directory" in text
+    assert "the managed Council command path is a directory" in text
+    assert "the managed Hermes command path is not an independent file" in text
+    assert "the managed Council command path is not an independent file" in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
 
@@ -587,18 +611,22 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert 'regular_file_profile "$reference_packaged_council"' in text
     assert 'regular_file_profile "$existing_packaged_council"' in text
     assert 'regular_file_profile "$council_executable"' in text
+    assert 'real_directory_profile "$existing_council_root"' in text
     assert '[ -e "$bin_root/council" ] || [ -L "$bin_root/council" ]' in text
     assert 'rm -f -- "$bin_root/council"' in text
     assert 'rm -f -- "$user_bin/council"' in text
     assert "the stale managed Council command is not a file" in text
-    hermes_directory_guard = (
-        'if [ -d "$user_bin/hermes" ] && [ ! -L "$user_bin/hermes" ]'
-    )
-    assert hermes_directory_guard in text
-    assert text.index(hermes_directory_guard) < text.index(
+    user_path_guard = '[ -e "$user_bin/hermes" ] || [ -L "$user_bin/hermes" ]'
+    assert user_path_guard in text
+    assert '[ "$(readlink "$user_bin/hermes")" != "$hermes_executable" ]' in text
+    assert '[ "$(readlink "$user_bin/council")" != "$bin_root/council" ]' in text
+    assert text.index(user_path_guard) < text.index(
         'step "Activating the fully staged local commands"'
     )
-    assert "the user Council command path is a directory" in text
+    assert 'if [ -d "$hermes_executable" ]' in text
+    assert 'if [ "$skip_council" -eq 0 ] && [ -d "$bin_root/council" ]' in text
+    assert '[ -L "$hermes_executable" ]' in text
+    assert '"$(readlink "$hermes_executable")" = "$existing_venv_hermes"' in text
     assert "the user Hermes command link could not be verified" in text
     assert "the user Council command link could not be verified" in text
     assert "NousResearch/hermes-agent" not in text
@@ -728,6 +756,8 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     assert evidence["candidate_status"] == "passed"
     assert evidence["overall_status"] == "candidate_passed"
     assert evidence["promotion_eligible"] is False
+    assert evidence["scope"] == "pre-release Windows x64 candidate canary"
+    assert evidence["platform"] == {"os": "Windows", "architecture": "x86_64"}
     assert "installer_idempotent_rerun" not in evidence["checks"]
     assert evidence["contains_secrets"] is False
     assert evidence["checks"]["rollback_previous_checksummed_releases"] == "passed"
@@ -738,6 +768,12 @@ def test_launch_canary_evidence_is_redacted_and_includes_rollback():
     )
     assert evidence["release"]["ollama_model"] == manifest["ollama_model"]
     assert evidence["release"]["council_commit"] == manifest["council"]["commit_sha"]
+    assert evidence["release"]["runtime_contract"] == manifest["council"][
+        "contract_version"
+    ]
+    assert evidence["release"]["council_state_schema"] == manifest["council"][
+        "state_schema"
+    ]
     assert set(evidence["release_artifacts"]) == {
         "install_manifest",
         "hermes_wheel",
