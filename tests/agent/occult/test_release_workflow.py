@@ -215,6 +215,7 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     }
     assert "with_entries(.value = .value.name)" in download_run
     assert ".assets[] | [.name, .digest]" in download_run
+    assert 'gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha' in download_run
 
     sigstore_run = release_named[release_order[1]]["run"]
     assert sigstore_run.count("verify_identity \\") == 4
@@ -227,6 +228,10 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert bundle_run.index("tar -xzf") < bundle_run.index(
         "sha256sum -c SHA256SUMS.txt"
     )
+    assert "occult-release-manifest.json" in bundle_run
+    assert ".release_version == $version" in bundle_run
+    assert ".commit_sha == $commit" in bundle_run
+    assert 'public-assets/SHA256SUMS.txt' in bundle_run
 
     posix_job = jobs["verify-posix"]
     assert posix_job["needs"] == "verify-release"
@@ -343,6 +348,12 @@ def test_public_canary_promotion_workflow_verifies_published_bytes_before_latest
     assert "CURRENT_RELEASE_SNAPSHOT" in promote_run
     assert "RELEASE_STATE_SNAPSHOT" in promote_run
     assert "CURRENT_RELEASE_STATE" in promote_run
+    assert promote_run.count(
+        'gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha'
+    ) >= 2
+    assert "occult-release-manifest.json" in promote_run
+    assert ".release_version == $version" in promote_run
+    assert ".commit_sha == $commit" in promote_run
     assert promote_run.count(
         "gh release view --repo SgtSlummy/agents-council"
     ) == 2

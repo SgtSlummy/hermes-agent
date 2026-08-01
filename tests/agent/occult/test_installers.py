@@ -558,6 +558,7 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "$referencePackagedCouncil" in text
     assert "function Test-IndependentRegularFile" in text
     assert "function Test-IndependentDirectory" in text
+    assert "function Get-PathNodeState" in text
     assert "-Path $hermesExecutable" in text
     assert "-Path $referencePackagedCouncil" in text
     assert "-Path $existingPackagedCouncil" in text
@@ -566,6 +567,8 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert 'Join-Path $binRoot "council.exe"' in text
     assert "Remove-Item -LiteralPath $councilExecutable -Force" in text
     assert "the stale managed Council command is not a file" in text
+    assert "the stale managed Council command could not be removed" in text
+    assert 'Get-PathNodeState `' in text
     assert "the managed Hermes command path is a directory" in text
     assert "the managed Council command path is a directory" in text
     assert "the managed Hermes command path is not an independent file" in text

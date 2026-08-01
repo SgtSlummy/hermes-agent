@@ -99,6 +99,9 @@ jobs:
           test "$(jq -r '.draft' <<<"$RELEASE_JSON")" = false
           test "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" = false
           test "$(jq -r '.target_commitish' <<<"$RELEASE_JSON")" = "$RELEASE_COMMIT"
+          test "$(
+            gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha
+          )" = "$RELEASE_COMMIT"
           jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$RELEASE_JSON" |
             while IFS=$'\t' read -r name digest; do
               test -f "public-assets/$name"
@@ -167,6 +170,7 @@ jobs:
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "COUNCIL_REF=$COUNCIL_REF" >> "$GITHUB_ENV"
           echo "REPORT=$REPORT" >> "$GITHUB_ENV"
+          echo "RELEASE_COMMIT=$RELEASE_COMMIT" >> "$GITHUB_ENV"
       - name: Verify Sigstore identities and signed checksum manifests offline
         shell: bash
         run: |
@@ -224,6 +228,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          VERSION="${TAG#v}"
           BUNDLE="public-assets/occult-system-${TAG}.tar.gz"
           mkdir -p "$RUNNER_TEMP/release-bundle"
           tar -tzf "$BUNDLE" | while IFS= read -r entry; do
@@ -236,6 +241,17 @@ jobs:
             cd "$RUNNER_TEMP/release-bundle"
             sha256sum -c SHA256SUMS.txt
           )
+          cmp \
+            public-assets/SHA256SUMS.txt \
+            "$RUNNER_TEMP/release-bundle/SHA256SUMS.txt"
+          jq -e \
+            --arg version "$VERSION" \
+            --arg commit "$RELEASE_COMMIT" \
+            '.schema_version == "1.0.0"
+             and .release_version == $version
+             and .commit_sha == $commit
+             and .channel == "stable"' \
+            "$RUNNER_TEMP/release-bundle/occult-release-manifest.json"
 
   verify-posix:
     name: Signed POSIX installer (${{ matrix.platform }}-${{ matrix.architecture }})
@@ -305,6 +321,9 @@ jobs:
             --pattern OCCULT-INSTALL-SHA256SUMS.txt.sigstore.json
           RELEASE_JSON="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
           test "$(jq -r '.target_commitish' <<<"$RELEASE_JSON")" = "$RELEASE_COMMIT"
+          test "$(
+            gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha
+          )" = "$RELEASE_COMMIT"
           jq -r '.assets[] | [.name, .digest] | @tsv' <<<"$RELEASE_JSON" |
             while IFS=$'\t' read -r name digest; do
               if test -f "public-assets/$name"; then
@@ -504,6 +523,9 @@ jobs:
           test "$(
             gh api "repos/SgtSlummy/agents-council/commits/$COUNCIL_REF" --jq .sha
           )" = "$EXPECTED_COUNCIL_COMMIT"
+          test "$(
+            gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha
+          )" = "$RELEASE_COMMIT"
           test "$(gh release view --repo SgtSlummy/agents-council --json tagName --jq .tagName)" = "$COUNCIL_REF"
 
           WORK="$(mktemp -d)"
@@ -672,6 +694,15 @@ jobs:
           done
           tar -xzf "$BUNDLE" -C "$WORK/release-bundle"
           (cd "$WORK/release-bundle" && sha256sum -c SHA256SUMS.txt)
+          cmp "$PUBLIC/SHA256SUMS.txt" "$WORK/release-bundle/SHA256SUMS.txt"
+          jq -e \
+            --arg version "$VERSION" \
+            --arg commit "$RELEASE_COMMIT" \
+            '.schema_version == "1.0.0"
+             and .release_version == $version
+             and .commit_sha == $commit
+             and .channel == "stable"' \
+            "$WORK/release-bundle/occult-release-manifest.json"
 
           CURRENT_RELEASE_SNAPSHOT="$(
             gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" |
@@ -696,6 +727,9 @@ jobs:
           test "$(
             gh api "repos/SgtSlummy/agents-council/commits/$COUNCIL_REF" --jq .sha
           )" = "$EXPECTED_COUNCIL_COMMIT"
+          test "$(
+            gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha
+          )" = "$RELEASE_COMMIT"
           test "$(
             gh release view --repo SgtSlummy/agents-council --json tagName --jq .tagName
           )" = "$COUNCIL_REF"

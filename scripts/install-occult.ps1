@@ -178,6 +178,42 @@ raise SystemExit(0 if safe else 1)
     }
 }
 
+function Get-PathNodeState {
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+    $probe = @'
+import os
+import sys
+
+try:
+    os.lstat(sys.argv[1])
+except FileNotFoundError:
+    print("absent")
+except OSError:
+    raise SystemExit(2)
+else:
+    print("present")
+'@
+    $savedErrorActionPreference = $ErrorActionPreference
+    $output = $null
+    $probeExitCode = 1
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = (& $Python -c $probe $Path 2>$null | Out-String).Trim()
+        $probeExitCode = $LASTEXITCODE
+    } catch {
+        $probeExitCode = 1
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    if ($probeExitCode -ne 0 -or $output -notin @("absent", "present")) {
+        Fail "could not inspect a managed command path safely"
+    }
+    return $output
+}
+
 function Get-OccultState {
     param(
         [Parameter(Mandatory = $true)][string]$Python,
@@ -794,9 +830,11 @@ try {
         }
         $councilVersionOutput = $null
         if ($metadataMatches -and $SkipCouncil) {
-            $metadataMatches = -not (
-                Test-Path -LiteralPath (Join-Path $binRoot "council.exe")
-            )
+            $metadataMatches = (
+                Get-PathNodeState `
+                    -Python $sigstoreVerifierPython `
+                    -Path (Join-Path $binRoot "council.exe")
+            ) -eq "absent"
         }
         if ($metadataMatches -and -not $SkipCouncil) {
             $metadataMatches = Test-SafeLeafName `
@@ -1061,11 +1099,17 @@ try {
     $enabled = [bool]$state.enabled
 
     Write-Step "Activating the fully staged local commands"
-    if (Test-Path -LiteralPath $hermesExecutable -PathType Container) {
+    $hermesCommandState = Get-PathNodeState `
+        -Python $sigstoreVerifierPython `
+        -Path $hermesExecutable
+    if (
+        $hermesCommandState -eq "present" -and
+        (Test-Path -LiteralPath $hermesExecutable -PathType Container)
+    ) {
         Fail "the managed Hermes command path is a directory"
     }
     if (
-        (Test-Path -LiteralPath $hermesExecutable -PathType Leaf) -and
+        $hermesCommandState -eq "present" -and
         -not (Test-IndependentRegularFile `
             -Python $sigstoreVerifierPython `
             -Path $hermesExecutable)
@@ -1078,18 +1122,34 @@ try {
         -Force
     $councilExecutable = Join-Path $binRoot "council.exe"
     if ($SkipCouncil) {
-        if (Test-Path -LiteralPath $councilExecutable -PathType Container) {
-            Fail "the stale managed Council command is not a file"
-        }
-        if (Test-Path -LiteralPath $councilExecutable) {
+        $councilCommandState = Get-PathNodeState `
+            -Python $sigstoreVerifierPython `
+            -Path $councilExecutable
+        if ($councilCommandState -eq "present") {
+            if (Test-Path -LiteralPath $councilExecutable -PathType Container) {
+                Fail "the stale managed Council command is not a file"
+            }
             Remove-Item -LiteralPath $councilExecutable -Force
+            if (
+                (Get-PathNodeState `
+                    -Python $sigstoreVerifierPython `
+                    -Path $councilExecutable) -ne "absent"
+            ) {
+                Fail "the stale managed Council command could not be removed"
+            }
         }
     } else {
-        if (Test-Path -LiteralPath $councilExecutable -PathType Container) {
+        $councilCommandState = Get-PathNodeState `
+            -Python $sigstoreVerifierPython `
+            -Path $councilExecutable
+        if (
+            $councilCommandState -eq "present" -and
+            (Test-Path -LiteralPath $councilExecutable -PathType Container)
+        ) {
             Fail "the managed Council command path is a directory"
         }
         if (
-            (Test-Path -LiteralPath $councilExecutable -PathType Leaf) -and
+            $councilCommandState -eq "present" -and
             -not (Test-IndependentRegularFile `
                 -Python $sigstoreVerifierPython `
                 -Path $councilExecutable)
