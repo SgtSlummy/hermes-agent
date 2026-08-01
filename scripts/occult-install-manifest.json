@@ -19,6 +19,13 @@
       "windows-x64": "agents-council-windows-x64.tar.gz"
     }
   },
+  "rollback": {
+    "hermes_release_tag": "v1.0.3",
+    "hermes_cli_version": "0.14.0",
+    "hermes_wheel_sha256": "8bf1af5acc71f44e9eb2cbae0b596fb3188446e513e24bee031552b78edc70c3",
+    "council_release_tag": "v0.5.2",
+    "council_windows_x64_sha256": "638b8b044d4334468ef299fddd1db6f8901a271a605fbdd48cbfb3e78af1b934"
+  },
   "ollama_model": "qwen2.5:3b",
   "sigstore_python_version": "4.5.0",
   "uv_version": "0.11.28"

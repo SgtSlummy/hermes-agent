@@ -155,6 +155,85 @@ print(json.dumps({"initialized": initialized, "enabled": enabled}))
     }
 }
 
+function Test-HermesEnvironmentRecords {
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$Environment,
+        [Parameter(Mandatory = $true)][string]$TemporaryRoot
+    )
+    $recordScript = @'
+import base64
+import csv
+import hashlib
+import hmac
+import sys
+from pathlib import Path, PurePosixPath
+
+root = Path(sys.argv[1]).resolve()
+records = sorted(root.rglob("*.dist-info/RECORD"))
+if not records:
+    raise SystemExit(1)
+checked = 0
+for record in records:
+    base = record.parent.parent
+    try:
+        stream = record.open(encoding="utf-8", newline="")
+    except OSError:
+        raise SystemExit(1)
+    with stream:
+        for row in csv.reader(stream):
+            if len(row) < 3:
+                raise SystemExit(1)
+            relative, hash_spec, size = row[:3]
+            if not hash_spec:
+                continue
+            algorithm, separator, encoded = hash_spec.partition("=")
+            if algorithm != "sha256" or not separator or not encoded:
+                raise SystemExit(1)
+            candidate = (base.joinpath(*PurePosixPath(relative).parts)).resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                raise SystemExit(1)
+            if not candidate.is_file():
+                raise SystemExit(1)
+            data = candidate.read_bytes()
+            if size and (not size.isdigit() or len(data) != int(size)):
+                raise SystemExit(1)
+            padding = "=" * (-len(encoded) % 4)
+            try:
+                expected = base64.urlsafe_b64decode(encoded + padding)
+            except (ValueError, TypeError):
+                raise SystemExit(1)
+            if not hmac.compare_digest(hashlib.sha256(data).digest(), expected):
+                raise SystemExit(1)
+            checked += 1
+if checked == 0:
+    raise SystemExit(1)
+'@
+    $recordScriptPath = Join-Path (
+        $TemporaryRoot
+    ) ("verify-hermes-records-" + [Guid]::NewGuid().ToString("N") + ".py")
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText(
+        $recordScriptPath,
+        $recordScript,
+        $utf8NoBom
+    )
+    $savedErrorActionPreference = $ErrorActionPreference
+    $succeeded = $false
+    try {
+        $ErrorActionPreference = "Continue"
+        & $Python $recordScriptPath $Environment 1>$null 2>$null
+        $succeeded = $LASTEXITCODE -eq 0
+    } catch {
+        $succeeded = $false
+    } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
+    return $succeeded
+}
+
 function Assert-SafeTarArchive {
     param(
         [Parameter(Mandatory = $true)][string]$Tar,
@@ -366,6 +445,7 @@ try {
         -Uv $uv `
         -TemporaryRoot $temporaryRoot `
         -ReleaseBase $hermesReleaseBase
+    $sigstoreVerifierPython = Join-Path (Split-Path $sigstore -Parent) "python.exe"
     $installChecksums = Join-Path $temporaryRoot "OCCULT-INSTALL-SHA256SUMS.txt"
     $installBundle = "$installChecksums.sigstore.json"
     Download-Asset `
@@ -581,6 +661,12 @@ try {
                 (Get-FileHash -Algorithm SHA256 -LiteralPath $existingVenvHermes).Hash -eq
                     (Get-FileHash -Algorithm SHA256 -LiteralPath $hermesExecutable).Hash
             )
+        }
+        if ($metadataMatches) {
+            $metadataMatches = Test-HermesEnvironmentRecords `
+                -Python $sigstoreVerifierPython `
+                -Environment $existingHermesVenv `
+                -TemporaryRoot $temporaryRoot
         }
         $hermesProbeSucceeded = $false
         if ($metadataMatches) {

@@ -34,14 +34,6 @@ HERMES_RELEASE = "v1.0.6"
 COUNCIL_VERSION = "0.5.5"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
-PREVIOUS_HERMES_CLI_VERSION = "0.14.0"
-PREVIOUS_HERMES_WHEEL_SHA256 = (
-    "8bf1af5acc71f44e9eb2cbae0b596fb3188446e513e24bee031552b78edc70c3"
-)
-PREVIOUS_COUNCIL_VERSION = "0.5.2"
-PREVIOUS_COUNCIL_ARCHIVE_SHA256 = (
-    "638b8b044d4334468ef299fddd1db6f8901a271a605fbdd48cbfb3e78af1b934"
-)
 STARTER_CARD_ID = "minor.pentacles.ace.ollama.local"
 SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 SIGNED_URL = re.compile(r"https?://\S+(?:signature|sigstore|x-amz-|token=)", re.I)
@@ -440,6 +432,18 @@ def load_install_manifest(path: Path) -> dict[str, Any]:
         model,
     ):
         raise CanaryFailure("install manifest Ollama model is invalid")
+    rollback = manifest.get("rollback")
+    if not isinstance(rollback, dict):
+        raise CanaryFailure("install manifest rollback metadata is missing")
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", rollback.get("hermes_release_tag", "")):
+        raise CanaryFailure("rollback Hermes release is invalid")
+    if not re.fullmatch(r"\d+\.\d+\.\d+", rollback.get("hermes_cli_version", "")):
+        raise CanaryFailure("rollback Hermes CLI version is invalid")
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", rollback.get("council_release_tag", "")):
+        raise CanaryFailure("rollback Council release is invalid")
+    for field in ("hermes_wheel_sha256", "council_windows_x64_sha256"):
+        if not re.fullmatch(r"[0-9a-f]{64}", rollback.get(field, "")):
+            raise CanaryFailure(f"rollback checksum is invalid: {field}")
     return manifest
 
 
@@ -487,17 +491,21 @@ def rehearse_rollback(
     candidate_council_archive: Path,
     previous_hermes_wheel: Path,
     previous_council_archive: Path,
+    previous_hermes_cli_version: str,
+    previous_hermes_wheel_sha256: str,
+    previous_council_version: str,
+    previous_council_archive_sha256: str,
     env: dict[str, str],
     timeout: int,
 ) -> list[str]:
     assert_sha256(
         previous_hermes_wheel,
-        PREVIOUS_HERMES_WHEEL_SHA256,
+        previous_hermes_wheel_sha256,
         "previous Hermes wheel",
     )
     assert_sha256(
         previous_council_archive,
-        PREVIOUS_COUNCIL_ARCHIVE_SHA256,
+        previous_council_archive_sha256,
         "previous Council archive",
     )
     rollback_root = root / "rollback-rehearsal"
@@ -529,7 +537,7 @@ def rehearse_rollback(
     )
     safe_public_version(
         run([str(previous_hermes), "--version"], env=env, timeout=timeout).stdout,
-        PREVIOUS_HERMES_CLI_VERSION,
+        previous_hermes_cli_version,
         "previous Hermes",
     )
 
@@ -546,7 +554,7 @@ def rehearse_rollback(
     )
     safe_public_version(
         run([str(previous_council), "--version"], env=env, timeout=timeout).stdout,
-        PREVIOUS_COUNCIL_VERSION,
+        previous_council_version,
         "previous Council",
     )
 
@@ -604,8 +612,8 @@ def rehearse_rollback(
     verify_active(
         previous_hermes,
         previous_council,
-        PREVIOUS_HERMES_CLI_VERSION,
-        PREVIOUS_COUNCIL_VERSION,
+        previous_hermes_cli_version,
+        previous_council_version,
         "previous-after-rollback",
     )
     verify_active(
@@ -814,6 +822,7 @@ def main() -> int:
     manifest = load_install_manifest(install_manifest)
     model = manifest["ollama_model"]
     council_commit = manifest["council"]["commit_sha"]
+    rollback = manifest["rollback"]
     requirements_lock = assert_file(
         args.requirements_lock,
         "Hermes requirements lock",
@@ -1120,6 +1129,14 @@ def main() -> int:
                 candidate_council_archive=candidate_council_archive,
                 previous_hermes_wheel=previous_hermes_wheel,
                 previous_council_archive=previous_council_archive,
+                previous_hermes_cli_version=rollback["hermes_cli_version"],
+                previous_hermes_wheel_sha256=rollback["hermes_wheel_sha256"],
+                previous_council_version=rollback["council_release_tag"].removeprefix(
+                    "v"
+                ),
+                previous_council_archive_sha256=rollback[
+                    "council_windows_x64_sha256"
+                ],
                 env=env,
                 timeout=args.timeout_seconds,
             )

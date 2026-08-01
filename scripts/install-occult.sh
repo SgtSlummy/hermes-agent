@@ -101,6 +101,60 @@ print(("true" if initialized else "false") + " " + ("true" if enabled else "fals
 '
 }
 
+verify_environment_records() {
+  environment_records_root=$1
+  "$sigstore_venv/bin/python" -c '
+import base64
+import csv
+import hashlib
+import hmac
+import sys
+from pathlib import Path, PurePosixPath
+
+root = Path(sys.argv[1]).resolve()
+records = sorted(root.rglob("*.dist-info/RECORD"))
+if not records:
+    raise SystemExit(1)
+checked = 0
+for record in records:
+    base = record.parent.parent
+    try:
+        stream = record.open(encoding="utf-8", newline="")
+    except OSError:
+        raise SystemExit(1)
+    with stream:
+        for row in csv.reader(stream):
+            if len(row) < 3:
+                raise SystemExit(1)
+            relative, hash_spec, size = row[:3]
+            if not hash_spec:
+                continue
+            algorithm, separator, encoded = hash_spec.partition("=")
+            if algorithm != "sha256" or not separator or not encoded:
+                raise SystemExit(1)
+            candidate = (base.joinpath(*PurePosixPath(relative).parts)).resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                raise SystemExit(1)
+            if not candidate.is_file():
+                raise SystemExit(1)
+            data = candidate.read_bytes()
+            if size and (not size.isdigit() or len(data) != int(size)):
+                raise SystemExit(1)
+            padding = "=" * (-len(encoded) % 4)
+            try:
+                expected = base64.urlsafe_b64decode(encoded + padding)
+            except (ValueError, TypeError):
+                raise SystemExit(1)
+            if not hmac.compare_digest(hashlib.sha256(data).digest(), expected):
+                raise SystemExit(1)
+            checked += 1
+if checked == 0:
+    raise SystemExit(1)
+' "$environment_records_root"
+}
+
 case "$version" in
   v*) version=${version#v} ;;
 esac
@@ -567,6 +621,10 @@ if [ -n "$existing_metadata" ]; then
   [ -x "$hermes_executable" ] || reuse_ok=0
   if [ "$reuse_ok" -eq 1 ]; then
     [ "$(sha256_file "$existing_venv_hermes")" = "$(sha256_file "$hermes_executable")" ] ||
+      reuse_ok=0
+  fi
+  if [ "$reuse_ok" -eq 1 ]; then
+    verify_environment_records "$existing_hermes_root" >/dev/null 2>&1 ||
       reuse_ok=0
   fi
   hermes_version_output=""

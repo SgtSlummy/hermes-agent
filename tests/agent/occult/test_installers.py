@@ -50,6 +50,7 @@ def _sha256(path: Path) -> str:
 def test_install_manifest_has_safe_cross_platform_release_metadata():
     manifest = json.loads(_text(MANIFEST))
     council = manifest["council"]
+    rollback = manifest["rollback"]
 
     assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["schema_version"])
     assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["occult_release_version"])
@@ -67,6 +68,14 @@ def test_install_manifest_has_safe_cross_platform_release_metadata():
     assert all(
         re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]+", asset)
         for asset in council["assets"].values()
+    )
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", rollback["hermes_release_tag"])
+    assert re.fullmatch(r"\d+\.\d+\.\d+", rollback["hermes_cli_version"])
+    assert re.fullmatch(r"[0-9a-f]{64}", rollback["hermes_wheel_sha256"])
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", rollback["council_release_tag"])
+    assert re.fullmatch(
+        r"[0-9a-f]{64}",
+        rollback["council_windows_x64_sha256"],
     )
     assert manifest["hermes_requirements_asset"].endswith(".lock")
     assert manifest["sigstore_requirements_asset"].endswith(".lock")
@@ -131,6 +140,8 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "function Get-OccultState" in text
     assert "function Test-SafeLeafName" in text
     assert "function Test-VersionToken" in text
+    assert "function Test-HermesEnvironmentRecords" in text
+    assert "*.dist-info/RECORD" in text
     assert '"inspect-occult-state-" + [Guid]::NewGuid().ToString("N")' in text
     assert "[System.IO.File]::WriteAllText" in text
     assert "& $Python $stateScriptPath" in text
@@ -228,6 +239,8 @@ def test_unix_installer_verifies_before_writing_application_files():
     assert 'type(receipt.get("occult_initialized")) is not bool' in text
     assert 'type(receipt.get("occult_enabled")) is not bool' in text
     assert "version_output_matches" in text
+    assert "verify_environment_records" in text
+    assert "*.dist-info/RECORD" in text
     assert '[ "$(readlink "$user_bin/hermes")" = "$hermes_executable" ]' in text
     assert '[ "$existing_receipt_initialized" = "$initialized" ]' in text
     assert "Verified existing Occult release v$version; no application files changed" in text
@@ -269,7 +282,8 @@ def test_quickstart_is_the_single_public_tarot_router_entrypoint():
     quickstart = _text(QUICKSTART)
     legacy_quickstart = _text(LEGACY_QUICKSTART)
     readme = _text(README)
-    release_version = json.loads(_text(MANIFEST))["occult_release_version"]
+    manifest = json.loads(_text(MANIFEST))
+    release_version = manifest["occult_release_version"]
 
     assert "Tarot Router local public v1 quickstart" in quickstart
     assert f"releases/download/v{release_version}/install-occult.ps1" in quickstart
@@ -304,8 +318,9 @@ def test_quickstart_is_the_single_public_tarot_router_entrypoint():
     )
     assert posix_block is not None
     assert _sha256(SHELL) in posix_block.group("body")
-    assert "Hermes Occult `v1.0.3`" in quickstart
-    assert "Agents Council `v0.5.2`" in quickstart
+    rollback = manifest["rollback"]
+    assert f"Hermes Occult `{rollback['hermes_release_tag']}`" in quickstart
+    assert f"Agents Council `{rollback['council_release_tag']}`" in quickstart
 
 
 def test_launch_canary_is_redacted_and_covers_the_operator_flow():
