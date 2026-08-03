@@ -438,7 +438,16 @@ jobs:
           verify_canary_artifact \
             install_manifest \
             install-assets/occult-install-manifest.json
-          verify_canary_artifact hermes_wheel "install-assets/$WHEEL_NAME"
+          # The candidate canary validates the wheel built on the operator's
+          # clean machine.  Release assembly rebuilds the wheel in CI, and
+          # wheel metadata can legitimately differ between those environments
+          # even when the checked-out source and package version are identical.
+          # Keep the filename/version contract here, then bind the published
+          # bytes to the staged artifact through OCCULT-INSTALL-SHA256SUMS.txt
+          # and its Sigstore signature below.  The public canary revalidates
+          # those exact published bytes before latest promotion.
+          EXPECTED_WHEEL_NAME="$(jq -er '.release_artifacts.hermes_wheel.name' "$CANARY")"
+          test "$WHEEL_NAME" = "$EXPECTED_WHEEL_NAME"
           verify_canary_artifact \
             hermes_requirements_lock \
             install-assets/occult-requirements.lock
