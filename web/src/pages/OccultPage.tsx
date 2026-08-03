@@ -100,6 +100,7 @@ export default function OccultPage() {
   const [readingBusy, setReadingBusy] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [registryBusy, setRegistryBusy] = useState(false);
+  const [providerFilter, setProviderFilter] = useState("");
   const [providerDraft, setProviderDraft] = useState<OccultProviderRegistration>({
     provider_id: "",
     name: "",
@@ -271,6 +272,18 @@ export default function OccultPage() {
       showToast(command, "success");
     }
   };
+
+  const visibleProviders = status.providers.filter((provider) => {
+    const query = providerFilter.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      provider.provider_id,
+      provider.name,
+      provider.activation,
+      provider.enrollment_mode,
+      ...(provider.zero_cost_model_ids ?? []),
+    ].some((value) => String(value ?? "").toLowerCase().includes(query));
+  });
 
   const runEnrollment = async () => {
     if (gatewayBusy) return;
@@ -703,8 +716,14 @@ export default function OccultPage() {
                   <div className="mt-1 text-lg">{activationCounts.adapter_pending ?? 0}</div>
                 </div>
               </div>
+              <Input
+                aria-label="Filter provider cards"
+                placeholder="Filter providers, models, or activation state"
+                value={providerFilter}
+                onChange={(event) => setProviderFilter(event.target.value)}
+              />
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {status.providers.map((provider) => (
+                {visibleProviders.map((provider) => (
                   <div key={provider.provider_id} className="border border-border p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -730,6 +749,9 @@ export default function OccultPage() {
                   </div>
                 ))}
               </div>
+              {visibleProviders.length === 0 && (
+                <p className="text-sm text-muted-foreground">No provider cards match this filter.</p>
+              )}
             </CardContent>
           </Card>
 
