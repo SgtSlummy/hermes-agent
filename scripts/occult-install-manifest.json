@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "occult_release_version": "1.0.8",
+  "occult_release_version": "1.0.9",
   "hermes_cli_version": "0.14.0",
   "hermes_wheel_asset": "hermes_agent-0.14.0-py3-none-any.whl",
   "hermes_requirements_asset": "occult-requirements.lock",
@@ -8,8 +8,8 @@
   "sigstore_requirements_asset": "occult-sigstore-requirements.lock",
   "sigstore_requirements_sha256": "a6381e9415344393a827d264cc5bda5c2fa00e95fb92e49b67fcd1aa94285916",
   "council": {
-    "release_tag": "v0.5.5",
-    "commit_sha": "7966ccc9d65a400bdd184c13669a23919f606da3",
+    "release_tag": "v0.5.6",
+    "commit_sha": "89f370a8b4a9dc11694ecc5243f97bc4d8cc28b2",
     "contract_version": "1.0.0",
     "state_schema": 3,
     "assets": {
@@ -21,11 +21,11 @@
     }
   },
   "rollback": {
-    "hermes_release_tag": "v1.0.3",
+    "hermes_release_tag": "v1.0.8",
     "hermes_cli_version": "0.14.0",
-    "hermes_wheel_sha256": "8bf1af5acc71f44e9eb2cbae0b596fb3188446e513e24bee031552b78edc70c3",
-    "council_release_tag": "v0.5.2",
-    "council_windows_x64_sha256": "638b8b044d4334468ef299fddd1db6f8901a271a605fbdd48cbfb3e78af1b934"
+    "hermes_wheel_sha256": "d520496b83b9c926cc61d15645bb489ceae6a791fe4f7ad29dcc5b82ec996e26",
+    "council_release_tag": "v0.5.5",
+    "council_windows_x64_sha256": "de0de3c141b250367f9c2865621e3a0325ae31a86b675269bbc3febe3848b6f0"
   },
   "ollama_model": "qwen2.5:3b",
   "sigstore_python_version": "4.5.0",
