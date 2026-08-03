@@ -61,6 +61,12 @@ from agent.occult.provider_catalog import (
     ProviderCatalogError,
     load_bundled_provider_catalog,
 )
+from agent.occult.provider_mesh import (
+    ProviderMeshActivation,
+    ProviderMeshConfig,
+    ProviderMeshError,
+    activate_provider_mesh,
+)
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.runtime import (
@@ -134,6 +140,9 @@ __all__ = [
     "CatalogProvider",
     "ProviderCatalog",
     "ProviderCatalogError",
+    "ProviderMeshActivation",
+    "ProviderMeshConfig",
+    "ProviderMeshError",
     "PrivacyClass",
     "ProviderFailure",
     "ProviderTrustState",
@@ -160,6 +169,7 @@ __all__ = [
     "discover_ollama_models",
     "normalize_loopback_openai_url",
     "load_bundled_provider_catalog",
+    "activate_provider_mesh",
     "ToolAuthorization",
     "ToolAuthorizationDecision",
     "UnsupportedCapability",

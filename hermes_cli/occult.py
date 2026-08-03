@@ -167,6 +167,22 @@ def initialize_occult(
     if http is None:
         raise OccultCLIError("Tarot Router runtime did not enable")
 
+    provider_mesh = occult.get("provider_mesh")
+    mesh_routes = tuple(
+        route
+        for route in http.service.router.routes()
+        if route.free and route.card_id != STARTER_CARD_ID
+    )
+    mesh_enabled = isinstance(provider_mesh, dict) and bool(
+        provider_mesh.get("enabled", False)
+    )
+    mesh_external = mesh_enabled and bool(
+        provider_mesh.get("allow_external_routes", provider_mesh.get("allowExternalRoutes", False))
+    ) if isinstance(provider_mesh, dict) else False
+    default_card_ids = frozenset(
+        {STARTER_CARD_ID}
+        | ({route.card_id for route in mesh_routes} if mesh_external else set())
+    )
     token = credential("OCCULT_API_KEY")
     token_created = False
     issued_token_id: str | None = None
@@ -175,7 +191,7 @@ def initialize_occult(
             policy = http.service.token_authority.policy(token)
             if not (
                 frozenset(STARTER_AGENT_IDS) <= policy.allowed_agent_ids
-                and STARTER_CARD_ID in policy.allowed_card_ids
+                and default_card_ids.issubset(policy.allowed_card_ids)
             ):
                 token = ""
         except VirtualTokenError:
@@ -191,7 +207,7 @@ def initialize_occult(
             VirtualTokenPolicy(
                 token_id=token_id,
                 allowed_agent_ids=frozenset(STARTER_AGENT_IDS),
-                allowed_card_ids=frozenset({STARTER_CARD_ID}),
+                allowed_card_ids=default_card_ids,
                 allowed_tools=frozenset(),
                 allowed_memory_namespaces=frozenset({"project", "agent", "reading"}),
                 requests_per_minute=30,
@@ -221,6 +237,7 @@ def initialize_occult(
         "provider": "ollama-local",
         "model": selected_model,
         "card_id": STARTER_CARD_ID,
+        "active_free_routes": [route.card_id for route in mesh_routes],
         "deck_id": STARTER_DECK_ID,
         "agents": list(STARTER_AGENT_IDS),
         "token_created": token_created,

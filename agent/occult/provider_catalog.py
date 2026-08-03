@@ -92,7 +92,16 @@ class CatalogProvider:
     auth_type: str
     official_hosts: tuple[str, ...]
     base_url: str | None
+    chat_path: str | None
+    models_path: str | None
+    secret_refs: tuple[str, ...]
     capabilities: tuple[str, ...]
+    zero_cost_model_ids: tuple[str, ...]
+    default_free_model: str | None
+    allow_paid_models: bool
+    terms_permit_tarot: bool
+    allowed_data_classifications: tuple[str, ...]
+    enabled: bool
     source_state: str
 
     @property
@@ -166,6 +175,39 @@ class ProviderCatalog:
             base_url = api.get("baseUrl") if isinstance(api, Mapping) else None
             if base_url is not None and not isinstance(base_url, str):
                 raise ProviderCatalogError(f"invalid base URL for {provider_id}")
+            chat_path = api.get("chatPath") if isinstance(api, Mapping) else None
+            models_path = api.get("modelsPath") if isinstance(api, Mapping) else None
+            if chat_path is not None and not isinstance(chat_path, str):
+                raise ProviderCatalogError(f"invalid chat path for {provider_id}")
+            if models_path is not None and not isinstance(models_path, str):
+                raise ProviderCatalogError(f"invalid models path for {provider_id}")
+            secret_refs = raw.get("secretRefs", ())
+            if not isinstance(secret_refs, list) or not all(
+                isinstance(item, str)
+                and re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", item)
+                for item in secret_refs
+            ):
+                raise ProviderCatalogError(f"invalid secret references for {provider_id}")
+            zero_cost_model_ids = raw.get("zeroCostModelIds", ())
+            if not isinstance(zero_cost_model_ids, list) or not all(
+                isinstance(item, str) and item.strip()
+                for item in zero_cost_model_ids
+            ):
+                raise ProviderCatalogError(
+                    f"invalid zero-cost model ids for {provider_id}"
+                )
+            default_free_model = raw.get("defaultFreeModel")
+            if default_free_model is not None and not isinstance(default_free_model, str):
+                raise ProviderCatalogError(
+                    f"invalid default free model for {provider_id}"
+                )
+            allowed_data = raw.get("allowedDataClassifications", ())
+            if not isinstance(allowed_data, list) or not all(
+                isinstance(item, str) and item.strip() for item in allowed_data
+            ):
+                raise ProviderCatalogError(
+                    f"invalid data classifications for {provider_id}"
+                )
             providers.append(
                 CatalogProvider(
                     provider_id=provider_id,
@@ -176,7 +218,25 @@ class ProviderCatalog:
                     auth_type=str(raw.get("authType", "unknown")),
                     official_hosts=tuple(hosts),
                     base_url=base_url,
+                    chat_path=chat_path,
+                    models_path=models_path,
+                    secret_refs=tuple(secret_refs),
                     capabilities=tuple(sorted(set(capabilities))),
+                    zero_cost_model_ids=tuple(
+                        dict.fromkeys(item.strip() for item in zero_cost_model_ids)
+                    ),
+                    default_free_model=(
+                        default_free_model.strip()
+                        if isinstance(default_free_model, str)
+                        and default_free_model.strip()
+                        else None
+                    ),
+                    allow_paid_models=bool(raw.get("allowPaidModels", False)),
+                    terms_permit_tarot=bool(raw.get("termsPermitTarot", False)),
+                    allowed_data_classifications=tuple(
+                        sorted(set(item.strip() for item in allowed_data))
+                    ),
+                    enabled=bool(raw.get("enabled", False)),
                     source_state=str(raw.get("state", "unknown")),
                 )
             )

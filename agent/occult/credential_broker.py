@@ -1,9 +1,10 @@
 """Opaque credential references for the Hermes-owned Occult boundary.
 
 This module deliberately does not persist provider secrets. Existing Hermes
-authentication stores remain the source of truth in production. The in-memory
-broker exists so Mythos adapters can be contract-tested without placing secret
-material in route descriptors, state files, logs, errors, or public results.
+authentication stores and protected environment imports remain the source of
+truth; the in-memory broker is only the process-scoped handoff to Mythos
+adapters. This keeps secret material out of route descriptors, state files,
+logs, errors, and public results.
 """
 
 from __future__ import annotations
@@ -116,7 +117,7 @@ class CredentialReference:
 
 
 class InMemoryCredentialBroker:
-    """Testable broker that never serializes or displays its secret values."""
+    """Process-scoped broker that never serializes or displays secret values."""
 
     def __init__(self) -> None:
         self._references: dict[str, CredentialReference] = {}

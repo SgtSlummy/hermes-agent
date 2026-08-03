@@ -29,3 +29,5 @@ secret-free catalog with `active_route_count` and a summary. The Tarot Router
 control room displays those values separately from live Minor Arcana routes,
 so an operator can see what is policy-allowed, what is awaiting authorization,
 and what is actually running without exposing credentials.
+
+To explicitly activate reviewed free routes, follow [Free provider mesh](provider-mesh.md).
