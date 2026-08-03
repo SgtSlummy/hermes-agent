@@ -32,7 +32,7 @@ asset with SHA-256, and only then writes application files.
 Open PowerShell as your normal user. Do not run it as Administrator.
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "f769ef181ac54f45275286862de9914233394b3b72029c148d870d12919b353f"; Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.9/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
+$installer = Join-Path $env:TEMP "install-occult.ps1"; $expected = "bba7535edc9a786b48d893c105818297847f8cdf32616a024c815cc90382f02b"; Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.9/install-occult.ps1" -OutFile $installer; if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { Remove-Item -LiteralPath $installer -Force; throw "Tarot Router installer checksum verification failed" }; & $installer
 ```
 
 This literal checksum is pinned in the immutable `v1.0.9` quickstart and
@@ -71,7 +71,7 @@ Run as your normal user:
 (
   set -eu
   installer="${TMPDIR:-/tmp}/install-occult.sh"
-  expected="97ec9b7ce77a3f25ea112c1507879cf5dacd047fbdc3313af14ea1421bf2f12b"
+  expected="38b89ad465b444d8ece16783235d13674a12c2cf52c9cb4a6cea3763fd25263a"
   curl -fsSLo "$installer" "https://github.com/SgtSlummy/hermes-agent/releases/download/v1.0.9/install-occult.sh"
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$installer" | awk '{print $1}')
@@ -100,6 +100,7 @@ Available options:
 --version 1.0.9
 --install-root /path/owned/by/you
 --initialize-local
+--enable-keyless-mesh   (with --initialize-local; enroll reviewed keyless/free routes)
 --skip-council
 --verify-only
 --model qwen2.5:3b
@@ -149,6 +150,25 @@ with explicit initialization:
 ```bash
 sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local --model qwen2.5:3b
 ```
+
+For a single noninteractive local-first setup that also enrolls every reviewed
+keyless/free catalog route, add `-EnableKeylessMesh` on Windows or
+`--enable-keyless-mesh` on Linux/macOS:
+
+```powershell
+& $installer -InitializeLocal -EnableKeylessMesh -Model "qwen2.5:3b"
+```
+
+```bash
+sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local --enable-keyless-mesh --model qwen2.5:3b
+```
+
+This path explicitly permits reviewed external routes, but never creates
+provider accounts, bypasses verification, imports public/shared keys, or
+enables bearer/OAuth routes. It enrolls only catalog
+entries marked keyless/anonymous, free-policy allowed, terms-compatible, and
+reachable with a verified zero-cost model. Providers that need an authorized
+credential remain visible as pending cards for later operator setup.
 
 Or perform the same two steps directly:
 

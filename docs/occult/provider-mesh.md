@@ -59,6 +59,18 @@ startup. This is the unattended path: it creates no account and stores no
 credential. Bearer and OAuth providers remain pending until an authorized
 credential is supplied through the protected environment or secret broker.
 
+The signed GitHub installer exposes the same path as one explicit command:
+
+```text
+Windows:  install-occult.ps1 -InitializeLocal -EnableKeylessMesh
+POSIX:    install-occult.sh --initialize-local --enable-keyless-mesh
+```
+
+Because this flag explicitly permits external routes, the starter token can
+use successfully enrolled keyless cards. The installer still fails closed for
+unverified, paid, credentialed, or unreachable providers and remains
+idempotent on rerun.
+
 Bearer credentials are supplied through the provider's official authorization
 flow and then placed in the protected local environment using the exact
 catalog reference. For example:

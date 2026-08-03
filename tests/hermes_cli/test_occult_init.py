@@ -117,6 +117,7 @@ def test_occult_init_can_enable_unattended_keyless_mesh(tmp_path: Path, monkeypa
         "enabled": True,
         "auto_enroll_keyless": True,
         "allow_anonymous": True,
+        "allow_external_routes": True,
     }
     assert result["keyless_mesh_enabled"] is True
 

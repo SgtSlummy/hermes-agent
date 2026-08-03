@@ -139,6 +139,7 @@ def initialize_occult(
             "enabled": True,
             "auto_enroll_keyless": True,
             "allow_anonymous": True,
+            "allow_external_routes": True,
         })
         occult["provider_mesh"] = provider_mesh
     config["occult"] = occult

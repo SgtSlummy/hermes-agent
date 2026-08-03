@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from agent.occult.credential_broker import InMemoryCredentialBroker
 from agent.occult.provider_catalog import CatalogProvider, ProviderCatalog
 from agent.occult.provider_mesh import (
@@ -67,6 +69,20 @@ def test_mesh_can_unattendedly_enroll_reviewed_keyless_catalog_entries():
 
     assert result.activated == ("anonymous-test",)
     assert result.pending_authorization == ()
+
+
+def test_mesh_card_ids_are_safe_when_provider_model_uses_path_separator():
+    provider = replace(_provider(), zero_cost_model_ids=("org/model",))
+    result = activate_provider_mesh(
+        ProviderMeshConfig(enabled=True, provider_ids=(provider.provider_id,), discover_models=False),
+        catalog=ProviderCatalog((provider,)),
+        environ={},
+        credential_broker=InMemoryCredentialBroker(),
+    )
+
+    assert len(result.routes) == 1
+    assert "/" not in result.routes[0].card_id
+    assert result.routes[0].model_id == "org/model"
 
 
 def test_mesh_never_activates_bearer_provider_without_authorized_secret():

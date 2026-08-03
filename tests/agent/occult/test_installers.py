@@ -565,6 +565,7 @@ def test_windows_installer_verifies_before_writing_application_files():
         "[string]$Version",
         "[string]$InstallRoot",
         "[switch]$InitializeLocal",
+        "[switch]$EnableKeylessMesh",
         "[switch]$SkipCouncil",
         "[switch]$VerifyOnly",
     ):
@@ -634,6 +635,9 @@ def test_windows_installer_verifies_before_writing_application_files():
     assert "the managed Council command path is not an independent file" in text
     assert "$receiptStateChanged = (" in text
     assert "$InitializeLocal -or $receiptStateChanged" in text
+    assert "-EnableKeylessMesh requires -InitializeLocal" in text
+    assert '"--enable-keyless-mesh"' in text
+    assert "Enrolling reviewed keyless/free provider routes without credentials" in text
     assert "Mutable Occult state was refreshed" in text
     assert (
         "[bool]$existingReceipt.occult_initialized -eq [bool]$state.initialized"
@@ -722,6 +726,7 @@ def test_unix_installer_verifies_before_writing_application_files():
         "--version",
         "--install-root",
         "--initialize-local",
+        "--enable-keyless-mesh",
         "--skip-council",
         "--verify-only",
     ):
@@ -791,6 +796,9 @@ def test_unix_installer_verifies_before_writing_application_files():
         in text
     )
     assert "Mutable Occult state was refreshed" in text
+    assert "--enable-keyless-mesh requires --initialize-local" in text
+    assert "--enable-keyless-mesh" in text
+    assert "Enrolling reviewed keyless/free provider routes without credentials" in text
     assert '[ "$existing_receipt_initialized" = "$initialized" ] || reuse_ok=0' not in text
     assert "NousResearch/hermes-agent" not in text
     assert "agents-council@latest" not in text
@@ -822,6 +830,7 @@ def test_quickstart_is_the_single_public_tarot_router_entrypoint():
     assert "agents-council.com" not in quickstart
     assert "agents-council@latest" not in quickstart
     assert 'sh "${TMPDIR:-/tmp}/install-occult.sh" --initialize-local' in quickstart
+    assert "--enable-keyless-mesh" in quickstart
     powershell_blocks = re.findall(
         r"(?m)^```powershell[ \t]*\r?\n"
         r"(?P<body>(?:(?!^```)[^\r\n]*(?:\r?\n|$))*)"

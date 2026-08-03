@@ -169,7 +169,10 @@ def _official_https_url(
 
 
 def _safe_model_component(value: str) -> str:
-    component = re.sub(r"[^A-Za-z0-9._:/-]", "_", str(value).strip())
+    # Card IDs are also used as virtual-token scope identifiers. Keep the
+    # provider/model identity readable while excluding path separators that
+    # are not valid in the signed scope grammar.
+    component = re.sub(r"[^A-Za-z0-9._:-]", "_", str(value).strip())
     if not component:
         component = "model"
     if len(component) <= _MAX_MODEL_ID_LENGTH:
