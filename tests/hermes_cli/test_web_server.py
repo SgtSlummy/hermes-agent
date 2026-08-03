@@ -154,10 +154,16 @@ class TestWebServerEndpoints:
             "pid": 4242,
             "name": "gateway-restart",
         }
+        assert self.client.post("/api/occult/enroll").json() == {
+            "ok": True,
+            "pid": 4242,
+            "name": "occult-enroll",
+        }
         assert calls == [
             (["gateway", "start"], "gateway-start"),
             (["gateway", "stop"], "gateway-stop"),
             (["gateway", "restart"], "gateway-restart"),
+            (["tarot", "enroll", "--enable-free-mesh"], "occult-enroll"),
         ]
 
     def test_get_status_filters_unconfigured_gateway_platforms(self, monkeypatch):
