@@ -23,3 +23,9 @@ the operator adds a legitimate credential through the protected broker.
 The active route list is separate from the catalog. A catalog entry is not a
 claim that the provider is reachable, free in every region, or currently
 configured on the local machine.
+
+The authenticated `GET /v1/occult/providers` endpoint returns this same
+secret-free catalog with `active_route_count` and a summary. The Tarot Router
+control room displays those values separately from live Minor Arcana routes,
+so an operator can see what is policy-allowed, what is awaiting authorization,
+and what is actually running without exposing credentials.
