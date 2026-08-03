@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   BookOpen,
+  Clipboard,
   Layers3,
   Power,
   Play,
@@ -258,6 +259,16 @@ export default function OccultPage() {
     } finally {
       setReadingBusy(false);
       setCancelOpen(false);
+    }
+  };
+
+  const copyEnrollmentCommand = async () => {
+    const command = "hermes tarot enroll --enable-free-mesh";
+    try {
+      await navigator.clipboard.writeText(command);
+      showToast("Enrollment command copied.", "success");
+    } catch {
+      showToast(command, "success");
     }
   };
 
@@ -634,12 +645,19 @@ export default function OccultPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Provider catalog</CardTitle>
-              <CardDescription>
-                {status.provider_summary.allowed_free ?? 0} providers are allowed by
-                the free-only policy; routes activate only after an authorized
-                credential, adapter, quota, and health check pass.
-              </CardDescription>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <CardTitle>Provider catalog</CardTitle>
+                  <CardDescription>
+                    {status.provider_summary.allowed_free ?? 0} providers are allowed by
+                    the free-only policy; routes activate only after an authorized
+                    credential, adapter, quota, and health check pass.
+                  </CardDescription>
+                </div>
+                <Button outlined size="sm" onClick={() => void copyEnrollmentCommand()}>
+                  <Clipboard className="mr-2 h-3.5 w-3.5" /> Copy enrollment command
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
