@@ -433,6 +433,31 @@ export interface OccultPairing {
   model_id?: string;
 }
 
+export interface OccultProvider {
+  provider_id: string;
+  name: string;
+  free_access: string;
+  requires_card: boolean;
+  allowed_by_free_policy: boolean;
+  activation: string;
+  active_route_count: number;
+  adapter: string;
+  auth_type: string;
+  official_hosts: string[];
+  capabilities: string[];
+}
+
+export interface OccultProviderSummary {
+  cataloged?: number;
+  allowed_free?: number;
+  anonymous_free?: number;
+  recurring_free?: number;
+  temporary_credit?: number;
+  card_required?: number;
+  blocked?: number;
+  [key: string]: number | undefined;
+}
+
 export interface OccultDashboardStatus {
   enabled: boolean;
   configured: boolean;
@@ -441,6 +466,8 @@ export interface OccultDashboardStatus {
   routes: OccultRoute[];
   decks: OccultDeck[];
   pairings: OccultPairing[];
+  providers: OccultProvider[];
+  provider_summary: OccultProviderSummary;
   error?: string;
 }
 

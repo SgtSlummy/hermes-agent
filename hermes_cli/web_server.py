@@ -717,14 +717,17 @@ async def get_occult_dashboard_status():
             "routes": [],
             "decks": [],
             "pairings": [],
+            "providers": [],
+            "provider_summary": {},
         }
 
     try:
-        agents, routes, decks, pairings = await asyncio.gather(
+        agents, routes, decks, pairings, providers = await asyncio.gather(
             _run_occult_dashboard_request("GET", "/v1/occult/major-arcana"),
             _run_occult_dashboard_request("GET", "/v1/occult/minor-arcana"),
             _run_occult_dashboard_request("GET", "/v1/occult/decks"),
             _run_occult_dashboard_request("GET", "/v1/occult/pairings"),
+            _run_occult_dashboard_request("GET", "/v1/occult/providers"),
         )
     except HTTPException:
         return {
@@ -735,6 +738,8 @@ async def get_occult_dashboard_status():
             "routes": [],
             "decks": [],
             "pairings": [],
+            "providers": [],
+            "provider_summary": {},
             "error": "Occult API is unavailable",
         }
 
@@ -746,6 +751,8 @@ async def get_occult_dashboard_status():
         "routes": routes.get("data", []),
         "decks": decks.get("data", []),
         "pairings": pairings.get("data", []),
+        "provider_summary": providers.get("summary", {}),
+        "providers": providers.get("providers", []),
     }
 
 

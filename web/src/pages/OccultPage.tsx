@@ -47,6 +47,8 @@ const EMPTY_STATUS: OccultDashboardStatus = {
   routes: [],
   decks: [],
   pairings: [],
+  providers: [],
+  provider_summary: {},
 };
 
 function statusTone(connected: boolean): string {
@@ -240,6 +242,11 @@ export default function OccultPage() {
   }> = [
     { label: "Major Arcana", count: status.agents.length, icon: Users },
     { label: "Minor Arcana", count: status.routes.length, icon: Route },
+    {
+      label: "Providers",
+      count: status.provider_summary.cataloged ?? status.providers.length,
+      icon: Route,
+    },
     { label: "Decks", count: status.decks.length, icon: Layers3 },
     { label: "Pairings", count: status.pairings.length, icon: ShieldCheck },
   ];
@@ -497,7 +504,7 @@ export default function OccultPage() {
               <CardHeader>
                 <CardTitle>Minor Arcana routes</CardTitle>
                 <CardDescription>
-                  Provider and model details are shown without credential data.
+                  Live routes are shown beside the full secret-free provider catalog.
                 </CardDescription>
               </CardHeader>
               <CardContent className="max-h-[25rem] space-y-2 overflow-auto">
@@ -523,6 +530,35 @@ export default function OccultPage() {
               </CardContent>
             </Card>
           </section>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Provider catalog</CardTitle>
+              <CardDescription>
+                {status.provider_summary.allowed_free ?? 0} providers are allowed by
+                the free-only policy; routes activate only after an authorized
+                credential, adapter, quota, and health check pass.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="border border-border p-3 text-xs">
+                <div className="font-courier uppercase tracking-wider text-muted-foreground">Cataloged</div>
+                <div className="mt-1 text-lg">{status.provider_summary.cataloged ?? status.providers.length}</div>
+              </div>
+              <div className="border border-success/30 p-3 text-xs text-success">
+                <div className="font-courier uppercase tracking-wider">Free policy allowed</div>
+                <div className="mt-1 text-lg">{status.provider_summary.allowed_free ?? 0}</div>
+              </div>
+              <div className="border border-border p-3 text-xs">
+                <div className="font-courier uppercase tracking-wider text-muted-foreground">Live routes</div>
+                <div className="mt-1 text-lg">{status.providers.reduce((sum, provider) => sum + provider.active_route_count, 0)}</div>
+              </div>
+              <div className="border border-border p-3 text-xs">
+                <div className="font-courier uppercase tracking-wider text-muted-foreground">Awaiting authorization</div>
+                <div className="mt-1 text-lg">{status.providers.filter((provider) => provider.activation === "awaiting_authorized_credential").length}</div>
+              </div>
+            </CardContent>
+          </Card>
 
           <section className="grid gap-4 xl:grid-cols-2">
             <Card>
