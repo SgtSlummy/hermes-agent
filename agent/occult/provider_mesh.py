@@ -314,7 +314,11 @@ def _select_models(
         for model in dict.fromkeys(provider.zero_cost_model_ids)
         if _SAFE_MODEL_ID.fullmatch(model)
     )
-    if not allowed and provider.default_free_model:
+    if (
+        not allowed
+        and provider.default_free_model
+        and _SAFE_MODEL_ID.fullmatch(provider.default_free_model)
+    ):
         allowed = (provider.default_free_model,)
     if not allowed:
         return ()
