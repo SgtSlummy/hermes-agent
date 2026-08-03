@@ -88,6 +88,10 @@ only when you are ready. The canonical instructions for Windows, Linux, and
 macOS are in the
 [Tarot Router local public v1 quickstart](docs/tarot-router/quickstart.md).
 
+The opt-in, free-only provider mesh is documented in
+[Free provider mesh](docs/occult/provider-mesh.md); local Ollama remains the
+default and rollback route.
+
 📖 **[Full documentation →](https://hermes-agent.nousresearch.com/docs/)**
 
 ## CLI vs Messaging Quick Reference
