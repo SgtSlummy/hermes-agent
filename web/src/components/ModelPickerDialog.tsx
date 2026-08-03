@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * Two-stage model picker modal.
  *
  * Mirrors ui-tui/src/components/modelPicker.tsx:
- *   Stage 1: pick provider (authenticated providers only)
+ *   Stage 1: pick provider (authenticated providers plus explicit OAuth setup options)
  *   Stage 2: pick model within that provider
  *
  * Two invocation modes:
@@ -33,6 +33,7 @@ interface ModelOptionProvider {
   models?: string[];
   total_models?: number;
   is_current?: boolean;
+  authenticated?: boolean;
   warning?: string;
 }
 
@@ -356,6 +357,11 @@ function ProviderColumn({
               <div className="flex items-center gap-1.5">
                 <span className="font-medium truncate">{p.name}</span>
                 {p.is_current && <CurrentTag />}
+                {p.authenticated === false && (
+                  <span className="text-[0.6rem] uppercase tracking-wider text-amber-600 dark:text-amber-300">
+                    setup
+                  </span>
+                )}
               </div>
               <div className="text-[0.65rem] text-muted-foreground/80 font-mono truncate">
                 {p.slug} · {p.total_models ?? p.models?.length ?? 0} models

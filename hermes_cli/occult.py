@@ -456,6 +456,10 @@ def run_tui_tarot_command(argument: str) -> str:
         if len(parts) != 1:
             raise OccultCLIError("usage: /tarot routes")
         result = _request("GET", "/v1/occult/minor-arcana")
+    elif action == "providers":
+        if len(parts) != 1:
+            raise OccultCLIError("usage: /tarot providers")
+        result = _request("GET", "/v1/occult/providers")
     elif action == "decks":
         if len(parts) != 1:
             raise OccultCLIError("usage: /tarot decks")
@@ -486,7 +490,7 @@ def run_tui_tarot_command(argument: str) -> str:
     else:
         raise OccultCLIError(
             "usage: /tarot "
-            "[status|agents|routes|decks|pairings|deck-validate|reading-status|"
+            "[status|agents|routes|providers|decks|pairings|deck-validate|reading-status|"
             "reading-events|reading-resume|reading-cancel]"
         )
     return json.dumps(result, indent=2, sort_keys=True)
@@ -536,6 +540,8 @@ def cmd_occult(args) -> None:
         result = _request("GET", "/v1/occult/major-arcana")
     elif action == "routes":
         result = _request("GET", "/v1/occult/minor-arcana")
+    elif action == "providers":
+        result = _request("GET", "/v1/occult/providers")
     elif action == "decks":
         result = _request("GET", "/v1/occult/decks")
     elif action == "pairings":

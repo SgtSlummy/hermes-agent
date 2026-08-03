@@ -53,13 +53,32 @@ from hermes_constants import get_hermes_home
 
 STARTER_CARD_ID = "minor.pentacles.ace.ollama.local"
 STARTER_DECK_ID = "occult.deck.starter"
-STARTER_AGENT_IDS = (
+MAJOR_ARCANA_AGENT_IDS = (
+    "occult.major.fool",
     "occult.major.magician",
+    "occult.major.high_priestess",
+    "occult.major.empress",
+    "occult.major.emperor",
+    "occult.major.hierophant",
+    "occult.major.lovers",
+    "occult.major.chariot",
+    "occult.major.strength",
+    "occult.major.hermit",
+    "occult.major.wheel_of_fortune",
     "occult.major.justice",
+    "occult.major.hanged_man",
+    "occult.major.death",
     "occult.major.temperance",
+    "occult.major.devil",
+    "occult.major.tower",
+    "occult.major.star",
+    "occult.major.moon",
+    "occult.major.sun",
     "occult.major.judgement",
     "occult.major.world",
 )
+# Backward-compatible name retained for clients that used the starter set.
+STARTER_AGENT_IDS = MAJOR_ARCANA_AGENT_IDS
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 
 

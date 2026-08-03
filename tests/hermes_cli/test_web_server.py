@@ -125,6 +125,41 @@ class TestWebServerEndpoints:
         assert "hermes_home" in data
         assert "active_sessions" in data
 
+    def test_gateway_controls_spawn_start_stop_restart(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        calls: list[tuple[list[str], str]] = []
+
+        class _Process:
+            pid = 4242
+
+        def fake_spawn(command, name):
+            calls.append((command, name))
+            return _Process()
+
+        monkeypatch.setattr(web_server, "_spawn_hermes_action", fake_spawn)
+
+        assert self.client.post("/api/gateway/start").json() == {
+            "ok": True,
+            "pid": 4242,
+            "name": "gateway-start",
+        }
+        assert self.client.post("/api/gateway/stop").json() == {
+            "ok": True,
+            "pid": 4242,
+            "name": "gateway-stop",
+        }
+        assert self.client.post("/api/gateway/restart").json() == {
+            "ok": True,
+            "pid": 4242,
+            "name": "gateway-restart",
+        }
+        assert calls == [
+            (["gateway", "start"], "gateway-start"),
+            (["gateway", "stop"], "gateway-stop"),
+            (["gateway", "restart"], "gateway-restart"),
+        ]
+
     def test_get_status_filters_unconfigured_gateway_platforms(self, monkeypatch):
         import gateway.config as gateway_config
         import hermes_cli.web_server as web_server

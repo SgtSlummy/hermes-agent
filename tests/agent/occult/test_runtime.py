@@ -86,6 +86,12 @@ def test_runtime_installs_signed_starters_route_and_deck(tmp_path: Path):
         STARTER_AGENT_IDS
     )
     assert [item["card_id"] for item in http.service.routes(token)] == [STARTER_CARD_ID]
+    providers = http.service.providers(token)
+    assert providers["summary"]["cataloged"] == 71
+    assert providers["summary"]["allowed_free"] > 0
+    assert next(
+        item for item in providers["providers"] if item["provider_id"] == "openai"
+    )["activation"] == "blocked_by_free_policy"
     assert [item["deck_id"] for item in http.service.decks(token)] == [STARTER_DECK_ID]
     assert http.service.validate_deck(token, STARTER_DECK_ID)["valid"] is True
     assert http.admin_key_digest is not None

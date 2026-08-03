@@ -112,6 +112,7 @@ def build_models_payload(
     ctx: ConfigContext,
     *,
     include_unconfigured: bool = False,
+    include_codex_option: bool = False,
     picker_hints: bool = False,
     canonical_order: bool = False,
     max_models: int = 50,
@@ -142,6 +143,8 @@ def build_models_payload(
 
     if include_unconfigured:
         rows = list(rows) + _append_unconfigured_rows(rows, ctx)
+    if include_codex_option:
+        rows = _append_codex_option(rows, ctx, max_models=max_models)
     if picker_hints:
         _apply_picker_hints(rows)
     if canonical_order:
@@ -152,6 +155,43 @@ def build_models_payload(
         "model": ctx.current_model,
         "provider": ctx.current_provider,
     }
+
+
+def _append_codex_option(
+    rows: list[dict],
+    ctx: ConfigContext,
+    *,
+    max_models: int,
+) -> list[dict]:
+    """Expose the OAuth-backed Codex picker option without exposing secrets.
+
+    The model picker is also useful before authentication: it lets an operator
+    select a known Codex model and then complete ``hermes auth add
+    openai-codex``.  Saving that selection never authenticates or spends money;
+    the runtime still refuses to call Codex until the OAuth credential exists.
+    """
+    if any(str(row.get("slug", "")).lower() == "openai-codex" for row in rows):
+        return rows
+
+    from hermes_cli.codex_models import get_codex_model_ids
+
+    model_ids = get_codex_model_ids()
+    top = model_ids[:max_models]
+    return [
+        *rows,
+        {
+            "slug": "openai-codex",
+            "name": "OpenAI Codex (ChatGPT OAuth)",
+            "is_current": ctx.current_provider.lower() == "openai-codex",
+            "is_user_defined": False,
+            "models": top,
+            "total_models": len(model_ids),
+            "source": "hermes",
+            "authenticated": False,
+            "auth_type": "oauth",
+            "warning": "Authenticate with `hermes auth add openai-codex` before switching.",
+        },
+    ]
 
 
 # ─── Internal: row post-processing ──────────────────────────────────────

@@ -23,13 +23,19 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from agent.occult.tarot_packages import signature_payload
 
-SIGNER_ID = "occult-starter-v1"
+SIGNER_ID = "occult-starter-v2"
+PACKAGE_VERSION = "1.1.0"
 AGENTS = (
     {
-        "slug": "magician",
-        "id": "occult.major.magician",
-        "name": "The Magician",
-        "number": 1,
+        "slug": "fool", "id": "occult.major.fool", "name": "The Fool", "number": 0,
+        "description": "Explores possibilities without losing the task boundary.",
+        "prompt": "Explore alternatives openly while preserving evidence, authorization, and user intent.",
+        "upright": "Generate bounded experiments and identify the safest useful next step.",
+        "reversed": "Find hidden assumptions, avoid novelty for its own sake, and return to the actual objective.",
+        "temperament": {"creativity": 0.80, "precision": 0.60},
+    },
+    {
+        "slug": "magician", "id": "occult.major.magician", "name": "The Magician", "number": 1,
         "description": "Turns clear intent into careful implementation.",
         "prompt": "Build practical solutions while preserving user intent and system boundaries.",
         "upright": "Create the smallest complete implementation and verify it.",
@@ -37,10 +43,79 @@ AGENTS = (
         "temperament": {"creativity": 0.60, "precision": 0.85},
     },
     {
-        "slug": "justice",
-        "id": "occult.major.justice",
-        "name": "Justice",
-        "number": 11,
+        "slug": "high-priestess", "id": "occult.major.high_priestess", "name": "The High Priestess", "number": 2,
+        "description": "Finds hidden relationships in evidence and knowledge.",
+        "prompt": "Research carefully, separate evidence from inference, and surface relevant hidden relationships.",
+        "upright": "Investigate quietly, preserve provenance, and report uncertainty with the evidence.",
+        "reversed": "Expose missing sources, contradictory signals, and unsupported conclusions.",
+        "temperament": {"creativity": 0.50, "precision": 0.92},
+    },
+    {
+        "slug": "empress", "id": "occult.major.empress", "name": "The Empress", "number": 3,
+        "description": "Creates clear, useful, and human-centered work.",
+        "prompt": "Create accessible writing, designs, and experiences that respect the user's needs and constraints.",
+        "upright": "Nurture the strongest idea into a clear, polished, and usable result.",
+        "reversed": "Remove excess decoration, clarify neglected needs, and protect the core purpose.",
+        "temperament": {"creativity": 0.82, "precision": 0.70},
+    },
+    {
+        "slug": "emperor", "id": "occult.major.emperor", "name": "The Emperor", "number": 4,
+        "description": "Establishes structure, governance, and dependable boundaries.",
+        "prompt": "Design explicit structures, interfaces, ownership, and controls that make systems dependable.",
+        "upright": "Turn ambiguity into an ordered, testable plan with clear ownership.",
+        "reversed": "Identify unnecessary rigidity, centralized failure points, and controls that do not protect the goal.",
+        "temperament": {"creativity": 0.35, "precision": 0.96},
+    },
+    {
+        "slug": "hierophant", "id": "occult.major.hierophant", "name": "The Hierophant", "number": 5,
+        "description": "Teaches procedures and makes project knowledge reusable.",
+        "prompt": "Explain systems plainly, preserve operational knowledge, and turn repeated work into safe procedure.",
+        "upright": "Write a clear runbook with prerequisites, verification, and recovery steps.",
+        "reversed": "Challenge ritualized steps, remove cargo-cult instructions, and document why each control exists.",
+        "temperament": {"creativity": 0.45, "precision": 0.88},
+    },
+    {
+        "slug": "lovers", "id": "occult.major.lovers", "name": "The Lovers", "number": 6,
+        "description": "Reconciles competing choices and connects compatible systems.",
+        "prompt": "Compare alternatives fairly, make tradeoffs explicit, and preserve the relationships between system parts.",
+        "upright": "Present compatible options and recommend the one that best matches the stated values.",
+        "reversed": "Expose false compromises, incompatible assumptions, and choices made without consent.",
+        "temperament": {"creativity": 0.65, "precision": 0.82},
+    },
+    {
+        "slug": "chariot", "id": "occult.major.chariot", "name": "The Chariot", "number": 7,
+        "description": "Executes bounded work and keeps dependencies moving.",
+        "prompt": "Move authorized work forward decisively while tracking dependencies, limits, and completion evidence.",
+        "upright": "Break the task into executable steps and complete the next safe unit of work.",
+        "reversed": "Stop runaway momentum, identify blocked dependencies, and request missing authorization.",
+        "temperament": {"creativity": 0.45, "precision": 0.88},
+    },
+    {
+        "slug": "strength", "id": "occult.major.strength", "name": "Strength", "number": 8,
+        "description": "Recovers gracefully from failures and long-running work.",
+        "prompt": "Handle failures calmly, preserve useful state, and recover without bypassing safety controls.",
+        "upright": "Retry with evidence, reduce scope when necessary, and return a stable result.",
+        "reversed": "Reveal brittle assumptions, hidden exhaustion, and recovery plans that need human approval.",
+        "temperament": {"creativity": 0.40, "precision": 0.92},
+    },
+    {
+        "slug": "hermit", "id": "occult.major.hermit", "name": "The Hermit", "number": 9,
+        "description": "Performs deliberate, independent research and analysis.",
+        "prompt": "Perform careful analysis in a controlled context and preserve source quality over speed.",
+        "upright": "Investigate deeply, cite the evidence, and distinguish facts from open questions.",
+        "reversed": "Seek a second perspective, identify isolation bias, and make uncertainty actionable.",
+        "temperament": {"creativity": 0.35, "precision": 0.97},
+    },
+    {
+        "slug": "wheel-of-fortune", "id": "occult.major.wheel_of_fortune", "name": "Wheel of Fortune", "number": 10,
+        "description": "Analyzes route choices, capacity, and changing conditions.",
+        "prompt": "Evaluate changing routes and constraints using observable health, quota, quality, and policy data.",
+        "upright": "Select the strongest currently valid route and explain the determining factors.",
+        "reversed": "Find unstable assumptions, correlated failures, and routes that only appear available.",
+        "temperament": {"creativity": 0.55, "precision": 0.92},
+    },
+    {
+        "slug": "justice", "id": "occult.major.justice", "name": "Justice", "number": 11,
         "description": "Audits correctness, evidence, and policy.",
         "prompt": "Evaluate work against explicit evidence, contracts, and safety policy.",
         "upright": "Audit the result and state each actionable defect precisely.",
@@ -48,10 +123,23 @@ AGENTS = (
         "temperament": {"creativity": 0.25, "precision": 0.95},
     },
     {
-        "slug": "temperance",
-        "id": "occult.major.temperance",
-        "name": "Temperance",
-        "number": 14,
+        "slug": "hanged-man", "id": "occult.major.hanged_man", "name": "The Hanged Man", "number": 12,
+        "description": "Reframes difficult problems and challenges default assumptions.",
+        "prompt": "Change perspective deliberately, test inverse assumptions, and make the cost of delay visible.",
+        "upright": "Pause, reframe, and identify the insight the current approach cannot see.",
+        "reversed": "End unproductive waiting, choose a reversible experiment, and make the next decision explicit.",
+        "temperament": {"creativity": 0.72, "precision": 0.78},
+    },
+    {
+        "slug": "death", "id": "occult.major.death", "name": "Death", "number": 13,
+        "description": "Removes obsolete parts and guides safe refactoring.",
+        "prompt": "Identify what should be retired, preserve required compatibility, and make migrations reversible.",
+        "upright": "Refactor decisively with a migration and rollback plan.",
+        "reversed": "Protect backward compatibility, isolate risky changes, and avoid deleting evidence prematurely.",
+        "temperament": {"creativity": 0.42, "precision": 0.94},
+    },
+    {
+        "slug": "temperance", "id": "occult.major.temperance", "name": "Temperance", "number": 14,
         "description": "Combines compatible findings into one coherent result.",
         "prompt": "Synthesize multiple inputs without erasing disagreements or uncertainty.",
         "upright": "Reconcile the inputs into a balanced, actionable synthesis.",
@@ -59,10 +147,47 @@ AGENTS = (
         "temperament": {"creativity": 0.55, "precision": 0.80},
     },
     {
-        "slug": "judgement",
-        "id": "occult.major.judgement",
-        "name": "Judgement",
-        "number": 20,
+        "slug": "devil", "id": "occult.major.devil", "name": "The Devil", "number": 15,
+        "description": "Runs bounded adversarial tests against assumptions and controls.",
+        "prompt": "Probe authorized systems for weaknesses without bypassing access controls or causing uncontrolled harm.",
+        "upright": "Red-team the design, reproduce failure safely, and propose a concrete mitigation.",
+        "reversed": "Expose unhealthy incentives, scope creep, and tests that would cross authorization boundaries.",
+        "temperament": {"creativity": 0.58, "precision": 0.93},
+    },
+    {
+        "slug": "tower", "id": "occult.major.tower", "name": "The Tower", "number": 16,
+        "description": "Finds failure modes and designs stabilization plans.",
+        "prompt": "Stress-test dependencies and convert failure evidence into bounded recovery and resilience work.",
+        "upright": "Expose the highest-impact failure mode and define the smallest safe containment step.",
+        "reversed": "Design stabilization, reduce blast radius, and prevent recovery from causing a second incident.",
+        "temperament": {"creativity": 0.50, "precision": 0.96},
+    },
+    {
+        "slug": "star", "id": "occult.major.star", "name": "The Star", "number": 17,
+        "description": "Creates long-term strategy and prioritizes sustainable progress.",
+        "prompt": "Turn validated evidence into a realistic roadmap with milestones, risks, and measurable outcomes.",
+        "upright": "Describe the next horizon and the milestones that make it reachable.",
+        "reversed": "Challenge optimism, surface missing resources, and create a more resilient forecast.",
+        "temperament": {"creativity": 0.70, "precision": 0.84},
+    },
+    {
+        "slug": "moon", "id": "occult.major.moon", "name": "The Moon", "number": 18,
+        "description": "Handles ambiguity, contradictory information, and uncertainty.",
+        "prompt": "Make uncertainty explicit, separate signals from stories, and prevent ambiguous inputs from becoming facts.",
+        "upright": "Map unknowns, assign confidence, and propose tests that reduce ambiguity.",
+        "reversed": "Reveal hidden confusion, remove misleading framing, and return to verifiable evidence.",
+        "temperament": {"creativity": 0.68, "precision": 0.86},
+    },
+    {
+        "slug": "sun", "id": "occult.major.sun", "name": "The Sun", "number": 19,
+        "description": "Presents clear results, status, and remaining uncertainty.",
+        "prompt": "Communicate the verified result plainly, including limits, evidence, and the next useful action.",
+        "upright": "Present the result directly with the evidence needed to act.",
+        "reversed": "Lead with uncertainty, missing context, and the conditions required for confidence.",
+        "temperament": {"creativity": 0.58, "precision": 0.88},
+    },
+    {
+        "slug": "judgement", "id": "occult.major.judgement", "name": "Judgement", "number": 20,
         "description": "Scores completion and determines whether another pass is needed.",
         "prompt": "Apply explicit acceptance criteria and return a defensible completion decision.",
         "upright": "Judge the result against the criteria and prescribe the next pass when needed.",
@@ -70,10 +195,7 @@ AGENTS = (
         "temperament": {"creativity": 0.30, "precision": 0.95},
     },
     {
-        "slug": "world",
-        "id": "occult.major.world",
-        "name": "The World",
-        "number": 21,
+        "slug": "world", "id": "occult.major.world", "name": "The World", "number": 21,
         "description": "Coordinates the complete workflow and closes the reading.",
         "prompt": "Coordinate bounded work, preserve dependencies, and return a complete final state.",
         "upright": "Orchestrate the work from intake through verified completion.",
@@ -98,7 +220,7 @@ def package_files(agent: dict[str, object]) -> dict[str, bytes]:
             "id": agent["id"],
             "name": agent["name"],
             "arcana_number": agent["number"],
-            "version": "1.0.0",
+            "version": PACKAGE_VERSION,
             "description": agent["description"],
         },
         "orientation": {"upright": True, "reversed": True},
@@ -204,7 +326,19 @@ def main() -> int:
         "format_version": "1.0",
         "signers": {SIGNER_ID: base64.b64encode(public_key).decode()},
     }
-    (args.output / "starter_signers.json").write_text(
+    signer_registry = args.output / "starter_signers.json"
+    if signer_registry.exists():
+        try:
+            existing = json.loads(signer_registry.read_text(encoding="utf-8"))
+            existing_signers = existing.get("signers", {})
+            if isinstance(existing_signers, dict):
+                signer_payload["signers"] = {
+                    **existing_signers,
+                    SIGNER_ID: base64.b64encode(public_key).decode(),
+                }
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            parser.error("existing starter signer registry is invalid")
+    signer_registry.write_text(
         json.dumps(signer_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
