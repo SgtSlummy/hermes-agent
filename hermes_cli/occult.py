@@ -47,6 +47,7 @@ def initialize_occult(
     base_url: str | None = None,
     model: str | None = None,
     enable_keyless_mesh: bool = False,
+    enable_free_mesh: bool = False,
 ) -> dict[str, Any]:
     """Initialize a secure local-only Tarot Router profile and starter deck."""
 
@@ -142,6 +143,16 @@ def initialize_occult(
             "allow_external_routes": True,
         })
         occult["provider_mesh"] = provider_mesh
+    if enable_free_mesh:
+        provider_mesh = dict(occult.get("provider_mesh") or {})
+        provider_mesh.update({
+            "enabled": True,
+            "auto_enroll_keyless": True,
+            "auto_enroll_free": True,
+            "allow_anonymous": True,
+            "allow_external_routes": True,
+        })
+        occult["provider_mesh"] = provider_mesh
     config["occult"] = occult
     platforms = dict(config.get("platforms") or {})
     api_server = dict(platforms.get("api_server") or {})
@@ -168,7 +179,12 @@ def initialize_occult(
             "API_SERVER_KEY must be ASCII and at least 32 characters; "
             "unset it to generate a new key"
         )
-    runtime_env = dict(os.environ)
+    # Provider credentials may already be stored in Hermes' protected .env.
+    # Merge that authorized environment into the in-process runtime view while
+    # keeping live process variables authoritative.  Nothing is returned or
+    # written to route metadata; the broker sees these values only at startup.
+    runtime_env = dict(staged_env)
+    runtime_env.update(os.environ)
     runtime_env["OCCULT_ADMIN_KEY"] = admin_key
     try:
         http = build_occult_http(config, environ=runtime_env)
@@ -254,6 +270,9 @@ def initialize_occult(
         "active_free_routes": [route.card_id for route in mesh_routes],
         "keyless_mesh_enabled": mesh_enabled and not bool(
             provider_mesh.get("provider_ids")
+        ) if isinstance(provider_mesh, dict) else False,
+        "free_mesh_enabled": mesh_enabled and bool(
+            provider_mesh.get("auto_enroll_free", provider_mesh.get("autoEnrollFree", False))
         ) if isinstance(provider_mesh, dict) else False,
         "deck_id": STARTER_DECK_ID,
         "agents": list(STARTER_AGENT_IDS),
@@ -555,6 +574,7 @@ def cmd_occult(args) -> None:
             base_url=args.base_url,
             model=args.model,
             enable_keyless_mesh=getattr(args, "enable_keyless_mesh", False),
+            enable_free_mesh=getattr(args, "enable_free_mesh", False),
         )
     elif action == "token-list":
         result = _admin_request("GET", "/v1/occult/admin/tokens")

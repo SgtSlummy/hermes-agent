@@ -10,6 +10,7 @@ param(
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
     [switch]$EnableKeylessMesh,
+    [switch]$EnableFreeMesh,
     [switch]$SkipCouncil,
     [switch]$VerifyOnly,
     [string]$Model = "qwen2.5:3b"
@@ -459,6 +460,9 @@ if ([string]::IsNullOrWhiteSpace($Model)) {
 }
 if ($EnableKeylessMesh -and -not $InitializeLocal) {
     Fail "-EnableKeylessMesh requires -InitializeLocal so provider enrollment is explicit"
+}
+if ($EnableFreeMesh -and -not $InitializeLocal) {
+    Fail "-EnableFreeMesh requires -InitializeLocal so provider enrollment is explicit"
 }
 
 $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
@@ -947,6 +951,10 @@ try {
                     $initArguments += "--enable-keyless-mesh"
                     Write-Step "Enrolling reviewed keyless/free provider routes without credentials"
                 }
+                if ($EnableFreeMesh) {
+                    $initArguments += "--enable-free-mesh"
+                    Write-Step "Enrolling every reviewed free route; existing credentials stay protected and missing authorization remains pending"
+                }
                 Invoke-Checked `
                     -Executable $hermesExecutable `
                     -Arguments $initArguments `
@@ -1104,6 +1112,10 @@ try {
             $initArguments += "--enable-keyless-mesh"
             Write-Step "Enrolling reviewed keyless/free provider routes without credentials"
         }
+        if ($EnableFreeMesh) {
+            $initArguments += "--enable-free-mesh"
+            Write-Step "Enrolling every reviewed free route; existing credentials stay protected and missing authorization remains pending"
+        }
         Invoke-Checked `
             -Executable $hermesStagedExecutable `
             -Arguments $initArguments `
@@ -1213,7 +1225,9 @@ try {
     }
     if ($initialized) {
         if ($InitializeLocal) {
-            if ($EnableKeylessMesh) {
+            if ($EnableFreeMesh) {
+                Write-Step "Local initialization and full free-provider enrollment completed explicitly with $Model"
+            } elseif ($EnableKeylessMesh) {
                 Write-Step "Local initialization and keyless/free provider enrollment completed explicitly with $Model"
             } else {
                 Write-Step "Local initialization completed explicitly with $Model"

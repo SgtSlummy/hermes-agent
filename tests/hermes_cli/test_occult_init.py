@@ -122,6 +122,84 @@ def test_occult_init_can_enable_unattended_keyless_mesh(tmp_path: Path, monkeypa
     assert result["keyless_mesh_enabled"] is True
 
 
+def test_occult_init_can_enable_full_free_mesh(tmp_path: Path, monkeypatch):
+    home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("API_SERVER_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("qwen2.5:3b",),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model, **_kwargs: None,
+    )
+
+    result = initialize_occult(model="qwen2.5:3b", enable_free_mesh=True)
+    config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+
+    assert config["occult"]["provider_mesh"] == {
+        "enabled": True,
+        "auto_enroll_keyless": True,
+        "auto_enroll_free": True,
+        "allow_anonymous": True,
+        "allow_external_routes": True,
+    }
+    assert result["free_mesh_enabled"] is True
+
+
+def test_occult_init_merges_protected_env_for_unattended_free_mesh(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("API_SERVER_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    (home / ".env").write_text(
+        "GROQ_API_KEY=authorized-value-that-stays-in-memory\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("qwen2.5:3b",),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model, **_kwargs: None,
+    )
+    seen: dict[str, str] = {}
+
+    class _Authority:
+        @staticmethod
+        def statuses():
+            return []
+
+        @staticmethod
+        def issue(_policy):
+            return "occult_token"
+
+    def fake_build(config, *, environ):
+        seen.update({key: value for key, value in environ.items() if key == "GROQ_API_KEY"})
+        return SimpleNamespace(
+            service=SimpleNamespace(
+                router=SimpleNamespace(routes=lambda: ()),
+                token_authority=_Authority(),
+            ),
+            close=lambda: None,
+        )
+
+    monkeypatch.setattr("hermes_cli.occult.build_occult_http", fake_build)
+
+    initialize_occult(model="qwen2.5:3b", enable_free_mesh=True)
+
+    assert seen == {"GROQ_API_KEY": "authorized-value-that-stays-in-memory"}
+
+
 def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):
     home = tmp_path / ".hermes"
     monkeypatch.setenv("HERMES_HOME", str(home))

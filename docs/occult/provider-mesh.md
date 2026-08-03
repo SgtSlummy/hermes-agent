@@ -42,6 +42,7 @@ occult:
       - groq
     allow_anonymous: true
     auto_enroll_keyless: true
+    # Use auto_enroll_free for the broader unattended free-mesh pass.
     allow_external_routes: true
     discover_models: true
     max_models_per_provider: 2
@@ -55,15 +56,30 @@ memory under the existing runtime policy.
 
 With `auto_enroll_keyless: true` and no explicit `provider_ids`, the runtime
 tries every reviewed, terms-compatible, zero-cost keyless catalog entry during
-startup. This is the unattended path: it creates no account and stores no
-credential. Bearer and OAuth providers remain pending until an authorized
+startup. This is the keyless unattended path: it creates no account and stores
+no credential. Bearer and OAuth providers remain pending until an authorized
 credential is supplied through the protected environment or secret broker.
 
-The signed GitHub installer exposes the same path as one explicit command:
+For the full free-mesh pass, set `auto_enroll_free: true` instead (or in
+addition). The runtime considers every catalog entry allowed by the free-only
+policy: keyless routes enroll automatically, while bearer routes enroll only
+when their already-authorized catalog environment reference is present. A
+provider with no such authorization is reported as `pending_authorization`;
+the installer never opens an account, creates a key, or bypasses verification.
+
+The signed GitHub installer exposes both paths as explicit commands:
 
 ```text
 Windows:  install-occult.ps1 -InitializeLocal -EnableKeylessMesh
 POSIX:    install-occult.sh --initialize-local --enable-keyless-mesh
+```
+
+To scan all reviewed free providers and automatically use any credentials that
+are already present in the protected Hermes environment:
+
+```text
+Windows:  install-occult.ps1 -InitializeLocal -EnableFreeMesh
+POSIX:    install-occult.sh --initialize-local --enable-free-mesh
 ```
 
 Because this flag explicitly permits external routes, the starter token can

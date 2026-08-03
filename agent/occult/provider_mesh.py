@@ -65,6 +65,7 @@ class ProviderMeshConfig:
     allow_external_routes: bool = False
     discover_models: bool = True
     auto_enroll_keyless: bool = False
+    auto_enroll_free: bool = False
     max_models_per_provider: int = 4
     timeout_seconds: float = 8.0
 
@@ -90,6 +91,9 @@ class ProviderMeshConfig:
             auto_enroll_keyless = bool(
                 value.get("auto_enroll_keyless", value.get("autoEnrollKeyless", False))
             )
+            auto_enroll_free = bool(
+                value.get("auto_enroll_free", value.get("autoEnrollFree", False))
+            )
             max_models = int(
                 value.get("max_models_per_provider", value.get("maxModelsPerProvider", 4))
             )
@@ -109,6 +113,7 @@ class ProviderMeshConfig:
             allow_external_routes=allow_external_routes,
             discover_models=discover_models,
             auto_enroll_keyless=auto_enroll_keyless,
+            auto_enroll_free=auto_enroll_free,
             max_models_per_provider=max_models,
             timeout_seconds=timeout,
         )
@@ -387,6 +392,16 @@ def activate_provider_mesh(
     if selected:
         candidates = tuple(
             provider for provider in catalog.list() if provider.provider_id in selected
+        )
+    elif config.auto_enroll_free:
+        # The full unattended mode is still free-only and catalog-driven.  A
+        # bearer provider is eligible here only when an already-authorized
+        # secret is present in the protected environment; missing authority is
+        # reported as pending below.  No account or credential is created.
+        candidates = tuple(
+            provider
+            for provider in catalog.list()
+            if provider.allowed_by_free_policy
         )
     elif config.auto_enroll_keyless:
         candidates = tuple(

@@ -71,6 +71,40 @@ def test_mesh_can_unattendedly_enroll_reviewed_keyless_catalog_entries():
     assert result.pending_authorization == ()
 
 
+def test_full_free_mesh_enrolls_existing_bearer_and_reports_missing_authority():
+    result = activate_provider_mesh(
+        ProviderMeshConfig(
+            enabled=True,
+            auto_enroll_free=True,
+            discover_models=False,
+        ),
+        catalog=ProviderCatalog(
+            (
+                _provider(),
+                _provider(
+                    "bearer-authorized",
+                    auth_type="bearer",
+                    secret_refs=("TEST_API_KEY",),
+                ),
+                _provider(
+                    "bearer-pending",
+                    auth_type="bearer",
+                    secret_refs=("MISSING_API_KEY",),
+                ),
+            )
+        ),
+        environ={"TEST_API_KEY": "authorized-test-secret"},
+        credential_broker=InMemoryCredentialBroker(),
+    )
+
+    assert result.activated == ("anonymous-test", "bearer-authorized")
+    assert result.pending_authorization == ("bearer-pending",)
+    assert {route.provider_id for route in result.routes} == {
+        "anonymous-test",
+        "bearer-authorized",
+    }
+
+
 def test_mesh_card_ids_are_safe_when_provider_model_uses_path_separator():
     provider = replace(_provider(), zero_cost_model_ids=("org/model",))
     result = activate_provider_mesh(
@@ -122,3 +156,11 @@ def test_mesh_config_rejects_paid_or_unbounded_settings():
         assert "max_models_per_provider" in str(exc)
     else:
         raise AssertionError("invalid provider mesh configuration was accepted")
+
+
+def test_mesh_config_reads_full_free_enrollment_flag():
+    config = ProviderMeshConfig.from_mapping(
+        {"enabled": True, "autoEnrollFree": True}
+    )
+
+    assert config.auto_enroll_free is True
