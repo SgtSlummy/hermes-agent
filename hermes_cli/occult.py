@@ -26,6 +26,7 @@ from agent.occult.runtime import (
     normalize_loopback_openai_url,
     validate_ollama_chat_model,
 )
+from agent.occult.provider_catalog import load_bundled_provider_catalog
 from agent.occult.virtual_tokens import VirtualTokenError, VirtualTokenPolicy
 from hermes_cli import config as cli_config
 
@@ -297,6 +298,17 @@ def _local_occult_status() -> dict[str, Any]:
     return result
 
 
+def _bundled_provider_catalog_status() -> dict[str, Any]:
+    """Return the immutable, secret-free catalog without requiring a server."""
+
+    catalog = load_bundled_provider_catalog()
+    return {
+        "summary": catalog.summary(),
+        "providers": list(catalog.public()),
+        "source": "bundled_catalog",
+    }
+
+
 def _open_occult_url(request: urllib.request.Request, *, timeout: float):
     """Open an Occult request without redirects or loopback proxy exposure."""
 
@@ -541,7 +553,19 @@ def cmd_occult(args) -> None:
     elif action == "routes":
         result = _request("GET", "/v1/occult/minor-arcana")
     elif action == "providers":
-        result = _request("GET", "/v1/occult/providers")
+        local_status = _local_occult_status()
+        if not local_status["initialized"] or not local_status["enabled"]:
+            result = _bundled_provider_catalog_status()
+            result["activation_state"] = local_status
+        else:
+            try:
+                result = _request("GET", "/v1/occult/providers")
+            except OccultCLIError:
+                # Keep this read-only inspection useful during gateway
+                # startup/restart without pretending that live routes exist.
+                result = _bundled_provider_catalog_status()
+                result["activation_state"] = local_status
+                result["live_status"] = "unavailable"
     elif action == "decks":
         result = _request("GET", "/v1/occult/decks")
     elif action == "pairings":
