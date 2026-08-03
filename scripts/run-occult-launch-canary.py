@@ -32,8 +32,8 @@ from typing import Any
 
 
 HERMES_CLI_VERSION = "0.14.0"
-HERMES_RELEASE = "v1.0.8"
-COUNCIL_VERSION = "0.5.5"
+HERMES_RELEASE = "v1.0.9"
+COUNCIL_VERSION = "0.5.6"
 CONTRACT_VERSION = "1.0.0"
 COUNCIL_STATE_SCHEMA = 3
 STARTER_CARD_ID = "minor.pentacles.ace.ollama.local"
@@ -47,7 +47,7 @@ class CanaryFailure(RuntimeError):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the redacted Tarot Router v1.0.8 Windows launch canary."
+        description="Run the redacted Tarot Router v1.0.9 Windows launch canary."
     )
     parser.add_argument("--council-repository", type=Path, required=True)
     parser.add_argument("--bun-executable", type=Path, required=True)
@@ -1081,6 +1081,8 @@ def rehearse_rollback(
         hermes_version: str,
         council_version: str,
         label: str,
+        *,
+        expect_occult_enabled: bool = True,
     ) -> None:
         activate(hermes_source, active_hermes)
         activate(council_source, active_council)
@@ -1107,9 +1109,14 @@ def rehearse_rollback(
                 timeout=timeout,
             )
             status = load_json_output(status_result.stdout, f"{label} Occult status")
-            if not status.get("agents") or not status.get("routes"):
+            if expect_occult_enabled:
+                if not status.get("agents") or not status.get("routes"):
+                    raise CanaryFailure(
+                        f"{label} binaries could not read the existing Occult state"
+                    )
+            elif status.get("enabled") is not False:
                 raise CanaryFailure(
-                    f"{label} binaries could not read the existing Occult state"
+                    f"{label} rollback did not keep Occult disabled"
                 )
             observations.append(status_result.stdout + status_result.stderr)
         finally:
@@ -1122,13 +1129,20 @@ def rehearse_rollback(
         COUNCIL_VERSION,
         "candidate-before-rollback",
     )
+    # The previous immutable release predates the complete starter deck.  A
+    # safe rollback therefore keeps the compatible Hermes/Council binaries
+    # available while disabling the newer Occult runtime until the candidate
+    # release is restored.
+    set_occult_enabled(Path(env["HERMES_HOME"]), False)
     verify_active(
         previous_hermes,
         previous_council,
         previous_hermes_cli_version,
         previous_council_version,
         "previous-after-rollback",
+        expect_occult_enabled=False,
     )
+    set_occult_enabled(Path(env["HERMES_HOME"]), True)
     verify_active(
         candidate_hermes,
         candidate_council,
@@ -1178,6 +1192,33 @@ def load_dotenv_value(path: Path, name: str) -> str:
     raise CanaryFailure(f"{name} was not created")
 
 
+def set_occult_enabled(home: Path, enabled: bool) -> None:
+    """Toggle the local runtime for a rollback compatibility check."""
+
+    try:
+        import yaml
+
+        config_path = home / "config.yaml"
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        if not isinstance(config, dict):
+            raise CanaryFailure("rollback configuration is not a mapping")
+        occult = config.get("occult")
+        if not isinstance(occult, dict):
+            raise CanaryFailure("rollback configuration has no Occult section")
+        occult["enabled"] = enabled
+        config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False),
+            encoding="utf-8",
+            newline="\n",
+        )
+    except CanaryFailure:
+        raise
+    except (OSError, TypeError, ValueError):
+        raise CanaryFailure(
+            "rollback Occult activation state could not be changed"
+        ) from None
+
+
 def assert_port_available(host: str, port: int) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -1187,11 +1228,24 @@ def assert_port_available(host: str, port: int) -> None:
             raise CanaryFailure(f"loopback port {port} is already in use") from None
 
 
-def wait_for_health(url: str, process: subprocess.Popen[bytes], timeout: int) -> None:
+def wait_for_health(
+    url: str,
+    process: subprocess.Popen[bytes],
+    timeout: int,
+    log_path: Path,
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise CanaryFailure("Hermes gateway exited before becoming healthy")
+            try:
+                detail = log_path.read_text(encoding="utf-8", errors="replace")[-2000:]
+            except OSError:
+                detail = ""
+            detail = " ".join(detail.split())
+            suffix = f": {detail}" if detail else ""
+            raise CanaryFailure(
+                "Hermes gateway exited before becoming healthy" + suffix
+            )
         try:
             request = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(request, timeout=2) as response:
@@ -1219,7 +1273,7 @@ def start_gateway(
         creationflags=flags,
     )
     try:
-        wait_for_health("http://127.0.0.1:8642/health", process, timeout)
+        wait_for_health("http://127.0.0.1:8642/health", process, timeout, log_path)
     except BaseException:
         stop_gateway(process, log_handle)
         raise
@@ -1384,7 +1438,7 @@ def main() -> int:
     gateway: subprocess.Popen[bytes] | None = None
     gateway_log: Any | None = None
     with tempfile.TemporaryDirectory(
-        prefix="tarot-router-v106-canary-",
+        prefix="tarot-router-v109-canary-",
         ignore_cleanup_errors=True,
     ) as temporary:
         root = Path(temporary)

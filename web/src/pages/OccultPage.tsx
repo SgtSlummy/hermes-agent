@@ -7,6 +7,7 @@ import {
 import {
   BookOpen,
   Layers3,
+  Power,
   Play,
   RefreshCw,
   Route,
@@ -21,6 +22,8 @@ import { api } from "@/lib/api";
 import type {
   OccultDashboardStatus,
   OccultReadingStatus,
+  ActionStatusResponse,
+  StatusResponse,
 } from "@/lib/api";
 import {
   Card,
@@ -31,6 +34,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ModelPickerDialog } from "@/components/ModelPickerDialog";
 import { Toast } from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
 import { usePageHeader } from "@/contexts/usePageHeader";
@@ -43,6 +47,8 @@ const EMPTY_STATUS: OccultDashboardStatus = {
   routes: [],
   decks: [],
   pairings: [],
+  providers: [],
+  provider_summary: {},
 };
 
 function statusTone(connected: boolean): string {
@@ -55,8 +61,31 @@ function labelForState(value: unknown): string {
   return typeof value === "string" && value.trim() ? value : "unknown";
 }
 
+function gatewayLabel(status: StatusResponse | null): string {
+  if (!status) return "Unknown";
+  if (status.gateway_running) {
+    return status.gateway_state === "starting" ? "Starting" : "Running";
+  }
+  if (status.gateway_state === "startup_failed") return "Startup failed";
+  return "Stopped";
+}
+
+function gatewayTone(status: StatusResponse | null): string {
+  const label = gatewayLabel(status);
+  if (label === "Running") return "border-success/30 bg-success/10 text-success";
+  if (label === "Starting") return "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300";
+  if (label === "Startup failed") return "border-destructive/30 bg-destructive/10 text-destructive";
+  return "border-border bg-muted/30 text-muted-foreground";
+}
+
 export default function OccultPage() {
   const [status, setStatus] = useState<OccultDashboardStatus>(EMPTY_STATUS);
+  const [gatewayStatus, setGatewayStatus] = useState<StatusResponse | null>(null);
+  const [gatewayAction, setGatewayAction] = useState<"start" | "stop" | "restart" | null>(null);
+  const [gatewayActionStatus, setGatewayActionStatus] = useState<ActionStatusResponse | null>(null);
+  const [gatewayBusy, setGatewayBusy] = useState(false);
+  const [stopGatewayOpen, setStopGatewayOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readingId, setReadingId] = useState("");
@@ -70,7 +99,12 @@ export default function OccultPage() {
     setLoading(true);
     setError(null);
     try {
-      setStatus(await api.getOccultStatus());
+      const [nextOccult, nextGateway] = await Promise.all([
+        api.getOccultStatus(),
+        api.getStatus(),
+      ]);
+      setStatus(nextOccult);
+      setGatewayStatus(nextGateway);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -80,10 +114,13 @@ export default function OccultPage() {
 
   useEffect(() => {
     let active = true;
-    api
-      .getOccultStatus()
-      .then((nextStatus) => {
-        if (active) setStatus(nextStatus);
+    const refresh = () => {
+      Promise.all([api.getOccultStatus(), api.getStatus()])
+      .then(([nextOccult, nextGateway]) => {
+        if (active) {
+          setStatus(nextOccult);
+          setGatewayStatus(nextGateway);
+        }
       })
       .catch((caught) => {
         if (active) {
@@ -93,10 +130,70 @@ export default function OccultPage() {
       .finally(() => {
         if (active) setLoading(false);
       });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 5000);
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!gatewayAction) return;
+    const actionName = `gateway-${gatewayAction}`;
+    let active = true;
+    const poll = async () => {
+      try {
+        const next = await api.getActionStatus(actionName, 1);
+        if (!active) return;
+        setGatewayActionStatus(next);
+        if (!next.running) {
+          setGatewayAction(null);
+          setGatewayBusy(false);
+          setStopGatewayOpen(false);
+          await loadStatus();
+          showToast(
+            next.exit_code === 0
+              ? `Gateway ${gatewayAction} completed.`
+              : `Gateway ${gatewayAction} finished with an error.`,
+            next.exit_code === 0 ? "success" : "error",
+          );
+        }
+      } catch (caught) {
+        if (active) {
+          setGatewayAction(null);
+          setGatewayBusy(false);
+          showToast(caught instanceof Error ? caught.message : String(caught), "error");
+        }
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 800);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [gatewayAction, loadStatus, showToast]);
+
+  const runGatewayAction = async (action: "start" | "stop" | "restart") => {
+    if (gatewayBusy) return;
+    setGatewayBusy(true);
+    setGatewayActionStatus(null);
+    try {
+      const result =
+        action === "start"
+          ? await api.startGateway()
+          : action === "stop"
+            ? await api.stopGateway()
+            : await api.restartGateway();
+      setGatewayAction(action);
+      showToast(`Gateway ${action} requested (process ${result.pid}).`, "success");
+    } catch (caught) {
+      setGatewayBusy(false);
+      showToast(caught instanceof Error ? caught.message : String(caught), "error");
+    }
+  };
 
   useLayoutEffect(() => {
     setEnd(
@@ -145,6 +242,11 @@ export default function OccultPage() {
   }> = [
     { label: "Major Arcana", count: status.agents.length, icon: Users },
     { label: "Minor Arcana", count: status.routes.length, icon: Route },
+    {
+      label: "Providers",
+      count: status.provider_summary.cataloged ?? status.providers.length,
+      icon: Route,
+    },
     { label: "Decks", count: status.decks.length, icon: Layers3 },
     { label: "Pairings", count: status.pairings.length, icon: ShieldCheck },
   ];
@@ -169,6 +271,38 @@ export default function OccultPage() {
         loading={readingBusy}
         onCancel={() => setCancelOpen(false)}
         onConfirm={() => void runReadingAction("cancel")}
+      />
+      {modelPickerOpen && (
+        <ModelPickerDialog
+          loader={api.getModelOptions}
+          alwaysGlobal
+          title="Tarot Router model selection"
+          onClose={() => setModelPickerOpen(false)}
+          onApply={async ({ provider, model }) => {
+            await api.setModelAssignment({
+              scope: "main",
+              provider,
+              model,
+            });
+            setModelPickerOpen(false);
+            showToast(
+              provider === "openai-codex"
+                ? "OpenAI Codex selected. Authenticate it before sending work."
+                : `${provider} model selected.`,
+              "success",
+            );
+          }}
+        />
+      )}
+      <ConfirmDialog
+        open={stopGatewayOpen}
+        title="Stop Tarot Router gateway?"
+        description="Active requests may be interrupted. You can start it again from this page."
+        confirmLabel="Stop gateway"
+        destructive
+        loading={gatewayBusy}
+        onCancel={() => setStopGatewayOpen(false)}
+        onConfirm={() => void runGatewayAction("stop")}
       />
 
       <section className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
@@ -199,6 +333,81 @@ export default function OccultPage() {
           {error}
         </div>
       )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>Tarot Router gateway</CardTitle>
+              <CardDescription>
+                Start, stop, or restart the local gateway. Occult remains disabled until explicitly initialized.
+              </CardDescription>
+            </div>
+            <span
+              className={`w-fit border px-3 py-1 font-courier text-[11px] uppercase tracking-wider ${gatewayTone(gatewayStatus)}`}
+              aria-live="polite"
+            >
+              {gatewayLabel(gatewayStatus)}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 text-xs sm:grid-cols-3">
+            <div className="border border-border p-3">
+              <div className="font-courier uppercase tracking-wider text-muted-foreground">Process</div>
+              <div className="mt-1">{gatewayStatus?.gateway_pid ?? "—"}</div>
+            </div>
+            <div className="border border-border p-3">
+              <div className="font-courier uppercase tracking-wider text-muted-foreground">Active sessions</div>
+              <div className="mt-1">{gatewayStatus?.active_sessions ?? 0}</div>
+            </div>
+            <div className="border border-border p-3">
+              <div className="font-courier uppercase tracking-wider text-muted-foreground">Platforms</div>
+              <div className="mt-1 break-words">
+                {Object.keys(gatewayStatus?.gateway_platforms ?? {}).join(", ") || "none"}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void runGatewayAction("start")}
+              disabled={gatewayBusy || gatewayStatus?.gateway_running === true}
+            >
+              <Power className="mr-2 h-3.5 w-3.5" />
+              Start
+            </Button>
+            <Button
+              outlined
+              onClick={() => void runGatewayAction("restart")}
+              disabled={gatewayBusy}
+            >
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+              Restart
+            </Button>
+            <Button
+              destructive
+              onClick={() => setStopGatewayOpen(true)}
+              disabled={gatewayBusy || gatewayStatus?.gateway_running !== true}
+            >
+              <Square className="mr-2 h-3.5 w-3.5" />
+              Stop
+            </Button>
+            {gatewayActionStatus?.running && (
+              <span className="text-xs text-muted-foreground" aria-live="polite">
+                {gatewayAction} in progress…
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Choose the model used by the Hermes gateway. OpenAI Codex is an OAuth-backed external option and is never enabled silently.
+            </p>
+            <Button outlined onClick={() => setModelPickerOpen(true)} disabled={gatewayBusy}>
+              Choose model
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {!status.enabled || !status.configured || !status.connected ? (
         <Card>
@@ -295,7 +504,7 @@ export default function OccultPage() {
               <CardHeader>
                 <CardTitle>Minor Arcana routes</CardTitle>
                 <CardDescription>
-                  Provider and model details are shown without credential data.
+                  Live routes are shown beside the full secret-free provider catalog.
                 </CardDescription>
               </CardHeader>
               <CardContent className="max-h-[25rem] space-y-2 overflow-auto">
@@ -321,6 +530,35 @@ export default function OccultPage() {
               </CardContent>
             </Card>
           </section>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Provider catalog</CardTitle>
+              <CardDescription>
+                {status.provider_summary.allowed_free ?? 0} providers are allowed by
+                the free-only policy; routes activate only after an authorized
+                credential, adapter, quota, and health check pass.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="border border-border p-3 text-xs">
+                <div className="font-courier uppercase tracking-wider text-muted-foreground">Cataloged</div>
+                <div className="mt-1 text-lg">{status.provider_summary.cataloged ?? status.providers.length}</div>
+              </div>
+              <div className="border border-success/30 p-3 text-xs text-success">
+                <div className="font-courier uppercase tracking-wider">Free policy allowed</div>
+                <div className="mt-1 text-lg">{status.provider_summary.allowed_free ?? 0}</div>
+              </div>
+              <div className="border border-border p-3 text-xs">
+                <div className="font-courier uppercase tracking-wider text-muted-foreground">Live routes</div>
+                <div className="mt-1 text-lg">{status.providers.reduce((sum, provider) => sum + provider.active_route_count, 0)}</div>
+              </div>
+              <div className="border border-border p-3 text-xs">
+                <div className="font-courier uppercase tracking-wider text-muted-foreground">Awaiting authorization</div>
+                <div className="mt-1 text-lg">{status.providers.filter((provider) => provider.activation === "awaiting_authorized_credential").length}</div>
+              </div>
+            </CardContent>
+          </Card>
 
           <section className="grid gap-4 xl:grid-cols-2">
             <Card>

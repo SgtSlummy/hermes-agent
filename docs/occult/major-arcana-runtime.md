@@ -4,6 +4,22 @@ This foundation implements signed, uploadable Major Arcana agents without
 changing Hermes behavior by default. Importing `agent.occult` does not install
 packages, activate agents, alter prompts, or execute tools.
 
+## Bundled full deck
+
+The release includes all 22 Major Arcana identities, each as a signed v1.1.0
+package:
+
+```text
+The Fool · The Magician · The High Priestess · The Empress · The Emperor
+The Hierophant · The Lovers · The Chariot · Strength · The Hermit
+Wheel of Fortune · Justice · The Hanged Man · Death · Temperance
+The Devil · The Tower · The Star · The Moon · The Sun · Judgement · The World
+```
+
+The starter deck remains local-only and free-only. A package being installed
+does not grant tools, external data access, paid routing, or provider
+credentials.
+
 ## Package lifecycle
 
 A `.tarot` package is a ZIP-compatible, data-only archive containing:

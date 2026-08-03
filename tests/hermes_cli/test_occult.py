@@ -244,6 +244,54 @@ def test_occult_status_reports_inactive_local_state_without_token(
     assert json.loads(capsys.readouterr().out) == expected
 
 
+def test_occult_providers_reports_bundled_catalog_before_initialization(
+    monkeypatch, capsys
+):
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.occult.cli_config.read_raw_config", lambda: {}
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult._request",
+        lambda *_args, **_kwargs: pytest.fail(
+            "provider catalog inspection must not require a running API"
+        ),
+    )
+
+    cmd_occult(SimpleNamespace(occult_action="providers"))
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["source"] == "bundled_catalog"
+    assert result["summary"]["cataloged"] == 71
+    assert result["summary"]["allowed_free"] == 48
+    openai = next(item for item in result["providers"] if item["provider_id"] == "openai")
+    assert openai["activation"] == "blocked_by_free_policy"
+    assert result["activation_state"]["enabled"] is False
+
+
+def test_occult_providers_falls_back_when_enabled_api_is_unavailable(
+    monkeypatch, capsys
+):
+    monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
+    monkeypatch.setattr(
+        "hermes_cli.occult.cli_config.read_raw_config",
+        lambda: {"occult": {"enabled": True, "local_model": "qwen2.5:3b"}},
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult._request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OccultCLIError("Tarot Router API unavailable")
+        ),
+    )
+
+    cmd_occult(SimpleNamespace(occult_action="providers"))
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["source"] == "bundled_catalog"
+    assert result["live_status"] == "unavailable"
+    assert result["activation_state"]["enabled"] is True
+
+
 def test_occult_invoke_builds_versioned_contract(monkeypatch, capsys):
     monkeypatch.setenv("OCCULT_API_KEY", "occult_private")
     monkeypatch.setattr(

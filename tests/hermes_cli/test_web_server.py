@@ -125,6 +125,41 @@ class TestWebServerEndpoints:
         assert "hermes_home" in data
         assert "active_sessions" in data
 
+    def test_gateway_controls_spawn_start_stop_restart(self, monkeypatch):
+        import hermes_cli.web_server as web_server
+
+        calls: list[tuple[list[str], str]] = []
+
+        class _Process:
+            pid = 4242
+
+        def fake_spawn(command, name):
+            calls.append((command, name))
+            return _Process()
+
+        monkeypatch.setattr(web_server, "_spawn_hermes_action", fake_spawn)
+
+        assert self.client.post("/api/gateway/start").json() == {
+            "ok": True,
+            "pid": 4242,
+            "name": "gateway-start",
+        }
+        assert self.client.post("/api/gateway/stop").json() == {
+            "ok": True,
+            "pid": 4242,
+            "name": "gateway-stop",
+        }
+        assert self.client.post("/api/gateway/restart").json() == {
+            "ok": True,
+            "pid": 4242,
+            "name": "gateway-restart",
+        }
+        assert calls == [
+            (["gateway", "start"], "gateway-start"),
+            (["gateway", "stop"], "gateway-stop"),
+            (["gateway", "restart"], "gateway-restart"),
+        ]
+
     def test_get_status_filters_unconfigured_gateway_platforms(self, monkeypatch):
         import gateway.config as gateway_config
         import hermes_cli.web_server as web_server
@@ -214,6 +249,8 @@ class TestWebServerEndpoints:
             "routes": [],
             "decks": [],
             "pairings": [],
+            "providers": [],
+            "provider_summary": {},
         }
         proxy.assert_not_called()
 
@@ -242,6 +279,16 @@ class TestWebServerEndpoints:
             "/v1/occult/pairings": {
                 "data": [{"agent_id": "occult.major.magician"}]
             },
+            "/v1/occult/providers": {
+                "summary": {"cataloged": 71, "allowed_free": 48},
+                "providers": [
+                    {
+                        "provider_id": "openrouter",
+                        "activation": "awaiting_authorized_credential",
+                        "active_route_count": 0,
+                    }
+                ],
+            },
         }
 
         def proxy(method, path, payload=None):
@@ -258,6 +305,8 @@ class TestWebServerEndpoints:
         assert data["connected"] is True
         assert data["agents"][0]["name"] == "The Magician"
         assert data["routes"][0]["card_id"].startswith("minor.")
+        assert data["provider_summary"]["allowed_free"] == 48
+        assert data["providers"][0]["provider_id"] == "openrouter"
         assert "occult_dashboard_private" not in resp.text
 
     def test_occult_dashboard_reading_controls_are_bounded(self, monkeypatch):

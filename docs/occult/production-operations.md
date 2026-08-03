@@ -55,10 +55,12 @@ installs the bundled signed Major Arcana packages, registers a local zero-cost
 Minor Arcana route, creates `occult.deck.starter`, and issues scoped API
 credentials without printing them. The active profile owns all Occult state.
 
-The starter agents are The Magician, Justice, Temperance, Judgement, and The
-World. Their source prompts and package builder remain in the repository; only
-the public signing key and deterministic signed packages ship in the build.
-Regenerating official packages requires a separately controlled signing key.
+The public starter deck now includes all 22 Major Arcana identities (The Fool
+through The World). Their source prompts and package builder remain in the
+repository; only the public signing key and deterministic signed packages ship
+in the build. Regenerating official packages requires a separately controlled
+signing key. The deck remains local-only and free-only until an operator
+explicitly adds an authorized route.
 
 ## Source and branch assembly
 

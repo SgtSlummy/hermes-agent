@@ -171,6 +171,23 @@ def test_build_models_payload_does_not_call_provider_model_ids():
     mock_pm.assert_not_called()
 
 
+def test_include_codex_option_is_visible_without_exposing_credentials():
+    """The picker can show Codex models before OAuth setup, but marks the
+    row as setup-required and never includes a token or secret-shaped value."""
+    ctx = _empty_ctx()
+    with _list_auth_returning([]), patch(
+        "hermes_cli.codex_models.get_codex_model_ids",
+        return_value=["gpt-5.3-codex", "gpt-5.4"],
+    ):
+        payload = build_models_payload(ctx, include_codex_option=True)
+    row = next(item for item in payload["providers"] if item["slug"] == "openai-codex")
+    assert row["name"] == "OpenAI Codex (ChatGPT OAuth)"
+    assert row["models"] == ["gpt-5.3-codex", "gpt-5.4"]
+    assert row["authenticated"] is False
+    assert row["auth_type"] == "oauth"
+    assert "hermes auth add openai-codex" in row["warning"]
+
+
 def test_include_unconfigured_appends_canonical_skeletons():
     """include_unconfigured=True adds CANONICAL_PROVIDERS rows that
     list_authenticated_providers didn't emit. Skeleton rows have empty

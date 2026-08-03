@@ -1,0 +1,4000 @@
+{
+  "schemaVersion": "1.0",
+  "catalogVersion": "2026-08-01",
+  "minimumProviders": 62,
+  "providers": [
+    {
+      "id": "nous",
+      "name": "Nous Portal",
+      "officialHostSuffixes": [
+        "nousresearch.com",
+        "portal.nousresearch.com"
+      ],
+      "urls": {
+        "signup": "https://portal.nousresearch.com",
+        "credentials": "https://portal.nousresearch.com",
+        "authentication": "https://portal.nousresearch.com",
+        "pricing": "https://portal.nousresearch.com",
+        "terms": "https://nousresearch.com/terms",
+        "evidence": "https://portal.nousresearch.com"
+      },
+      "api": {
+        "host": "portal.nousresearch.com",
+        "baseUrl": "https://portal.nousresearch.com/api/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "oauth_pkce",
+      "secretRefs": [
+        "NOUS_OAUTH_REFRESH_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "officialHostSuffixes": [
+        "openrouter.ai"
+      ],
+      "urls": {
+        "signup": "https://openrouter.ai/docs/guides/routing/routers/free-router",
+        "credentials": "https://openrouter.ai/settings/keys",
+        "authentication": "https://openrouter.ai/docs/guides/routing/routers/free-router",
+        "pricing": "https://openrouter.ai/pricing",
+        "terms": "https://openrouter.ai/terms",
+        "evidence": "https://openrouter.ai/pricing"
+      },
+      "api": {
+        "host": "openrouter.ai",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "OPENROUTER_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "openrouter/free"
+      ],
+      "defaultFreeModel": "openrouter/free",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "kilo",
+      "name": "Kilo Gateway",
+      "officialHostSuffixes": [
+        "api.kilo.ai",
+        "app.kilo.ai",
+        "kilo.ai"
+      ],
+      "urls": {
+        "signup": "https://kilo.ai/docs/getting-started/setup-authentication",
+        "credentials": "https://app.kilo.ai",
+        "authentication": "https://kilo.ai/docs/gateway/authentication",
+        "pricing": "https://kilo.ai/docs/gateway/usage-and-billing",
+        "terms": "https://kilo.ai/terms",
+        "evidence": "https://kilo.ai/docs/gateway/models-and-providers"
+      },
+      "api": {
+        "host": "api.kilo.ai",
+        "baseUrl": "https://api.kilo.ai/api/gateway",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "anonymous",
+      "secretRefs": [],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "anonymous_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "openrouter/free"
+      ],
+      "defaultFreeModel": "openrouter/free",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-02",
+      "freeExpiresAt": "2026-08-09",
+      "reviewer": "Official Kilo Gateway documentation recheck (2026-08-02)",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat"
+      ],
+      "notes": "Official docs rechecked 2026-08-02: anonymous free models are limited to 200 requests per hour per IP. Access accepts Kilo terms; free model availability can change. Only synthetic/public text is allowed, and the route remains disabled until live validation plus service-bound worker validation pass."
+    },
+    {
+      "id": "llm7",
+      "name": "LLM7",
+      "officialHostSuffixes": [
+        "api.llm7.io",
+        "llm7.io"
+      ],
+      "urls": {
+        "signup": "https://llm7.io",
+        "credentials": "https://llm7.io",
+        "authentication": "https://llm7.io",
+        "pricing": "https://llm7.io",
+        "terms": "https://llm7.io",
+        "evidence": "https://llm7.io"
+      },
+      "api": {
+        "host": "api.llm7.io",
+        "baseUrl": "https://api.llm7.io/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "anonymous",
+      "secretRefs": [],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "ai-horde",
+      "name": "AI Horde",
+      "officialHostSuffixes": [
+        "aihorde.net",
+        "dev.aihorde.net",
+        "oai.aihorde.net"
+      ],
+      "urls": {
+        "signup": "https://dev.aihorde.net",
+        "credentials": "https://dev.aihorde.net",
+        "authentication": "https://dev.aihorde.net",
+        "pricing": "https://aihorde.net",
+        "terms": "https://aihorde.net/terms",
+        "evidence": "https://aihorde.net"
+      },
+      "api": {
+        "host": "oai.aihorde.net",
+        "baseUrl": "https://oai.aihorde.net/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "anonymous",
+      "secretRefs": [],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "anonymous_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "koboldcpp"
+      ],
+      "defaultFreeModel": "koboldcpp",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "ovh",
+      "name": "OVHcloud AI Endpoints",
+      "officialHostSuffixes": [
+        "docs.ovhcloud.com",
+        "endpoints.ai.cloud.ovh.net",
+        "www.ovhcloud.com"
+      ],
+      "urls": {
+        "signup": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities",
+        "credentials": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities",
+        "authentication": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities",
+        "pricing": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints",
+        "terms": "https://www.ovhcloud.com/en/terms-and-conditions",
+        "evidence": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints"
+      },
+      "api": {
+        "host": "endpoints.ai.cloud.ovh.net",
+        "baseUrl": "https://endpoints.ai.cloud.ovh.net",
+        "chatPath": "/api/openai_compat/v1/chat/completions",
+        "modelsPath": null
+      },
+      "adapter": "openai_compatible",
+      "authType": "anonymous",
+      "secretRefs": [],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "anonymous_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "Meta-Llama-3_1-8B-Instruct"
+      ],
+      "defaultFreeModel": "Meta-Llama-3_1-8B-Instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "groq",
+      "name": "GroqCloud",
+      "officialHostSuffixes": [
+        "api.groq.com",
+        "console.groq.com",
+        "groq.com"
+      ],
+      "urls": {
+        "signup": "https://console.groq.com/docs/quickstart",
+        "credentials": "https://console.groq.com/keys",
+        "authentication": "https://console.groq.com/docs/quickstart",
+        "pricing": "https://groq.com/pricing",
+        "terms": "https://groq.com/terms-of-use",
+        "evidence": "https://groq.com/pricing"
+      },
+      "api": {
+        "host": "api.groq.com",
+        "baseUrl": "https://api.groq.com/openai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "GROQ_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "llama-3.1-8b-instant"
+      ],
+      "defaultFreeModel": "llama-3.1-8b-instant",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini API",
+      "officialHostSuffixes": [
+        "ai.google.dev",
+        "aistudio.google.com",
+        "generativelanguage.googleapis.com"
+      ],
+      "urls": {
+        "signup": "https://ai.google.dev/gemini-api/docs",
+        "credentials": "https://aistudio.google.com/apikey",
+        "authentication": "https://ai.google.dev/gemini-api/docs",
+        "pricing": "https://ai.google.dev/gemini-api/docs/pricing",
+        "terms": "https://ai.google.dev/gemini-api/terms",
+        "evidence": "https://ai.google.dev/gemini-api/docs/pricing"
+      },
+      "api": {
+        "host": "generativelanguage.googleapis.com",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "google_gemini",
+      "authType": "bearer",
+      "secretRefs": [
+        "GEMINI_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "gemini-2.5-flash-lite"
+      ],
+      "defaultFreeModel": "gemini-2.5-flash-lite",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral La Plateforme",
+      "officialHostSuffixes": [
+        "api.mistral.ai",
+        "console.mistral.ai",
+        "docs.mistral.ai",
+        "mistral.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.mistral.ai/getting-started/quickstart",
+        "credentials": "https://console.mistral.ai/api-keys",
+        "authentication": "https://docs.mistral.ai/getting-started/quickstart",
+        "pricing": "https://mistral.ai/products/la-plateforme",
+        "terms": "https://mistral.ai/terms",
+        "evidence": "https://mistral.ai/products/la-plateforme"
+      },
+      "api": {
+        "host": "api.mistral.ai",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "MISTRAL_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "mistral-small-latest"
+      ],
+      "defaultFreeModel": "mistral-small-latest",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "sambanova",
+      "name": "SambaNova Cloud",
+      "officialHostSuffixes": [
+        "api.sambanova.ai",
+        "cloud.sambanova.ai",
+        "docs.sambanova.ai",
+        "sambanova.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.sambanova.ai/cloud/docs/get-started/quickstart",
+        "credentials": "https://cloud.sambanova.ai/apis",
+        "authentication": "https://docs.sambanova.ai/cloud/docs/get-started/quickstart",
+        "pricing": "https://cloud.sambanova.ai/plans/pricing",
+        "terms": "https://sambanova.ai/terms-of-use",
+        "evidence": "https://cloud.sambanova.ai/plans/pricing"
+      },
+      "api": {
+        "host": "api.sambanova.ai",
+        "baseUrl": "https://api.sambanova.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "SAMBANOVA_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "Meta-Llama-3.3-70B-Instruct"
+      ],
+      "defaultFreeModel": "Meta-Llama-3.3-70B-Instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "github-models",
+      "name": "GitHub Models",
+      "officialHostSuffixes": [
+        "docs.github.com",
+        "github.com",
+        "models.github.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.github.com/en/github-models/prototyping-with-ai-models",
+        "credentials": "https://github.com/settings/tokens",
+        "authentication": "https://docs.github.com/en/github-models/prototyping-with-ai-models",
+        "pricing": "https://docs.github.com/en/billing/managing-billing-for-your-products/about-billing-for-github-models",
+        "terms": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+        "evidence": "https://docs.github.com/en/billing/managing-billing-for-your-products/about-billing-for-github-models"
+      },
+      "api": {
+        "host": "models.github.ai",
+        "baseUrl": "https://models.github.ai/inference",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "GITHUB_MODELS_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "openai/gpt-4.1-mini"
+      ],
+      "defaultFreeModel": "openai/gpt-4.1-mini",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "nvidia-nim",
+      "name": "NVIDIA NIM API",
+      "officialHostSuffixes": [
+        "build.nvidia.com",
+        "docs.api.nvidia.com",
+        "integrate.api.nvidia.com",
+        "www.nvidia.com"
+      ],
+      "urls": {
+        "signup": "https://docs.api.nvidia.com/nim/reference",
+        "credentials": "https://build.nvidia.com/settings/api-keys",
+        "authentication": "https://docs.api.nvidia.com/nim/reference",
+        "pricing": "https://build.nvidia.com",
+        "terms": "https://www.nvidia.com/en-us/about-nvidia/terms-of-service",
+        "evidence": "https://build.nvidia.com"
+      },
+      "api": {
+        "host": "integrate.api.nvidia.com",
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "NVIDIA_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "meta/llama-3.1-8b-instruct"
+      ],
+      "defaultFreeModel": "meta/llama-3.1-8b-instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "cohere",
+      "name": "Cohere",
+      "officialHostSuffixes": [
+        "api.cohere.com",
+        "cohere.com",
+        "dashboard.cohere.com",
+        "docs.cohere.com"
+      ],
+      "urls": {
+        "signup": "https://docs.cohere.com/docs/rate-limits",
+        "credentials": "https://dashboard.cohere.com/api-keys",
+        "authentication": "https://docs.cohere.com/docs/rate-limits",
+        "pricing": "https://cohere.com/pricing",
+        "terms": "https://cohere.com/terms-of-use",
+        "evidence": "https://cohere.com/pricing"
+      },
+      "api": {
+        "host": "api.cohere.com",
+        "baseUrl": "https://api.cohere.com/v2",
+        "chatPath": "/chat",
+        "modelsPath": "/models"
+      },
+      "adapter": "cohere",
+      "authType": "bearer",
+      "secretRefs": [
+        "COHERE_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "command-r7b-12-2024"
+      ],
+      "defaultFreeModel": "command-r7b-12-2024",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "huggingface-inference",
+      "name": "Hugging Face Inference Providers",
+      "officialHostSuffixes": [
+        "huggingface.co",
+        "router.huggingface.co"
+      ],
+      "urls": {
+        "signup": "https://huggingface.co/docs/inference-providers/index",
+        "credentials": "https://huggingface.co/settings/tokens",
+        "authentication": "https://huggingface.co/docs/inference-providers/index",
+        "pricing": "https://huggingface.co/docs/inference-providers/pricing",
+        "terms": "https://huggingface.co/terms-of-service",
+        "evidence": "https://huggingface.co/docs/inference-providers/pricing"
+      },
+      "api": {
+        "host": "router.huggingface.co",
+        "baseUrl": "https://router.huggingface.co/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "HUGGINGFACE_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "meta-llama/Llama-3.1-8B-Instruct"
+      ],
+      "defaultFreeModel": "meta-llama/Llama-3.1-8B-Instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "vercel-ai-gateway",
+      "name": "Vercel AI Gateway",
+      "officialHostSuffixes": [
+        "ai-gateway.vercel.sh",
+        "vercel.com"
+      ],
+      "urls": {
+        "signup": "https://vercel.com/docs/ai-gateway",
+        "credentials": "https://vercel.com/d/account/tokens",
+        "authentication": "https://vercel.com/docs/ai-gateway",
+        "pricing": "https://vercel.com/docs/ai-gateway/pricing",
+        "terms": "https://vercel.com/legal/terms",
+        "evidence": "https://vercel.com/docs/ai-gateway/pricing"
+      },
+      "api": {
+        "host": "ai-gateway.vercel.sh",
+        "baseUrl": "https://ai-gateway.vercel.sh/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "VERCEL_AI_GATEWAY_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "openai/gpt-4o-mini"
+      ],
+      "defaultFreeModel": "openai/gpt-4o-mini",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "lightning-ai",
+      "name": "Lightning AI Model APIs",
+      "officialHostSuffixes": [
+        "lightning.ai"
+      ],
+      "urls": {
+        "signup": "https://lightning.ai/docs/platform/inference/model-apis",
+        "credentials": "https://lightning.ai/me/api-keys",
+        "authentication": "https://lightning.ai/docs/platform/inference/model-apis",
+        "pricing": "https://lightning.ai/pricing",
+        "terms": "https://lightning.ai/terms",
+        "evidence": "https://lightning.ai/pricing"
+      },
+      "api": {
+        "host": "lightning.ai",
+        "baseUrl": "https://lightning.ai/api/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "LIGHTNING_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "operator/free-endpoint"
+      ],
+      "defaultFreeModel": "operator/free-endpoint",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "ollama-cloud",
+      "name": "Ollama Cloud",
+      "officialHostSuffixes": [
+        "docs.ollama.com",
+        "ollama.com"
+      ],
+      "urls": {
+        "signup": "https://docs.ollama.com/cloud",
+        "credentials": "https://docs.ollama.com/cloud",
+        "authentication": "https://docs.ollama.com/cloud",
+        "pricing": "https://ollama.com/cloud",
+        "terms": "https://ollama.com/terms",
+        "evidence": "https://ollama.com/cloud"
+      },
+      "api": {
+        "host": "ollama.com",
+        "baseUrl": "https://ollama.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "OLLAMA_CLOUD_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "requesty",
+      "name": "Requesty",
+      "officialHostSuffixes": [
+        "app.requesty.ai",
+        "docs.requesty.ai",
+        "requesty.ai",
+        "router.requesty.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.requesty.ai",
+        "credentials": "https://app.requesty.ai/api-keys",
+        "authentication": "https://docs.requesty.ai",
+        "pricing": "https://requesty.ai/pricing",
+        "terms": "https://requesty.ai/terms",
+        "evidence": "https://requesty.ai/pricing"
+      },
+      "api": {
+        "host": "router.requesty.ai",
+        "baseUrl": "https://router.requesty.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "REQUESTY_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "qnp",
+      "name": "QNP",
+      "officialHostSuffixes": [
+        "api.qnp.ai",
+        "qnp.ai"
+      ],
+      "urls": {
+        "signup": "https://qnp.ai/docs",
+        "credentials": "https://qnp.ai/docs",
+        "authentication": "https://qnp.ai/docs",
+        "pricing": "https://qnp.ai/docs",
+        "terms": "https://qnp.ai/terms",
+        "evidence": "https://qnp.ai/docs"
+      },
+      "api": {
+        "host": "api.qnp.ai",
+        "baseUrl": "https://api.qnp.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "QNP_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "aion",
+      "name": "Aion Labs",
+      "officialHostSuffixes": [
+        "aionlabs.ai",
+        "api.aionlabs.ai",
+        "docs.aionlabs.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.aionlabs.ai",
+        "credentials": "https://docs.aionlabs.ai",
+        "authentication": "https://docs.aionlabs.ai",
+        "pricing": "https://docs.aionlabs.ai",
+        "terms": "https://aionlabs.ai/terms",
+        "evidence": "https://docs.aionlabs.ai"
+      },
+      "api": {
+        "host": "api.aionlabs.ai",
+        "baseUrl": "https://api.aionlabs.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "AION_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "siliconflow",
+      "name": "SiliconFlow",
+      "officialHostSuffixes": [
+        "api.siliconflow.com",
+        "cloud.siliconflow.com",
+        "docs.siliconflow.com",
+        "siliconflow.com"
+      ],
+      "urls": {
+        "signup": "https://docs.siliconflow.com/en/userguide/rate-limits/rate-limit-and-upgradation",
+        "credentials": "https://cloud.siliconflow.com/account/ak",
+        "authentication": "https://docs.siliconflow.com/en/userguide/rate-limits/rate-limit-and-upgradation",
+        "pricing": "https://siliconflow.com/pricing",
+        "terms": "https://siliconflow.com/terms",
+        "evidence": "https://siliconflow.com/pricing"
+      },
+      "api": {
+        "host": "api.siliconflow.com",
+        "baseUrl": "https://api.siliconflow.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "SILICONFLOW_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "Qwen/Qwen2.5-7B-Instruct"
+      ],
+      "defaultFreeModel": "Qwen/Qwen2.5-7B-Instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "zhipu",
+      "name": "Zhipu BigModel",
+      "officialHostSuffixes": [
+        "docs.bigmodel.cn",
+        "open.bigmodel.cn"
+      ],
+      "urls": {
+        "signup": "https://docs.bigmodel.cn/cn/guide/models/free/glm-4-flash-250414",
+        "credentials": "https://open.bigmodel.cn/usercenter/apikeys",
+        "authentication": "https://docs.bigmodel.cn/cn/guide/models/free/glm-4-flash-250414",
+        "pricing": "https://open.bigmodel.cn/pricing",
+        "terms": "https://open.bigmodel.cn/dev/terms",
+        "evidence": "https://open.bigmodel.cn/pricing"
+      },
+      "api": {
+        "host": "open.bigmodel.cn",
+        "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "ZHIPU_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "glm-4-flash-250414"
+      ],
+      "defaultFreeModel": "glm-4-flash-250414",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "modelscope",
+      "name": "ModelScope API Inference",
+      "officialHostSuffixes": [
+        "api-inference.modelscope.cn",
+        "www.modelscope.cn"
+      ],
+      "urls": {
+        "signup": "https://www.modelscope.cn/learn/434591",
+        "credentials": "https://www.modelscope.cn/my/myaccesstoken",
+        "authentication": "https://www.modelscope.cn/learn/434591",
+        "pricing": "https://www.modelscope.cn/learn/434591",
+        "terms": "https://www.modelscope.cn/terms",
+        "evidence": "https://www.modelscope.cn/learn/434591"
+      },
+      "api": {
+        "host": "api-inference.modelscope.cn",
+        "baseUrl": "https://api-inference.modelscope.cn/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "MODELSCOPE_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "Qwen/Qwen3-8B"
+      ],
+      "defaultFreeModel": "Qwen/Qwen3-8B",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "free-ai",
+      "name": "Free.ai",
+      "officialHostSuffixes": [
+        "api.free.ai",
+        "free.ai"
+      ],
+      "urls": {
+        "signup": "https://free.ai",
+        "credentials": "https://free.ai",
+        "authentication": "https://free.ai",
+        "pricing": "https://free.ai",
+        "terms": "https://free.ai/terms",
+        "evidence": "https://free.ai"
+      },
+      "api": {
+        "host": "api.free.ai",
+        "baseUrl": "https://api.free.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "FREE_AI_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "awan",
+      "name": "Awan LLM",
+      "officialHostSuffixes": [
+        "api.awanllm.com",
+        "www.awanllm.com"
+      ],
+      "urls": {
+        "signup": "https://www.awanllm.com/docs",
+        "credentials": "https://www.awanllm.com/docs",
+        "authentication": "https://www.awanllm.com/docs",
+        "pricing": "https://www.awanllm.com/pricing",
+        "terms": "https://www.awanllm.com/terms",
+        "evidence": "https://www.awanllm.com/pricing"
+      },
+      "api": {
+        "host": "api.awanllm.com",
+        "baseUrl": "https://api.awanllm.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "AWAN_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "cloudflare-workers-ai",
+      "name": "Cloudflare Workers AI",
+      "officialHostSuffixes": [
+        "api.cloudflare.com",
+        "dash.cloudflare.com",
+        "developers.cloudflare.com",
+        "www.cloudflare.com"
+      ],
+      "urls": {
+        "signup": "https://developers.cloudflare.com/workers-ai",
+        "credentials": "https://dash.cloudflare.com/profile/api-tokens",
+        "authentication": "https://developers.cloudflare.com/workers-ai",
+        "pricing": "https://developers.cloudflare.com/workers-ai/platform/pricing",
+        "terms": "https://www.cloudflare.com/terms",
+        "evidence": "https://developers.cloudflare.com/workers-ai/platform/pricing"
+      },
+      "api": {
+        "host": "api.cloudflare.com",
+        "baseUrl": "https://api.cloudflare.com/client/v4",
+        "chatPath": "/accounts/{account_id}/ai/v1/chat/completions",
+        "modelsPath": "/accounts/{account_id}/ai/models/search"
+      },
+      "adapter": "cloudflare",
+      "authType": "composite",
+      "secretRefs": [
+        "CLOUDFLARE_API_TOKEN"
+      ],
+      "nonsecretFields": [
+        "CLOUDFLARE_ACCOUNT_ID"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "@cf/meta/llama-3.1-8b-instruct-fast"
+      ],
+      "defaultFreeModel": "@cf/meta/llama-3.1-8b-instruct-fast",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Service-ready composite path: capture CLOUDFLARE_ACCOUNT_ID only through the local configure operation; promotion copies it into the provider-specific service ACL. Do not use a machine-wide environment variable as a workaround."
+    },
+    {
+      "id": "ibm-watsonx",
+      "name": "IBM watsonx.ai Runtime Lite",
+      "officialHostSuffixes": [
+        "cloud.ibm.com",
+        "us-south.ml.cloud.ibm.com",
+        "www.ibm.com"
+      ],
+      "urls": {
+        "signup": "https://cloud.ibm.com/apidocs/watsonx-ai",
+        "credentials": "https://cloud.ibm.com/iam/apikeys",
+        "authentication": "https://cloud.ibm.com/apidocs/watsonx-ai",
+        "pricing": "https://cloud.ibm.com/catalog/services/pm-20",
+        "terms": "https://www.ibm.com/legal",
+        "evidence": "https://cloud.ibm.com/catalog/services/pm-20"
+      },
+      "api": {
+        "host": "us-south.ml.cloud.ibm.com",
+        "baseUrl": "https://us-south.ml.cloud.ibm.com",
+        "chatPath": "/ml/v1/text/chat",
+        "modelsPath": "/ml/v1/foundation_model_specs",
+        "tokenUrl": "https://iam.cloud.ibm.com/identity/token"
+      },
+      "adapter": "ibm_iam",
+      "authType": "composite",
+      "secretRefs": [
+        "IBM_CLOUD_API_KEY"
+      ],
+      "nonsecretFields": [
+        "IBM_WATSONX_PROJECT_ID"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "ibm/granite-3-8b-instruct"
+      ],
+      "defaultFreeModel": "ibm/granite-3-8b-instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Service-ready composite path: capture IBM_WATSONX_PROJECT_ID only through the local configure operation; promotion copies it into the provider-specific service ACL. Do not use a machine-wide environment variable as a workaround."
+    },
+    {
+      "id": "io-net",
+      "name": "io.net IO Intelligence",
+      "officialHostSuffixes": [
+        "ai.io.net",
+        "api.intelligence.io.solutions",
+        "io.net"
+      ],
+      "urls": {
+        "signup": "https://io.net/docs/guides/intelligence/io-intelligence-apis",
+        "credentials": "https://ai.io.net/ai/api-keys",
+        "authentication": "https://io.net/docs/guides/intelligence/io-intelligence-apis",
+        "pricing": "https://io.net/docs/guides/intelligence/io-intelligence-apis",
+        "terms": "https://io.net/terms-of-use",
+        "evidence": "https://io.net/docs/guides/intelligence/io-intelligence-apis"
+      },
+      "api": {
+        "host": "api.intelligence.io.solutions",
+        "baseUrl": "https://api.intelligence.io.solutions/api/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "IONET_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "meta-llama/Llama-3.3-70B-Instruct"
+      ],
+      "defaultFreeModel": "meta-llama/Llama-3.3-70B-Instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "pollinations",
+      "name": "Pollinations.ai",
+      "officialHostSuffixes": [
+        "enter.pollinations.ai",
+        "gen.pollinations.ai",
+        "github.com",
+        "pollinations.ai"
+      ],
+      "urls": {
+        "signup": "https://github.com/pollinations/pollinations/blob/master/APIDOCS.md",
+        "credentials": "https://enter.pollinations.ai",
+        "authentication": "https://github.com/pollinations/pollinations/blob/master/APIDOCS.md",
+        "pricing": "https://github.com/pollinations/pollinations/blob/master/APIDOCS.md",
+        "terms": "https://pollinations.ai/terms",
+        "evidence": "https://github.com/pollinations/pollinations/blob/master/APIDOCS.md"
+      },
+      "api": {
+        "host": "gen.pollinations.ai",
+        "baseUrl": "https://gen.pollinations.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "POLLINATIONS_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "openai-fast"
+      ],
+      "defaultFreeModel": "openai-fast",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "nlp-cloud",
+      "name": "NLP Cloud",
+      "officialHostSuffixes": [
+        "api.nlpcloud.io",
+        "docs.nlpcloud.com",
+        "nlpcloud.com"
+      ],
+      "urls": {
+        "signup": "https://docs.nlpcloud.com",
+        "credentials": "https://nlpcloud.com/home/token",
+        "authentication": "https://docs.nlpcloud.com",
+        "pricing": "https://nlpcloud.com/pricing.html",
+        "terms": "https://nlpcloud.com/tos.html",
+        "evidence": "https://nlpcloud.com/pricing.html"
+      },
+      "api": {
+        "host": "api.nlpcloud.io",
+        "baseUrl": "https://api.nlpcloud.io/v1",
+        "chatPath": "/gpu/{model}/chatbot",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "bearer",
+      "secretRefs": [
+        "NLP_CLOUD_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "finetuned-llama-3-70b"
+      ],
+      "defaultFreeModel": "finetuned-llama-3-70b",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "arli-ai",
+      "name": "Arli AI",
+      "officialHostSuffixes": [
+        "api.arliai.com",
+        "www.arliai.com"
+      ],
+      "urls": {
+        "signup": "https://www.arliai.com/docs/textgen",
+        "credentials": "https://www.arliai.com/account",
+        "authentication": "https://www.arliai.com/docs/textgen",
+        "pricing": "https://www.arliai.com/pricing",
+        "terms": "https://www.arliai.com/terms",
+        "evidence": "https://www.arliai.com/pricing"
+      },
+      "api": {
+        "host": "api.arliai.com",
+        "baseUrl": "https://api.arliai.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "ARLI_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "Mistral-Nemo-12B-Instruct-2407"
+      ],
+      "defaultFreeModel": "Mistral-Nemo-12B-Instruct-2407",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "netlify-ai-gateway",
+      "name": "Netlify AI Gateway",
+      "officialHostSuffixes": [
+        "api.netlify.com",
+        "app.netlify.com",
+        "docs.netlify.com",
+        "www.netlify.com"
+      ],
+      "urls": {
+        "signup": "https://docs.netlify.com/build/ai-gateway/overview",
+        "credentials": "https://app.netlify.com/user/applications",
+        "authentication": "https://docs.netlify.com/build/ai-gateway/overview",
+        "pricing": "https://www.netlify.com/pricing",
+        "terms": "https://www.netlify.com/legal/terms-of-use",
+        "evidence": "https://www.netlify.com/pricing"
+      },
+      "api": {
+        "host": "api.netlify.com",
+        "baseUrl": "https://api.netlify.com/api/v1",
+        "chatPath": "/sites/{site_id}/functions/ai-gateway/chat/completions",
+        "modelsPath": null
+      },
+      "adapter": "custom",
+      "authType": "composite",
+      "secretRefs": [
+        "NETLIFY_ACCESS_TOKEN"
+      ],
+      "nonsecretFields": [
+        "NETLIFY_SITE_ID"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "openai/gpt-4o-mini"
+      ],
+      "defaultFreeModel": "openai/gpt-4o-mini",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "gigachat",
+      "name": "GigaChat API",
+      "officialHostSuffixes": [
+        "developers.sber.ru",
+        "gigachat.devices.sberbank.ru"
+      ],
+      "urls": {
+        "signup": "https://developers.sber.ru/docs/ru/gigachat/api/reference/rest/gigachat-api",
+        "credentials": "https://developers.sber.ru/studio/workspaces",
+        "authentication": "https://developers.sber.ru/docs/ru/gigachat/api/reference/rest/gigachat-api",
+        "pricing": "https://developers.sber.ru/docs/ru/gigachat/tariffs/individual-tariffs",
+        "terms": "https://developers.sber.ru/docs/ru/gigachat/legal",
+        "evidence": "https://developers.sber.ru/docs/ru/gigachat/tariffs/individual-tariffs"
+      },
+      "api": {
+        "host": "gigachat.devices.sberbank.ru",
+        "baseUrl": "https://gigachat.devices.sberbank.ru/api/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "composite",
+      "secretRefs": [
+        "GIGACHAT_AUTHORIZATION_KEY"
+      ],
+      "nonsecretFields": [
+        "GIGACHAT_SCOPE"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "GigaChat-2"
+      ],
+      "defaultFreeModel": "GigaChat-2",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Recurring-free candidate, but GigaChat's authorization-key exchange requires a dedicated OAuth adapter and remains disabled until that adapter and both validation stages pass."
+    },
+    {
+      "id": "modal",
+      "name": "Modal",
+      "officialHostSuffixes": [
+        "api.modal.com",
+        "modal.com"
+      ],
+      "urls": {
+        "signup": "https://modal.com/docs/guide/high-performance-llm-inference",
+        "credentials": "https://modal.com/settings",
+        "authentication": "https://modal.com/docs/guide/high-performance-llm-inference",
+        "pricing": "https://modal.com/pricing",
+        "terms": "https://modal.com/legal/terms",
+        "evidence": "https://modal.com/pricing"
+      },
+      "api": {
+        "host": "api.modal.com",
+        "baseUrl": "https://api.modal.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "bearer",
+      "secretRefs": [
+        "MODAL_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "beam",
+      "name": "Beam",
+      "officialHostSuffixes": [
+        "api.beam.cloud",
+        "docs.beam.cloud",
+        "platform.beam.cloud",
+        "www.beam.cloud"
+      ],
+      "urls": {
+        "signup": "https://docs.beam.cloud",
+        "credentials": "https://platform.beam.cloud/settings",
+        "authentication": "https://docs.beam.cloud",
+        "pricing": "https://www.beam.cloud/pricing",
+        "terms": "https://www.beam.cloud/terms",
+        "evidence": "https://www.beam.cloud/pricing"
+      },
+      "api": {
+        "host": "api.beam.cloud",
+        "baseUrl": "https://api.beam.cloud",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "bearer",
+      "secretRefs": [
+        "BEAM_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "operator/free-endpoint"
+      ],
+      "defaultFreeModel": "operator/free-endpoint",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "oracle-cloud",
+      "name": "Oracle Cloud Free Tier",
+      "officialHostSuffixes": [
+        "cloud.oracle.com",
+        "docs.oracle.com",
+        "iaas.us-ashburn-1.oraclecloud.com",
+        "www.oracle.com"
+      ],
+      "urls": {
+        "signup": "https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm",
+        "credentials": "https://cloud.oracle.com/identity/users",
+        "authentication": "https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm",
+        "pricing": "https://www.oracle.com/cloud/free",
+        "terms": "https://www.oracle.com/legal/terms.html",
+        "evidence": "https://www.oracle.com/cloud/free"
+      },
+      "api": {
+        "host": "iaas.us-ashburn-1.oraclecloud.com",
+        "baseUrl": "https://iaas.us-ashburn-1.oraclecloud.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "composite",
+      "secretRefs": [
+        "OCI_API_PRIVATE_KEY"
+      ],
+      "nonsecretFields": [
+        "OCI_TENANCY_OCID",
+        "OCI_USER_OCID",
+        "OCI_FINGERPRINT"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "github-codespaces",
+      "name": "GitHub Codespaces",
+      "officialHostSuffixes": [
+        "api.github.com",
+        "docs.github.com",
+        "github.com"
+      ],
+      "urls": {
+        "signup": "https://docs.github.com/en/codespaces",
+        "credentials": "https://github.com/settings/tokens",
+        "authentication": "https://docs.github.com/en/codespaces",
+        "pricing": "https://docs.github.com/en/billing/reference/product-usage-included",
+        "terms": "https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features",
+        "evidence": "https://docs.github.com/en/billing/reference/product-usage-included"
+      },
+      "api": {
+        "host": "api.github.com",
+        "baseUrl": "https://api.github.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "bearer",
+      "secretRefs": [
+        "GITHUB_CODESPACES_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "operator/free-endpoint"
+      ],
+      "defaultFreeModel": "operator/free-endpoint",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "huggingface-spaces",
+      "name": "Hugging Face Spaces",
+      "officialHostSuffixes": [
+        "huggingface.co"
+      ],
+      "urls": {
+        "signup": "https://huggingface.co/docs/hub/spaces-overview",
+        "credentials": "https://huggingface.co/settings/tokens",
+        "authentication": "https://huggingface.co/docs/hub/spaces-overview",
+        "pricing": "https://huggingface.co/pricing",
+        "terms": "https://huggingface.co/terms-of-service",
+        "evidence": "https://huggingface.co/pricing"
+      },
+      "api": {
+        "host": "huggingface.co",
+        "baseUrl": "https://huggingface.co/api",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "bearer",
+      "secretRefs": [
+        "HUGGINGFACE_SPACES_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "operator/free-endpoint"
+      ],
+      "defaultFreeModel": "operator/free-endpoint",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "sap-ai-core",
+      "name": "SAP AI Core Free Plan",
+      "officialHostSuffixes": [
+        "account.hana.ondemand.com",
+        "api.ai.prod.us-east-1.aws.ml.hana.ondemand.com",
+        "help.sap.com",
+        "www.sap.com"
+      ],
+      "urls": {
+        "signup": "https://help.sap.com/docs/ai-core/ai-core/service-plans",
+        "credentials": "https://account.hana.ondemand.com",
+        "authentication": "https://help.sap.com/docs/ai-core/ai-core/service-plans",
+        "pricing": "https://help.sap.com/docs/ai-core/ai-core/service-plans",
+        "terms": "https://www.sap.com/about/trust-center/agreements/cloud/cloud-services.html",
+        "evidence": "https://help.sap.com/docs/ai-core/ai-core/service-plans"
+      },
+      "api": {
+        "host": "api.ai.prod.us-east-1.aws.ml.hana.ondemand.com",
+        "baseUrl": "https://api.ai.prod.us-east-1.aws.ml.hana.ondemand.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "composite",
+      "secretRefs": [
+        "SAP_AI_CORE_CLIENT_SECRET"
+      ],
+      "nonsecretFields": [
+        "SAP_AI_CORE_CLIENT_ID",
+        "SAP_AI_CORE_RESOURCE_GROUP"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "operator/free-endpoint"
+      ],
+      "defaultFreeModel": "operator/free-endpoint",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "databricks",
+      "name": "Databricks Free Edition",
+      "officialHostSuffixes": [
+        "accounts.cloud.databricks.com",
+        "docs.databricks.com",
+        "www.databricks.com"
+      ],
+      "urls": {
+        "signup": "https://docs.databricks.com/aws/en/getting-started/free-trial-vs-free-edition",
+        "credentials": "https://accounts.cloud.databricks.com",
+        "authentication": "https://docs.databricks.com/aws/en/getting-started/free-trial-vs-free-edition",
+        "pricing": "https://www.databricks.com/product/pricing",
+        "terms": "https://www.databricks.com/legal/terms-of-use",
+        "evidence": "https://www.databricks.com/product/pricing"
+      },
+      "api": {
+        "host": "accounts.cloud.databricks.com",
+        "baseUrl": "https://accounts.cloud.databricks.com",
+        "chatPath": "/serving-endpoints/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "DATABRICKS_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "databricks-meta-llama-3-1-8b-instruct"
+      ],
+      "defaultFreeModel": "databricks-meta-llama-3-1-8b-instruct",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "scaleway",
+      "name": "Scaleway Generative APIs",
+      "officialHostSuffixes": [
+        "api.scaleway.ai",
+        "console.scaleway.com",
+        "www.scaleway.com"
+      ],
+      "urls": {
+        "signup": "https://www.scaleway.com/en/docs/generative-apis/quickstart",
+        "credentials": "https://console.scaleway.com/iam/api-keys",
+        "authentication": "https://www.scaleway.com/en/docs/generative-apis/quickstart",
+        "pricing": "https://www.scaleway.com/en/pricing/model-as-a-service",
+        "terms": "https://www.scaleway.com/en/terms",
+        "evidence": "https://www.scaleway.com/en/pricing/model-as-a-service"
+      },
+      "api": {
+        "host": "api.scaleway.ai",
+        "baseUrl": "https://api.scaleway.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "SCALEWAY_SECRET_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "aws-bedrock",
+      "name": "Amazon Bedrock",
+      "officialHostSuffixes": [
+        "aws.amazon.com",
+        "bedrock-runtime.us-east-1.amazonaws.com",
+        "console.aws.amazon.com",
+        "docs.aws.amazon.com"
+      ],
+      "urls": {
+        "signup": "https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html",
+        "credentials": "https://console.aws.amazon.com/iam/home",
+        "authentication": "https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html",
+        "pricing": "https://aws.amazon.com/bedrock/pricing",
+        "terms": "https://aws.amazon.com/service-terms",
+        "evidence": "https://aws.amazon.com/bedrock/pricing"
+      },
+      "api": {
+        "host": "bedrock-runtime.us-east-1.amazonaws.com",
+        "baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "composite",
+      "secretRefs": [
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "nonsecretFields": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_REGION"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "google-cloud-vertex",
+      "name": "Google Cloud Vertex AI",
+      "officialHostSuffixes": [
+        "aiplatform.googleapis.com",
+        "cloud.google.com",
+        "console.cloud.google.com"
+      ],
+      "urls": {
+        "signup": "https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstarts/quickstart-multimodal",
+        "credentials": "https://console.cloud.google.com/apis/credentials",
+        "authentication": "https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstarts/quickstart-multimodal",
+        "pricing": "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+        "terms": "https://cloud.google.com/terms",
+        "evidence": "https://cloud.google.com/vertex-ai/generative-ai/pricing"
+      },
+      "api": {
+        "host": "aiplatform.googleapis.com",
+        "baseUrl": "https://aiplatform.googleapis.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "google_gemini",
+      "authType": "oauth_device",
+      "secretRefs": [
+        "GOOGLE_CLOUD_REFRESH_TOKEN"
+      ],
+      "nonsecretFields": [
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "azure-ai-foundry",
+      "name": "Azure AI Foundry",
+      "officialHostSuffixes": [
+        "azure.microsoft.com",
+        "learn.microsoft.com",
+        "management.azure.com",
+        "portal.azure.com",
+        "www.microsoft.com"
+      ],
+      "urls": {
+        "signup": "https://learn.microsoft.com/en-us/azure/ai-foundry",
+        "credentials": "https://portal.azure.com",
+        "authentication": "https://learn.microsoft.com/en-us/azure/ai-foundry",
+        "pricing": "https://azure.microsoft.com/en-us/pricing/details/ai-studio",
+        "terms": "https://www.microsoft.com/licensing/terms/product/ForOnlineServices",
+        "evidence": "https://azure.microsoft.com/en-us/pricing/details/ai-studio"
+      },
+      "api": {
+        "host": "management.azure.com",
+        "baseUrl": "https://management.azure.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "oauth_device",
+      "secretRefs": [
+        "AZURE_REFRESH_TOKEN"
+      ],
+      "nonsecretFields": [
+        "AZURE_SUBSCRIPTION_ID",
+        "AZURE_RESOURCE_GROUP"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "civo",
+      "name": "Civo Cloud",
+      "officialHostSuffixes": [
+        "api.civo.com",
+        "dashboard.civo.com",
+        "www.civo.com"
+      ],
+      "urls": {
+        "signup": "https://www.civo.com/docs",
+        "credentials": "https://dashboard.civo.com/security",
+        "authentication": "https://www.civo.com/docs",
+        "pricing": "https://www.civo.com/pricing",
+        "terms": "https://www.civo.com/legal/terms",
+        "evidence": "https://www.civo.com/pricing"
+      },
+      "api": {
+        "host": "api.civo.com",
+        "baseUrl": "https://api.civo.com/v2",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "bearer",
+      "secretRefs": [
+        "CIVO_API_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "vultr",
+      "name": "Vultr Cloud GPU",
+      "officialHostSuffixes": [
+        "api.vultr.com",
+        "docs.vultr.com",
+        "my.vultr.com",
+        "www.vultr.com"
+      ],
+      "urls": {
+        "signup": "https://docs.vultr.com/products/compute/instances/cloud-gpu",
+        "credentials": "https://my.vultr.com/settings/",
+        "authentication": "https://docs.vultr.com/products/compute/instances/cloud-gpu",
+        "pricing": "https://www.vultr.com/pricing",
+        "terms": "https://www.vultr.com/legal/tos",
+        "evidence": "https://www.vultr.com/pricing"
+      },
+      "api": {
+        "host": "api.vultr.com",
+        "baseUrl": "https://api.vultr.com/v2",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "bearer",
+      "secretRefs": [
+        "VULTR_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "akamai-linode",
+      "name": "Akamai Cloud / Linode",
+      "officialHostSuffixes": [
+        "api.linode.com",
+        "cloud.linode.com",
+        "techdocs.akamai.com",
+        "www.akamai.com",
+        "www.linode.com"
+      ],
+      "urls": {
+        "signup": "https://techdocs.akamai.com/cloud-computing/docs",
+        "credentials": "https://cloud.linode.com/profile/tokens",
+        "authentication": "https://techdocs.akamai.com/cloud-computing/docs",
+        "pricing": "https://www.linode.com/pricing",
+        "terms": "https://www.akamai.com/legal/compliance/terms-of-use",
+        "evidence": "https://www.linode.com/pricing"
+      },
+      "api": {
+        "host": "api.linode.com",
+        "baseUrl": "https://api.linode.com/v4",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "self_hosted",
+      "authType": "bearer",
+      "secretRefs": [
+        "LINODE_API_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "snowflake-cortex",
+      "name": "Snowflake Cortex",
+      "officialHostSuffixes": [
+        "api.snowflake.com",
+        "app.snowflake.com",
+        "docs.snowflake.com",
+        "www.snowflake.com"
+      ],
+      "urls": {
+        "signup": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api",
+        "credentials": "https://app.snowflake.com",
+        "authentication": "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api",
+        "pricing": "https://www.snowflake.com/en/pricing-options",
+        "terms": "https://www.snowflake.com/legal",
+        "evidence": "https://www.snowflake.com/en/pricing-options"
+      },
+      "api": {
+        "host": "api.snowflake.com",
+        "baseUrl": "https://api.snowflake.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "composite",
+      "secretRefs": [
+        "SNOWFLAKE_PAT"
+      ],
+      "nonsecretFields": [
+        "SNOWFLAKE_ACCOUNT"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "digitalocean",
+      "name": "DigitalOcean Gradient AI",
+      "officialHostSuffixes": [
+        "cloud.digitalocean.com",
+        "docs.digitalocean.com",
+        "inference.do-ai.run",
+        "www.digitalocean.com"
+      ],
+      "urls": {
+        "signup": "https://docs.digitalocean.com/products/inference",
+        "credentials": "https://cloud.digitalocean.com/account/api/tokens",
+        "authentication": "https://docs.digitalocean.com/products/inference",
+        "pricing": "https://www.digitalocean.com/pricing",
+        "terms": "https://www.digitalocean.com/legal/terms-of-service-agreement",
+        "evidence": "https://www.digitalocean.com/pricing"
+      },
+      "api": {
+        "host": "inference.do-ai.run",
+        "baseUrl": "https://inference.do-ai.run/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "DIGITALOCEAN_MODEL_ACCESS_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks AI",
+      "officialHostSuffixes": [
+        "api.fireworks.ai",
+        "app.fireworks.ai",
+        "docs.fireworks.ai",
+        "fireworks.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.fireworks.ai/getting-started/quickstart",
+        "credentials": "https://app.fireworks.ai/users",
+        "authentication": "https://docs.fireworks.ai/getting-started/quickstart",
+        "pricing": "https://fireworks.ai/pricing",
+        "terms": "https://fireworks.ai/terms-of-service",
+        "evidence": "https://fireworks.ai/pricing"
+      },
+      "api": {
+        "host": "api.fireworks.ai",
+        "baseUrl": "https://api.fireworks.ai/inference/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "FIREWORKS_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "replicate",
+      "name": "Replicate",
+      "officialHostSuffixes": [
+        "api.replicate.com",
+        "replicate.com"
+      ],
+      "urls": {
+        "signup": "https://replicate.com/docs",
+        "credentials": "https://replicate.com/account/api-tokens",
+        "authentication": "https://replicate.com/docs",
+        "pricing": "https://replicate.com/pricing",
+        "terms": "https://replicate.com/terms",
+        "evidence": "https://replicate.com/pricing"
+      },
+      "api": {
+        "host": "api.replicate.com",
+        "baseUrl": "https://api.replicate.com/v1",
+        "chatPath": "/predictions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "bearer",
+      "secretRefs": [
+        "REPLICATE_API_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "baseten",
+      "name": "Baseten",
+      "officialHostSuffixes": [
+        "app.baseten.co",
+        "docs.baseten.co",
+        "model-api.baseten.co",
+        "www.baseten.co"
+      ],
+      "urls": {
+        "signup": "https://docs.baseten.co",
+        "credentials": "https://app.baseten.co/settings/api_keys",
+        "authentication": "https://docs.baseten.co",
+        "pricing": "https://www.baseten.co/pricing",
+        "terms": "https://www.baseten.co/terms",
+        "evidence": "https://www.baseten.co/pricing"
+      },
+      "api": {
+        "host": "model-api.baseten.co",
+        "baseUrl": "https://model-api.baseten.co",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "BASETEN_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "puter",
+      "name": "Puter.js",
+      "officialHostSuffixes": [
+        "api.puter.com",
+        "docs.puter.com",
+        "puter.com"
+      ],
+      "urls": {
+        "signup": "https://docs.puter.com/user-pays-model",
+        "credentials": "https://docs.puter.com/user-pays-model",
+        "authentication": "https://docs.puter.com/user-pays-model",
+        "pricing": "https://docs.puter.com/user-pays-model",
+        "terms": "https://puter.com/terms",
+        "evidence": "https://docs.puter.com/user-pays-model"
+      },
+      "api": {
+        "host": "api.puter.com",
+        "baseUrl": "https://api.puter.com",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "oauth_pkce",
+      "secretRefs": [
+        "PUTER_REFRESH_TOKEN"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "gpt-5-nano"
+      ],
+      "defaultFreeModel": "gpt-5-nano",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "adapter_required",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "gaia",
+      "name": "Gaia",
+      "officialHostSuffixes": [
+        "api.gaianet.ai",
+        "docs.gaianet.ai",
+        "www.gaianet.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.gaianet.ai/getting-started/authentication",
+        "credentials": "https://www.gaianet.ai/reward",
+        "authentication": "https://docs.gaianet.ai/getting-started/authentication",
+        "pricing": "https://docs.gaianet.ai/getting-started/authentication",
+        "terms": "https://www.gaianet.ai/terms",
+        "evidence": "https://docs.gaianet.ai/getting-started/authentication"
+      },
+      "api": {
+        "host": "api.gaianet.ai",
+        "baseUrl": "https://api.gaianet.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "GAIA_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "json"
+      ],
+      "contextWindow": null,
+      "freeAccess": "recurring_free",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [
+        "llama"
+      ],
+      "defaultFreeModel": "llama",
+      "termsPermitTarot": true,
+      "allowedDataClassifications": [
+        "synthetic",
+        "public"
+      ],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "eligibility_verified",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Candidate only; remains disabled until official console checks and local plus service-bound validation pass."
+    },
+    {
+      "id": "nebius-token-factory",
+      "name": "Nebius Token Factory",
+      "officialHostSuffixes": [
+        "api.tokenfactory.nebius.com",
+        "console.nebius.com",
+        "docs.tokenfactory.nebius.com",
+        "nebius.com"
+      ],
+      "urls": {
+        "signup": "https://docs.tokenfactory.nebius.com/api-reference/introduction",
+        "credentials": "https://console.nebius.com",
+        "authentication": "https://docs.tokenfactory.nebius.com/api-reference/introduction",
+        "pricing": "https://nebius.com/token-factory/prices",
+        "terms": "https://nebius.com/legal",
+        "evidence": "https://nebius.com/token-factory/prices"
+      },
+      "api": {
+        "host": "api.tokenfactory.nebius.com",
+        "baseUrl": "https://api.tokenfactory.nebius.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "NEBIUS_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "clarifai",
+      "name": "Clarifai",
+      "officialHostSuffixes": [
+        "api.clarifai.com",
+        "clarifai.com",
+        "docs.clarifai.com",
+        "www.clarifai.com"
+      ],
+      "urls": {
+        "signup": "https://docs.clarifai.com/compute/inference/clarifai/api",
+        "credentials": "https://clarifai.com/settings/security",
+        "authentication": "https://docs.clarifai.com/compute/inference/clarifai/api",
+        "pricing": "https://www.clarifai.com/pricing",
+        "terms": "https://www.clarifai.com/terms",
+        "evidence": "https://www.clarifai.com/pricing"
+      },
+      "api": {
+        "host": "api.clarifai.com",
+        "baseUrl": "https://api.clarifai.com/v2",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "bearer",
+      "secretRefs": [
+        "CLARIFAI_PAT"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "alibaba-model-studio",
+      "name": "Alibaba Cloud Model Studio",
+      "officialHostSuffixes": [
+        "bailian.console.alibabacloud.com",
+        "dashscope-intl.aliyuncs.com",
+        "www.alibabacloud.com"
+      ],
+      "urls": {
+        "signup": "https://www.alibabacloud.com/help/en/model-studio/new-free-quota",
+        "credentials": "https://bailian.console.alibabacloud.com",
+        "authentication": "https://www.alibabacloud.com/help/en/model-studio/new-free-quota",
+        "pricing": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+        "terms": "https://www.alibabacloud.com/help/en/legal/latest/alibaba-cloud-international-website-product-terms-of-service",
+        "evidence": "https://www.alibabacloud.com/help/en/model-studio/model-pricing"
+      },
+      "api": {
+        "host": "dashscope-intl.aliyuncs.com",
+        "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "DASHSCOPE_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "tencent-tokenhub",
+      "name": "Tencent Cloud TokenHub",
+      "officialHostSuffixes": [
+        "cloud.tencent.com",
+        "console.cloud.tencent.com",
+        "tokenhub.tencentmaas.com",
+        "www.tencentcloud.com"
+      ],
+      "urls": {
+        "signup": "https://cloud.tencent.com/document/product/1823/130058",
+        "credentials": "https://console.cloud.tencent.com/cam/capi",
+        "authentication": "https://cloud.tencent.com/document/product/1823/130058",
+        "pricing": "https://cloud.tencent.com/product/tokenhub",
+        "terms": "https://www.tencentcloud.com/document/product/301/17345",
+        "evidence": "https://cloud.tencent.com/product/tokenhub"
+      },
+      "api": {
+        "host": "tokenhub.tencentmaas.com",
+        "baseUrl": "https://tokenhub.tencentmaas.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "TENCENT_TOKENHUB_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "baidu-qianfan",
+      "name": "Baidu Qianfan",
+      "officialHostSuffixes": [
+        "api.baiduqianfan.ai",
+        "cloud.baidu.com",
+        "console.bce.baidu.com",
+        "intl.cloud.baidu.com"
+      ],
+      "urls": {
+        "signup": "https://intl.cloud.baidu.com/en/doc/qianfan/s/qm8qxemze-intl-en",
+        "credentials": "https://console.bce.baidu.com/qianfan",
+        "authentication": "https://intl.cloud.baidu.com/en/doc/qianfan/s/qm8qxemze-intl-en",
+        "pricing": "https://cloud.baidu.com/doc/qianfan/s/Imi2rpirg",
+        "terms": "https://intl.cloud.baidu.com/doc/Agreements/s/Kjwvy245m",
+        "evidence": "https://cloud.baidu.com/doc/qianfan/s/Imi2rpirg"
+      },
+      "api": {
+        "host": "api.baiduqianfan.ai",
+        "baseUrl": "https://api.baiduqianfan.ai/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "QIANFAN_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "volcengine-ark",
+      "name": "Volcano Engine Ark",
+      "officialHostSuffixes": [
+        "ark.cn-beijing.volces.com",
+        "console.volcengine.com",
+        "www.volcengine.com"
+      ],
+      "urls": {
+        "signup": "https://www.volcengine.com/docs/82379/1795150",
+        "credentials": "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
+        "authentication": "https://www.volcengine.com/docs/82379/1795150",
+        "pricing": "https://www.volcengine.com/docs/82379/1099320",
+        "terms": "https://www.volcengine.com/docs/6256/64960",
+        "evidence": "https://www.volcengine.com/docs/82379/1099320"
+      },
+      "api": {
+        "host": "ark.cn-beijing.volces.com",
+        "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "ARK_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "huawei-maas",
+      "name": "Huawei Cloud MaaS",
+      "officialHostSuffixes": [
+        "console.huaweicloud.com",
+        "maas.cn-southwest-2.myhuaweicloud.com",
+        "support.huaweicloud.com",
+        "www.huaweicloud.com"
+      ],
+      "urls": {
+        "signup": "https://support.huaweicloud.com/usermanual-maas-modelarts/maas-modelarts-0077.html",
+        "credentials": "https://console.huaweicloud.com/iam",
+        "authentication": "https://support.huaweicloud.com/usermanual-maas-modelarts/maas-modelarts-0077.html",
+        "pricing": "https://support.huaweicloud.com/productdesc-modelarts/modelarts_01_0003.html",
+        "terms": "https://www.huaweicloud.com/intl/en-us/declaration/sa_prp.html",
+        "evidence": "https://support.huaweicloud.com/productdesc-modelarts/modelarts_01_0003.html"
+      },
+      "api": {
+        "host": "maas.cn-southwest-2.myhuaweicloud.com",
+        "baseUrl": "https://maas.cn-southwest-2.myhuaweicloud.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "custom",
+      "authType": "composite",
+      "secretRefs": [
+        "HUAWEI_CLOUD_SECRET_ACCESS_KEY"
+      ],
+      "nonsecretFields": [
+        "HUAWEI_CLOUD_ACCESS_KEY_ID"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "yandex-cloud",
+      "name": "Yandex Cloud AI Studio",
+      "officialHostSuffixes": [
+        "ai.api.cloud.yandex.net",
+        "console.yandex.cloud",
+        "yandex.cloud"
+      ],
+      "urls": {
+        "signup": "https://yandex.cloud/en/docs/tutorials/ml-ai/ai-model-ide-integration",
+        "credentials": "https://console.yandex.cloud",
+        "authentication": "https://yandex.cloud/en/docs/tutorials/ml-ai/ai-model-ide-integration",
+        "pricing": "https://yandex.cloud/en/prices",
+        "terms": "https://yandex.cloud/en/docs/legal/terms",
+        "evidence": "https://yandex.cloud/en/prices"
+      },
+      "api": {
+        "host": "ai.api.cloud.yandex.net",
+        "baseUrl": "https://ai.api.cloud.yandex.net/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "YANDEX_SERVICE_ACCOUNT_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "infomaniak",
+      "name": "Infomaniak AI Services",
+      "officialHostSuffixes": [
+        "api.infomaniak.com",
+        "developer.infomaniak.com",
+        "manager.infomaniak.com",
+        "www.infomaniak.com"
+      ],
+      "urls": {
+        "signup": "https://developer.infomaniak.com/docs/api/post/2/ai/%7Bproduct_id%7D/openai/v1/chat/completions",
+        "credentials": "https://manager.infomaniak.com/v3/profile/token",
+        "authentication": "https://developer.infomaniak.com/docs/api/post/2/ai/%7Bproduct_id%7D/openai/v1/chat/completions",
+        "pricing": "https://www.infomaniak.com/en/hosting/ai-tools",
+        "terms": "https://www.infomaniak.com/en/legal/terms",
+        "evidence": "https://www.infomaniak.com/en/hosting/ai-tools"
+      },
+      "api": {
+        "host": "api.infomaniak.com",
+        "baseUrl": "https://api.infomaniak.com/2/ai",
+        "chatPath": "/{product_id}/openai/v1/chat/completions",
+        "modelsPath": "/{product_id}/openai/v1/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "composite",
+      "secretRefs": [
+        "INFOMANIAK_API_TOKEN"
+      ],
+      "nonsecretFields": [
+        "INFOMANIAK_PRODUCT_ID"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "cloudru",
+      "name": "Cloud.ru Foundation Models",
+      "officialHostSuffixes": [
+        "cloud.ru",
+        "console.cloud.ru",
+        "foundation-models.api.cloud.ru"
+      ],
+      "urls": {
+        "signup": "https://cloud.ru/docs/foundation-models/ug/topics/quickstart",
+        "credentials": "https://console.cloud.ru",
+        "authentication": "https://cloud.ru/docs/foundation-models/ug/topics/quickstart",
+        "pricing": "https://cloud.ru/products/foundation-models",
+        "terms": "https://cloud.ru/docs/legal",
+        "evidence": "https://cloud.ru/products/foundation-models"
+      },
+      "api": {
+        "host": "foundation-models.api.cloud.ru",
+        "baseUrl": "https://foundation-models.api.cloud.ru/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "CLOUDRU_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "together-ai",
+      "name": "Together AI",
+      "officialHostSuffixes": [
+        "api.together.xyz",
+        "docs.together.ai",
+        "www.together.ai"
+      ],
+      "urls": {
+        "signup": "https://docs.together.ai/docs/quickstart",
+        "credentials": "https://api.together.xyz/settings/api-keys",
+        "authentication": "https://docs.together.ai/docs/quickstart",
+        "pricing": "https://www.together.ai/pricing",
+        "terms": "https://www.together.ai/terms-of-service",
+        "evidence": "https://www.together.ai/pricing"
+      },
+      "api": {
+        "host": "api.together.xyz",
+        "baseUrl": "https://api.together.xyz/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "TOGETHER_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "deepinfra",
+      "name": "DeepInfra",
+      "officialHostSuffixes": [
+        "api.deepinfra.com",
+        "deepinfra.com"
+      ],
+      "urls": {
+        "signup": "https://deepinfra.com/docs",
+        "credentials": "https://deepinfra.com/dash/api_keys",
+        "authentication": "https://deepinfra.com/docs",
+        "pricing": "https://deepinfra.com/pricing",
+        "terms": "https://deepinfra.com/terms",
+        "evidence": "https://deepinfra.com/pricing"
+      },
+      "api": {
+        "host": "api.deepinfra.com",
+        "baseUrl": "https://api.deepinfra.com/v1/openai",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "DEEPINFRA_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "temporary_credit",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "novita",
+      "name": "Novita AI",
+      "officialHostSuffixes": [
+        "api.novita.ai",
+        "novita.ai"
+      ],
+      "urls": {
+        "signup": "https://novita.ai/docs",
+        "credentials": "https://novita.ai/settings/key-management",
+        "authentication": "https://novita.ai/docs",
+        "pricing": "https://novita.ai/pricing",
+        "terms": "https://novita.ai/terms-of-service",
+        "evidence": "https://novita.ai/pricing"
+      },
+      "api": {
+        "host": "api.novita.ai",
+        "baseUrl": "https://api.novita.ai/v3/openai",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "NOVITA_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "hyperbolic",
+      "name": "Hyperbolic",
+      "officialHostSuffixes": [
+        "api.hyperbolic.xyz",
+        "app.hyperbolic.xyz",
+        "docs.hyperbolic.xyz",
+        "hyperbolic.xyz"
+      ],
+      "urls": {
+        "signup": "https://docs.hyperbolic.xyz",
+        "credentials": "https://app.hyperbolic.xyz/settings",
+        "authentication": "https://docs.hyperbolic.xyz",
+        "pricing": "https://hyperbolic.xyz/pricing",
+        "terms": "https://hyperbolic.xyz/terms",
+        "evidence": "https://hyperbolic.xyz/pricing"
+      },
+      "api": {
+        "host": "api.hyperbolic.xyz",
+        "baseUrl": "https://api.hyperbolic.xyz/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "HYPERBOLIC_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "retired",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "aimlapi",
+      "name": "AI/ML API",
+      "officialHostSuffixes": [
+        "aimlapi.com",
+        "api.aimlapi.com",
+        "docs.aimlapi.com"
+      ],
+      "urls": {
+        "signup": "https://docs.aimlapi.com",
+        "credentials": "https://aimlapi.com/app/keys",
+        "authentication": "https://docs.aimlapi.com",
+        "pricing": "https://aimlapi.com/pricing",
+        "terms": "https://aimlapi.com/terms-of-use",
+        "evidence": "https://aimlapi.com/pricing"
+      },
+      "api": {
+        "host": "api.aimlapi.com",
+        "baseUrl": "https://api.aimlapi.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "AIMLAPI_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "cloudflare-ai-gateway",
+      "name": "Cloudflare AI Gateway",
+      "officialHostSuffixes": [
+        "dash.cloudflare.com",
+        "developers.cloudflare.com",
+        "gateway.ai.cloudflare.com",
+        "www.cloudflare.com"
+      ],
+      "urls": {
+        "signup": "https://developers.cloudflare.com/ai-gateway",
+        "credentials": "https://dash.cloudflare.com/profile/api-tokens",
+        "authentication": "https://developers.cloudflare.com/ai-gateway",
+        "pricing": "https://developers.cloudflare.com/ai-gateway/reference/pricing",
+        "terms": "https://www.cloudflare.com/terms",
+        "evidence": "https://developers.cloudflare.com/ai-gateway/reference/pricing"
+      },
+      "api": {
+        "host": "gateway.ai.cloudflare.com",
+        "baseUrl": "https://gateway.ai.cloudflare.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "cloudflare",
+      "authType": "composite",
+      "secretRefs": [
+        "CLOUDFLARE_AI_GATEWAY_TOKEN"
+      ],
+      "nonsecretFields": [
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_GATEWAY_ID"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "unknown",
+      "requiresCard": false,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI API",
+      "officialHostSuffixes": [
+        "api.openai.com",
+        "openai.com",
+        "platform.openai.com"
+      ],
+      "urls": {
+        "signup": "https://platform.openai.com/docs",
+        "credentials": "https://platform.openai.com/api-keys",
+        "authentication": "https://platform.openai.com/docs",
+        "pricing": "https://openai.com/api/pricing",
+        "terms": "https://openai.com/policies/terms-of-use",
+        "evidence": "https://openai.com/api/pricing"
+      },
+      "api": {
+        "host": "api.openai.com",
+        "baseUrl": "https://api.openai.com/v1",
+        "chatPath": "/chat/completions",
+        "modelsPath": "/models"
+      },
+      "adapter": "openai_compatible",
+      "authType": "bearer",
+      "secretRefs": [
+        "OPENAI_API_KEY"
+      ],
+      "nonsecretFields": [],
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "contextWindow": null,
+      "freeAccess": "card_required",
+      "requiresCard": true,
+      "allowPaidModels": false,
+      "zeroCostModelIds": [],
+      "defaultFreeModel": null,
+      "termsPermitTarot": "unknown",
+      "allowedDataClassifications": [],
+      "freeVerifiedAt": "2026-08-01",
+      "freeExpiresAt": "2026-08-08",
+      "reviewer": "Socrates provider research; Kiki standards gate",
+      "enabled": false,
+      "state": "disabled",
+      "validationRequirements": [
+        "models",
+        "chat",
+        "worker_decrypt",
+        "negative_isolation"
+      ],
+      "notes": "Cataloged but disabled; no credential acquisition is authorized for this classification."
+    }
+  ]
+}

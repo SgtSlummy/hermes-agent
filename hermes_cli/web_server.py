@@ -717,14 +717,17 @@ async def get_occult_dashboard_status():
             "routes": [],
             "decks": [],
             "pairings": [],
+            "providers": [],
+            "provider_summary": {},
         }
 
     try:
-        agents, routes, decks, pairings = await asyncio.gather(
+        agents, routes, decks, pairings, providers = await asyncio.gather(
             _run_occult_dashboard_request("GET", "/v1/occult/major-arcana"),
             _run_occult_dashboard_request("GET", "/v1/occult/minor-arcana"),
             _run_occult_dashboard_request("GET", "/v1/occult/decks"),
             _run_occult_dashboard_request("GET", "/v1/occult/pairings"),
+            _run_occult_dashboard_request("GET", "/v1/occult/providers"),
         )
     except HTTPException:
         return {
@@ -735,6 +738,8 @@ async def get_occult_dashboard_status():
             "routes": [],
             "decks": [],
             "pairings": [],
+            "providers": [],
+            "provider_summary": {},
             "error": "Occult API is unavailable",
         }
 
@@ -746,6 +751,8 @@ async def get_occult_dashboard_status():
         "routes": routes.get("data", []),
         "decks": decks.get("data", []),
         "pairings": pairings.get("data", []),
+        "provider_summary": providers.get("summary", {}),
+        "providers": providers.get("providers", []),
     }
 
 
@@ -785,6 +792,8 @@ _ACTION_LOG_DIR: Path = get_hermes_home() / "logs"
 
 # Short ``name`` (from the URL) → absolute log file path.
 _ACTION_LOG_FILES: Dict[str, str] = {
+    "gateway-start": "gateway-start.log",
+    "gateway-stop": "gateway-stop.log",
     "gateway-restart": "gateway-restart.log",
     "hermes-update": "hermes-update.log",
 }
@@ -856,6 +865,36 @@ async def restart_gateway():
         "ok": True,
         "pid": proc.pid,
         "name": "gateway-restart",
+    }
+
+
+@app.post("/api/gateway/start")
+async def start_gateway():
+    """Kick off a ``hermes gateway start`` in the background."""
+    try:
+        proc = _spawn_hermes_action(["gateway", "start"], "gateway-start")
+    except Exception as exc:
+        _log.exception("Failed to spawn gateway start")
+        raise HTTPException(status_code=500, detail=f"Failed to start gateway: {exc}")
+    return {
+        "ok": True,
+        "pid": proc.pid,
+        "name": "gateway-start",
+    }
+
+
+@app.post("/api/gateway/stop")
+async def stop_gateway():
+    """Kick off a ``hermes gateway stop`` in the background."""
+    try:
+        proc = _spawn_hermes_action(["gateway", "stop"], "gateway-stop")
+    except Exception as exc:
+        _log.exception("Failed to spawn gateway stop")
+        raise HTTPException(status_code=500, detail=f"Failed to stop gateway: {exc}")
+    return {
+        "ok": True,
+        "pid": proc.pid,
+        "name": "gateway-stop",
     }
 
 
@@ -1127,7 +1166,11 @@ def get_model_options():
     try:
         from hermes_cli.inventory import build_models_payload, load_picker_context
 
-        return build_models_payload(load_picker_context(), max_models=50)
+        return build_models_payload(
+            load_picker_context(),
+            include_codex_option=True,
+            max_models=50,
+        )
     except Exception:
         _log.exception("GET /api/model/options failed")
         raise HTTPException(status_code=500, detail="Failed to list model options")

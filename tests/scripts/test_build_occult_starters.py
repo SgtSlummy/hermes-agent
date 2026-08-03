@@ -1,9 +1,11 @@
 import base64
+import json
 import sys
 import zipfile
 from pathlib import Path
 
 import pytest
+import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -32,10 +34,15 @@ def test_starter_builder_reads_signing_key_from_environment(
     assert main() == 0
     assert (tmp_path / "starter_signers.json").is_file()
     archives = tuple(tmp_path.glob("*.tarot"))
-    assert len(archives) > 0
+    assert len(archives) == 22
     for path in archives:
         with zipfile.ZipFile(path) as archive:
             assert {item.create_system for item in archive.infolist()} == {3}
+            manifest = yaml.safe_load(archive.read("manifest.yaml"))
+            assert manifest["agent"]["version"] == "1.1.0"
+    assert set(json.loads((tmp_path / "starter_signers.json").read_text())["signers"]) == {
+        "occult-starter-v2"
+    }
 
 
 @pytest.mark.parametrize(

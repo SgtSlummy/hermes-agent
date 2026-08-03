@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from agent.occult.contracts import OccultInvocation, RoutingPolicy, validate_invocation
@@ -23,6 +23,7 @@ from agent.occult.pairing import (
     RuntimePolicy,
     ToolAuthorization,
 )
+from agent.occult.provider_catalog import ProviderCatalog, load_bundled_provider_catalog
 from agent.occult.tarot_packages import TarotPackageManager
 from agent.occult.virtual_tokens import VirtualTokenAuthority, VirtualTokenError
 
@@ -35,6 +36,7 @@ class OccultService:
     runtime_policy: RuntimePolicy
     deck_registry: DeckRegistry | None = None
     invocation_store: SQLiteInvocationResultStore | None = None
+    provider_catalog: ProviderCatalog = field(default_factory=load_bundled_provider_catalog)
 
     def agents(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
         policy = self.token_authority.policy(plaintext_token)
@@ -68,6 +70,25 @@ class OccultService:
             for route in self.router.routes()
             if not policy.allowed_card_ids or route.card_id in policy.allowed_card_ids
         )
+
+    def providers(self, plaintext_token: str) -> dict[str, Any]:
+        """Return secret-free catalog policy and live-route counts."""
+
+        self.token_authority.policy(plaintext_token)
+        active_counts: dict[str, int] = {}
+        for route in self.router.routes():
+            active_counts[route.provider_id] = active_counts.get(route.provider_id, 0) + 1
+        catalog = []
+        for provider in self.provider_catalog.list():
+            item = provider.public_contract()
+            item["active_route_count"] = active_counts.get(provider.provider_id, 0)
+            item["activation"] = (
+                "active"
+                if item["active_route_count"]
+                else item["activation"]
+            )
+            catalog.append(item)
+        return {"summary": self.provider_catalog.summary(), "providers": catalog}
 
     def decks(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
         policy = self.token_authority.policy(plaintext_token)

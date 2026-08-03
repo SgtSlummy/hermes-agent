@@ -10308,6 +10308,9 @@ def main():
     occult_subparsers.add_parser("status", help="Show active agents and routes")
     occult_subparsers.add_parser("agents", help="List permitted Major Arcana")
     occult_subparsers.add_parser("routes", help="List permitted Minor Arcana")
+    occult_subparsers.add_parser(
+        "providers", help="List the secret-free provider catalog and free-policy state"
+    )
     occult_subparsers.add_parser("decks", help="List permitted Tarot Router decks")
     occult_pairings = occult_subparsers.add_parser(
         "pairings", help="List compatible Major and Minor Arcana pairings"

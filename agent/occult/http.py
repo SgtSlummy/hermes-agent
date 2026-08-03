@@ -99,6 +99,7 @@ class OccultHTTPAdapter:
             OccultOpenAIAdapter(self.service, worker=self._run_worker).register(app)
         app.router.add_get("/v1/occult/major-arcana", self._agents)
         app.router.add_get("/v1/occult/minor-arcana", self._routes)
+        app.router.add_get("/v1/occult/providers", self._providers)
         app.router.add_get("/v1/occult/decks", self._decks)
         app.router.add_get(
             "/v1/occult/decks/{deck_id}/validate",
@@ -168,6 +169,9 @@ class OccultHTTPAdapter:
         return await self._call(
             request, lambda token, _payload: {"data": self.service.routes(token)}
         )
+
+    async def _providers(self, request: web.Request) -> web.Response:
+        return await self._call(request, lambda token, _payload: self.service.providers(token))
 
     async def _decks(self, request: web.Request) -> web.Response:
         return await self._call(

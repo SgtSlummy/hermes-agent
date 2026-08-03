@@ -55,10 +55,17 @@ from agent.occult.pairing import (
     ToolAuthorization,
     ToolAuthorizationDecision,
 )
+from agent.occult.provider_catalog import (
+    CatalogProvider,
+    ProviderCatalog,
+    ProviderCatalogError,
+    load_bundled_provider_catalog,
+)
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.openai_compat import OccultOpenAIAdapter
 from agent.occult.runtime import (
     DEFAULT_OLLAMA_BASE_URL,
+    MAJOR_ARCANA_AGENT_IDS,
     STARTER_AGENT_IDS,
     STARTER_CARD_ID,
     STARTER_DECK_ID,
@@ -124,6 +131,9 @@ __all__ = [
     "PairingContext",
     "PairingError",
     "PairingSession",
+    "CatalogProvider",
+    "ProviderCatalog",
+    "ProviderCatalogError",
     "PrivacyClass",
     "ProviderFailure",
     "ProviderTrustState",
@@ -142,12 +152,14 @@ __all__ = [
     "TarotPackageError",
     "TarotPackageManager",
     "DEFAULT_OLLAMA_BASE_URL",
+    "MAJOR_ARCANA_AGENT_IDS",
     "STARTER_AGENT_IDS",
     "STARTER_CARD_ID",
     "STARTER_DECK_ID",
     "build_occult_http",
     "discover_ollama_models",
     "normalize_loopback_openai_url",
+    "load_bundled_provider_catalog",
     "ToolAuthorization",
     "ToolAuthorizationDecision",
     "UnsupportedCapability",
