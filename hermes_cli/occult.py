@@ -576,6 +576,19 @@ def cmd_occult(args) -> None:
             enable_keyless_mesh=getattr(args, "enable_keyless_mesh", False),
             enable_free_mesh=getattr(args, "enable_free_mesh", False),
         )
+    elif action == "enroll":
+        try:
+            existing = cli_config.read_raw_config() or {}
+        except (OSError, TypeError, ValueError) as exc:
+            raise OccultCLIError(f"could not read Tarot Router configuration: {exc}") from None
+        occult = existing.get("occult") if isinstance(existing, dict) else {}
+        occult = occult if isinstance(occult, dict) else {}
+        result = initialize_occult(
+            base_url=occult.get("local_base_url"),
+            model=occult.get("local_model"),
+            enable_keyless_mesh=bool(getattr(args, "enable_keyless_mesh", False)),
+            enable_free_mesh=bool(getattr(args, "enable_free_mesh", False)),
+        )
     elif action == "token-list":
         result = _admin_request("GET", "/v1/occult/admin/tokens")
     elif action == "token-issue":

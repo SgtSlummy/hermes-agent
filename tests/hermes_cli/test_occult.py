@@ -44,6 +44,34 @@ def test_occult_cli_requires_virtual_token(monkeypatch):
         cmd_occult(SimpleNamespace(occult_action="agents"))
 
 
+def test_occult_enroll_reuses_existing_local_profile(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "hermes_cli.occult.cli_config.read_raw_config",
+        lambda: {"occult": {"local_base_url": "http://127.0.0.1:11434/v1", "local_model": "local"}},
+    )
+    observed = {}
+
+    def fake_initialize(**kwargs):
+        observed.update(kwargs)
+        return {"free_mesh_enabled": True}
+
+    monkeypatch.setattr("hermes_cli.occult.initialize_occult", fake_initialize)
+    cmd_occult(
+        SimpleNamespace(
+            occult_action="enroll",
+            enable_keyless_mesh=False,
+            enable_free_mesh=True,
+        )
+    )
+    assert observed == {
+        "base_url": "http://127.0.0.1:11434/v1",
+        "model": "local",
+        "enable_keyless_mesh": False,
+        "enable_free_mesh": True,
+    }
+    assert json.loads(capsys.readouterr().out)["free_mesh_enabled"] is True
+
+
 def test_occult_api_url_comes_from_api_server_config(monkeypatch):
     monkeypatch.delenv("OCCULT_API_URL", raising=False)
     monkeypatch.delenv("API_SERVER_HOST", raising=False)

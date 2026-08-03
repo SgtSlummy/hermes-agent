@@ -82,6 +82,17 @@ Windows:  install-occult.ps1 -InitializeLocal -EnableFreeMesh
 POSIX:    install-occult.sh --initialize-local --enable-free-mesh
 ```
 
+After a local profile already exists, the same enrollment pass can be rerun
+without reopening provider pages or placing credentials on the command line:
+
+```text
+hermes tarot enroll --enable-free-mesh
+```
+
+This is idempotent. It reuses the configured Ollama model and protected
+environment, activates only routes that pass the catalog, terms, credential,
+quota, adapter, and health gates, and reports the rest as pending or skipped.
+
 Because this flag explicitly permits external routes, the starter token can
 use successfully enrolled keyless cards. The installer still fails closed for
 unverified, paid, credentialed, or unreachable providers and remains
