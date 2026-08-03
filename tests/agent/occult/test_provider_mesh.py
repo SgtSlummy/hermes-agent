@@ -53,6 +53,22 @@ def test_mesh_requires_explicit_selection_and_registers_keyless_route():
     assert "test-model" in result.routes[0].card_id
 
 
+def test_mesh_can_unattendedly_enroll_reviewed_keyless_catalog_entries():
+    result = activate_provider_mesh(
+        ProviderMeshConfig(
+            enabled=True,
+            auto_enroll_keyless=True,
+            discover_models=False,
+        ),
+        catalog=ProviderCatalog((_provider(), _provider("bearer-test", auth_type="bearer", secret_refs=("TEST_API_KEY",)))),
+        environ={},
+        credential_broker=InMemoryCredentialBroker(),
+    )
+
+    assert result.activated == ("anonymous-test",)
+    assert result.pending_authorization == ()
+
+
 def test_mesh_never_activates_bearer_provider_without_authorized_secret():
     result = activate_provider_mesh(
         ProviderMeshConfig(enabled=True, provider_ids=("bearer-test",), discover_models=False),

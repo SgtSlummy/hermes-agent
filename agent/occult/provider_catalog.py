@@ -103,6 +103,10 @@ class CatalogProvider:
     allowed_data_classifications: tuple[str, ...]
     enabled: bool
     source_state: str
+    description: str = ""
+    soul: str = ""
+    auth_url: str | None = None
+    notes: str = ""
 
     @property
     def allowed_by_free_policy(self) -> bool:
@@ -113,9 +117,23 @@ class CatalogProvider:
         )
 
     def public_contract(self) -> dict[str, Any]:
+        enrollment_mode = (
+            "keyless"
+            if self.auth_type in {"anonymous", "keyless"}
+            else "preauthorized"
+            if self.auth_type == "bearer"
+            else "human_required"
+        )
         return {
             "provider_id": self.provider_id,
             "name": self.name,
+            "description": self.description or self.notes or f"{self.name} provider route.",
+            "soul": self.soul
+            or (
+                "Keyless free inference route; it can be enrolled without a credential when the endpoint is reachable."
+                if enrollment_mode == "keyless"
+                else "Authorized provider route; the router keeps credentials outside the agent and waits for a valid authorization."
+            ),
             "free_access": self.free_access,
             "requires_card": self.requires_card,
             "allowed_by_free_policy": self.allowed_by_free_policy,
@@ -124,7 +142,14 @@ class CatalogProvider:
             "official_hosts": list(self.official_hosts),
             "base_url": self.base_url,
             "capabilities": list(self.capabilities),
+            "zero_cost_model_ids": list(self.zero_cost_model_ids),
+            "default_free_model": self.default_free_model,
+            "terms_permit_tarot": self.terms_permit_tarot,
+            "allowed_data_classifications": list(self.allowed_data_classifications),
+            "auth_url": self.auth_url,
             "source_state": self.source_state,
+            "enrollment_mode": enrollment_mode,
+            "requires_human_authorization": enrollment_mode == "human_required",
             "active_route_count": 0,
             "activation": (
                 "awaiting_authorized_credential"
@@ -238,6 +263,15 @@ class ProviderCatalog:
                     ),
                     enabled=bool(raw.get("enabled", False)),
                     source_state=str(raw.get("state", "unknown")),
+                    description=str(raw.get("description", "")).strip(),
+                    soul=str(raw.get("soul", "")).strip(),
+                    auth_url=(
+                        str((raw.get("urls") or {}).get("authentication", "")).strip()
+                        or None
+                        if isinstance(raw.get("urls"), Mapping)
+                        else None
+                    ),
+                    notes=str(raw.get("notes", "")).strip(),
                 )
             )
         return cls(tuple(sorted(providers, key=lambda item: item.provider_id)))

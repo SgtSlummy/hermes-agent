@@ -57,6 +57,7 @@ cost and revocation survive.
 ```text
 GET  /v1/occult/major-arcana
 GET  /v1/occult/minor-arcana
+GET  /v1/occult/cards
 GET  /v1/occult/decks
 GET  /v1/occult/decks/{deck_id}/validate
 GET  /v1/occult/pairings?agent_id=<optional-agent-id>
@@ -80,6 +81,8 @@ GET  /v1/occult/admin/tokens
 POST /v1/occult/admin/tokens
 POST /v1/occult/admin/tokens/{token_id}/revoke
 POST /v1/occult/admin/decks
+POST /v1/occult/admin/providers
+POST /v1/occult/admin/cards
 ```
 
 They require `X-Occult-Admin-Key`; an ordinary Occult bearer token is never

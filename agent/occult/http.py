@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping
 
 from aiohttp import web
 
+from agent.occult.card_registry import CardRegistryError
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, OccultContractError
 from agent.occult.decks import DeckError
 from agent.occult.mythos import FailureKind, MythosRoutingError, RouterBusy
@@ -100,6 +101,7 @@ class OccultHTTPAdapter:
         app.router.add_get("/v1/occult/major-arcana", self._agents)
         app.router.add_get("/v1/occult/minor-arcana", self._routes)
         app.router.add_get("/v1/occult/providers", self._providers)
+        app.router.add_get("/v1/occult/cards", self._cards)
         app.router.add_get("/v1/occult/decks", self._decks)
         app.router.add_get(
             "/v1/occult/decks/{deck_id}/validate",
@@ -126,6 +128,8 @@ class OccultHTTPAdapter:
                 self._admin_revoke_token,
             )
             app.router.add_post("/v1/occult/admin/decks", self._admin_install_deck)
+            app.router.add_post("/v1/occult/admin/providers", self._admin_register_provider)
+            app.router.add_post("/v1/occult/admin/cards", self._admin_register_card)
 
     def handles_openai_request(self, request: web.Request) -> bool:
         """Identify router-issued virtual tokens before gateway API-key auth."""
@@ -172,6 +176,11 @@ class OccultHTTPAdapter:
 
     async def _providers(self, request: web.Request) -> web.Response:
         return await self._call(request, lambda token, _payload: self.service.providers(token))
+
+    async def _cards(self, request: web.Request) -> web.Response:
+        return await self._call(
+            request, lambda token, _payload: {"data": self.service.cards(token)}
+        )
 
     async def _decks(self, request: web.Request) -> web.Response:
         return await self._call(
@@ -490,6 +499,38 @@ class OccultHTTPAdapter:
             return self._error(str(exc), 400)
         except Exception:
             return self._error("Occult deck installation failed", 500)
+
+    async def _admin_register_provider(self, request: web.Request) -> web.Response:
+        if not self._admin_authorized(request):
+            return self._error("Occult administrator credential is required", 401)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, Mapping):
+                raise ValueError("request body must contain an object")
+            return web.json_response(
+                self.service.register_provider(payload),
+                status=201,
+            )
+        except (CardRegistryError, ValueError) as exc:
+            return self._error(str(exc), 400)
+        except Exception:
+            return self._error("Occult provider registration failed", 500)
+
+    async def _admin_register_card(self, request: web.Request) -> web.Response:
+        if not self._admin_authorized(request):
+            return self._error("Occult administrator credential is required", 401)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, Mapping):
+                raise ValueError("request body must contain an object")
+            return web.json_response(
+                self.service.register_card(payload),
+                status=201,
+            )
+        except (CardRegistryError, ValueError) as exc:
+            return self._error(str(exc), 400)
+        except Exception:
+            return self._error("Occult card registration failed", 500)
 
     def _authorized_reading(self, token: str, reading_id: str, operation: str) -> Any:
         policy = self.service.token_authority.policy(token)

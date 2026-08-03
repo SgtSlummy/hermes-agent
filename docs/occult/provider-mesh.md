@@ -41,6 +41,7 @@ occult:
       - openrouter
       - groq
     allow_anonymous: true
+    auto_enroll_keyless: true
     allow_external_routes: true
     discover_models: true
     max_models_per_provider: 2
@@ -51,6 +52,12 @@ occult:
 catalog and health-check routes without allowing Major Arcana agents to send
 data off the machine. External routes receive only public-classification
 memory under the existing runtime policy.
+
+With `auto_enroll_keyless: true` and no explicit `provider_ids`, the runtime
+tries every reviewed, terms-compatible, zero-cost keyless catalog entry during
+startup. This is the unattended path: it creates no account and stores no
+credential. Bearer and OAuth providers remain pending until an authorized
+credential is supplied through the protected environment or secret broker.
 
 Bearer credentials are supplied through the provider's official authorization
 flow and then placed in the protected local environment using the exact

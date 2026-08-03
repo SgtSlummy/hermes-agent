@@ -46,6 +46,7 @@ def initialize_occult(
     *,
     base_url: str | None = None,
     model: str | None = None,
+    enable_keyless_mesh: bool = False,
 ) -> dict[str, Any]:
     """Initialize a secure local-only Tarot Router profile and starter deck."""
 
@@ -132,6 +133,14 @@ def initialize_occult(
         ),
         "maximum_readings": int(occult.get("maximum_readings", 10_000)),
     })
+    if enable_keyless_mesh:
+        provider_mesh = dict(occult.get("provider_mesh") or {})
+        provider_mesh.update({
+            "enabled": True,
+            "auto_enroll_keyless": True,
+            "allow_anonymous": True,
+        })
+        occult["provider_mesh"] = provider_mesh
     config["occult"] = occult
     platforms = dict(config.get("platforms") or {})
     api_server = dict(platforms.get("api_server") or {})
@@ -242,6 +251,9 @@ def initialize_occult(
         "model": selected_model,
         "card_id": STARTER_CARD_ID,
         "active_free_routes": [route.card_id for route in mesh_routes],
+        "keyless_mesh_enabled": mesh_enabled and not bool(
+            provider_mesh.get("provider_ids")
+        ) if isinstance(provider_mesh, dict) else False,
         "deck_id": STARTER_DECK_ID,
         "agents": list(STARTER_AGENT_IDS),
         "token_created": token_created,
@@ -541,6 +553,7 @@ def cmd_occult(args) -> None:
         result = initialize_occult(
             base_url=args.base_url,
             model=args.model,
+            enable_keyless_mesh=getattr(args, "enable_keyless_mesh", False),
         )
     elif action == "token-list":
         result = _admin_request("GET", "/v1/occult/admin/tokens")
@@ -573,6 +586,8 @@ def cmd_occult(args) -> None:
         result = _request("GET", "/v1/occult/major-arcana")
     elif action == "routes":
         result = _request("GET", "/v1/occult/minor-arcana")
+    elif action == "cards":
+        result = _request("GET", "/v1/occult/cards")
     elif action == "providers":
         local_status = _local_occult_status()
         if not local_status["initialized"] or not local_status["enabled"]:

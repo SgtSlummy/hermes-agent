@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, is_occult_enabled
+from agent.occult.card_registry import CardRegistry
 from agent.occult.decks import DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.idempotency import SQLiteInvocationResultStore
@@ -610,6 +611,7 @@ def build_occult_http(
             identity_retention_seconds=invocation_identity_retention,
             maximum_entries=maximum_invocation_entries,
         ),
+        card_registry=CardRegistry(root / "card-registry.json"),
     )
     readings = ReadingStore(
         root / "readings.db",

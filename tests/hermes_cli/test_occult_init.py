@@ -95,6 +95,32 @@ def test_occult_init_preserves_existing_provider_and_api_server_key(
     assert f"API_SERVER_KEY={api_server_key}" in env_text
 
 
+def test_occult_init_can_enable_unattended_keyless_mesh(tmp_path: Path, monkeypatch):
+    home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("API_SERVER_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("OCCULT_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "hermes_cli.occult.discover_ollama_models",
+        lambda _url: ("qwen2.5:3b",),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.occult.validate_ollama_chat_model",
+        lambda _url, _model, **_kwargs: None,
+    )
+
+    result = initialize_occult(model="qwen2.5:3b", enable_keyless_mesh=True)
+    config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+
+    assert config["occult"]["provider_mesh"] == {
+        "enabled": True,
+        "auto_enroll_keyless": True,
+        "allow_anonymous": True,
+    }
+    assert result["keyless_mesh_enabled"] is True
+
+
 def test_occult_init_reuses_existing_virtual_token(tmp_path: Path, monkeypatch):
     home = tmp_path / ".hermes"
     monkeypatch.setenv("HERMES_HOME", str(home))

@@ -250,7 +250,9 @@ class TestWebServerEndpoints:
             "decks": [],
             "pairings": [],
             "providers": [],
+            "cards": [],
             "provider_summary": {},
+            "controls_available": False,
         }
         proxy.assert_not_called()
 
@@ -289,6 +291,9 @@ class TestWebServerEndpoints:
                     }
                 ],
             },
+            "/v1/occult/cards": {
+                "data": [{"card_id": "minor.pentacles.ace.local.test", "status": "active"}],
+            },
         }
 
         def proxy(method, path, payload=None):
@@ -307,6 +312,7 @@ class TestWebServerEndpoints:
         assert data["routes"][0]["card_id"].startswith("minor.")
         assert data["provider_summary"]["allowed_free"] == 48
         assert data["providers"][0]["provider_id"] == "openrouter"
+        assert data["cards"][0]["status"] == "active"
         assert "occult_dashboard_private" not in resp.text
 
     def test_occult_dashboard_reading_controls_are_bounded(self, monkeypatch):

@@ -61,6 +61,7 @@ from agent.occult.provider_catalog import (
     ProviderCatalogError,
     load_bundled_provider_catalog,
 )
+from agent.occult.card_registry import CardRegistry, CardRegistryError
 from agent.occult.provider_mesh import (
     ProviderMeshActivation,
     ProviderMeshConfig,
@@ -138,6 +139,8 @@ __all__ = [
     "PairingError",
     "PairingSession",
     "CatalogProvider",
+    "CardRegistry",
+    "CardRegistryError",
     "ProviderCatalog",
     "ProviderCatalogError",
     "ProviderMeshActivation",

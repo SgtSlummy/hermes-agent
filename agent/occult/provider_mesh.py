@@ -64,6 +64,7 @@ class ProviderMeshConfig:
     allow_anonymous: bool = True
     allow_external_routes: bool = False
     discover_models: bool = True
+    auto_enroll_keyless: bool = False
     max_models_per_provider: int = 4
     timeout_seconds: float = 8.0
 
@@ -86,6 +87,9 @@ class ProviderMeshConfig:
             discover_models = bool(
                 value.get("discover_models", value.get("discoverModels", True))
             )
+            auto_enroll_keyless = bool(
+                value.get("auto_enroll_keyless", value.get("autoEnrollKeyless", False))
+            )
             max_models = int(
                 value.get("max_models_per_provider", value.get("maxModelsPerProvider", 4))
             )
@@ -104,6 +108,7 @@ class ProviderMeshConfig:
             allow_anonymous=allow_anonymous,
             allow_external_routes=allow_external_routes,
             discover_models=discover_models,
+            auto_enroll_keyless=auto_enroll_keyless,
             max_models_per_provider=max_models,
             timeout_seconds=timeout,
         )
@@ -376,11 +381,19 @@ def activate_provider_mesh(
     if not config.enabled:
         return ProviderMeshActivation({}, (), (), (), ())
     selected = set(config.provider_ids)
-    candidates = tuple(
-        provider
-        for provider in catalog.list()
-        if (provider.provider_id in selected if selected else provider.enabled)
-    )
+    if selected:
+        candidates = tuple(
+            provider for provider in catalog.list() if provider.provider_id in selected
+        )
+    elif config.auto_enroll_keyless:
+        candidates = tuple(
+            provider
+            for provider in catalog.list()
+            if provider.auth_type in {"anonymous", "keyless"}
+            and provider.allowed_by_free_policy
+        )
+    else:
+        candidates = tuple(provider for provider in catalog.list() if provider.enabled)
     adapters: dict[str, ExternalProviderAdapter] = {}
     routes: list[MinorArcanaDescriptor] = []
     activated: list[str] = []
