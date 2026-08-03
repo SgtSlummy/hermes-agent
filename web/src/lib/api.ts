@@ -298,6 +298,8 @@ export const api = {
     fetchJSON<ActionResponse>("/api/gateway/stop", { method: "POST" }),
   restartGateway: () =>
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
+  enrollOccultProviders: () =>
+    fetchJSON<ActionResponse>("/api/occult/enroll", { method: "POST" }),
   updateHermes: () =>
     fetchJSON<ActionResponse>("/api/hermes/update", { method: "POST" }),
   getActionStatus: (name: string, lines = 200) =>

@@ -88,7 +88,7 @@ function gatewayTone(status: StatusResponse | null): string {
 export default function OccultPage() {
   const [status, setStatus] = useState<OccultDashboardStatus>(EMPTY_STATUS);
   const [gatewayStatus, setGatewayStatus] = useState<StatusResponse | null>(null);
-  const [gatewayAction, setGatewayAction] = useState<"start" | "stop" | "restart" | null>(null);
+  const [gatewayAction, setGatewayAction] = useState<"start" | "stop" | "restart" | "enroll" | null>(null);
   const [gatewayActionStatus, setGatewayActionStatus] = useState<ActionStatusResponse | null>(null);
   const [gatewayBusy, setGatewayBusy] = useState(false);
   const [stopGatewayOpen, setStopGatewayOpen] = useState(false);
@@ -168,7 +168,7 @@ export default function OccultPage() {
 
   useEffect(() => {
     if (!gatewayAction) return;
-    const actionName = `gateway-${gatewayAction}`;
+    const actionName = gatewayAction === "enroll" ? "occult-enroll" : `gateway-${gatewayAction}`;
     let active = true;
     const poll = async () => {
       try {
@@ -269,6 +269,20 @@ export default function OccultPage() {
       showToast("Enrollment command copied.", "success");
     } catch {
       showToast(command, "success");
+    }
+  };
+
+  const runEnrollment = async () => {
+    if (gatewayBusy) return;
+    setGatewayBusy(true);
+    setGatewayActionStatus(null);
+    try {
+      const result = await api.enrollOccultProviders();
+      setGatewayAction("enroll");
+      showToast(`Provider enrollment requested (process ${result.pid}).`, "success");
+    } catch (caught) {
+      setGatewayBusy(false);
+      showToast(caught instanceof Error ? caught.message : String(caught), "error");
     }
   };
 
@@ -654,6 +668,9 @@ export default function OccultPage() {
                     credential, adapter, quota, and health check pass.
                   </CardDescription>
                 </div>
+                <Button outlined size="sm" onClick={() => void runEnrollment()} disabled={gatewayBusy}>
+                  <Play className="mr-2 h-3.5 w-3.5" /> Enroll free routes
+                </Button>
                 <Button outlined size="sm" onClick={() => void copyEnrollmentCommand()}>
                   <Clipboard className="mr-2 h-3.5 w-3.5" /> Copy enrollment command
                 </Button>

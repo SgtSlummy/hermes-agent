@@ -858,6 +858,7 @@ _ACTION_LOG_FILES: Dict[str, str] = {
     "gateway-stop": "gateway-stop.log",
     "gateway-restart": "gateway-restart.log",
     "hermes-update": "hermes-update.log",
+    "occult-enroll": "occult-enroll.log",
 }
 
 # ``name`` → most recently spawned Popen handle.  Used so ``status`` can
@@ -973,6 +974,19 @@ async def update_hermes():
         "pid": proc.pid,
         "name": "hermes-update",
     }
+
+
+@app.post("/api/occult/enroll")
+async def enroll_occult_providers():
+    """Run the explicit, secret-free free-provider enrollment pass."""
+    try:
+        proc = _spawn_hermes_action(
+            ["tarot", "enroll", "--enable-free-mesh"], "occult-enroll"
+        )
+    except Exception as exc:
+        _log.exception("Failed to spawn Occult enrollment")
+        raise HTTPException(status_code=500, detail=f"Failed to enroll providers: {exc}")
+    return {"ok": True, "pid": proc.pid, "name": "occult-enroll"}
 
 
 @app.get("/api/actions/{name}/status")
