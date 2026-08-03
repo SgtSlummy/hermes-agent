@@ -324,6 +324,11 @@ export default function OccultPage() {
     { label: "Pairings", count: status.pairings.length, icon: ShieldCheck },
   ];
 
+  const activationCounts = status.providers.reduce<Record<string, number>>((counts, provider) => {
+    counts[provider.activation] = (counts[provider.activation] ?? 0) + 1;
+    return counts;
+  }, {});
+
   if (loading && !status.connected) {
     return (
       <div className="flex min-h-[18rem] items-center justify-center">
@@ -653,6 +658,14 @@ export default function OccultPage() {
                 <div className="border border-border p-3 text-xs">
                   <div className="font-courier uppercase tracking-wider text-muted-foreground">Awaiting authorization</div>
                   <div className="mt-1 text-lg">{status.providers.filter((provider) => provider.activation === "awaiting_authorized_credential").length}</div>
+                </div>
+                <div className="border border-border p-3 text-xs">
+                  <div className="font-courier uppercase tracking-wider text-muted-foreground">Terms pending</div>
+                  <div className="mt-1 text-lg">{activationCounts.terms_pending ?? 0}</div>
+                </div>
+                <div className="border border-border p-3 text-xs">
+                  <div className="font-courier uppercase tracking-wider text-muted-foreground">Adapter pending</div>
+                  <div className="mt-1 text-lg">{activationCounts.adapter_pending ?? 0}</div>
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
