@@ -23,6 +23,16 @@ def test_bundled_catalog_is_secret_free_and_exposes_free_policy():
     openai = next(item for item in catalog.public() if item["provider_id"] == "openai")
     assert openai["allowed_by_free_policy"] is False
     assert openai["activation"] == "blocked_by_free_policy"
+    gemini = next(item for item in catalog.public() if item["provider_id"] == "gemini")
+    assert gemini["activation"] == "awaiting_authorized_credential"
+    cloudflare = next(
+        item for item in catalog.public() if item["provider_id"] == "cloudflare-workers-ai"
+    )
+    assert cloudflare["activation"] == "adapter_pending"
+    snowflake = next(
+        item for item in catalog.public() if item["provider_id"] == "snowflake-cortex"
+    )
+    assert snowflake["activation"] == "terms_pending"
     assert all("secret" not in str(item).lower() for item in catalog.public())
 
 

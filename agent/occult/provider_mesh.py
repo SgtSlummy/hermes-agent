@@ -44,7 +44,7 @@ from agent.occult.provider_catalog import CatalogProvider, ProviderCatalog
 
 
 _SAFE_PROVIDER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_SUPPORTED_ADAPTERS = frozenset({"openai_compatible"})
+_SUPPORTED_ADAPTERS = frozenset({"openai_compatible", "google_gemini"})
 _SUPPORTED_AUTH = frozenset({"anonymous", "bearer"})
 _DEFAULT_CHAT_PATH = "/chat/completions"
 _MAX_MODEL_ID_LENGTH = 112

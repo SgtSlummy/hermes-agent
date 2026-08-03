@@ -147,6 +147,21 @@ def test_mesh_rejects_non_https_or_untrusted_endpoint():
     assert result.skipped[0]["reason"] == "provider unsafe-test has an unsafe endpoint"
 
 
+def test_mesh_rejects_unverified_terms_metadata():
+    provider = replace(_provider(), terms_permit_tarot=False)
+    result = activate_provider_mesh(
+        ProviderMeshConfig(enabled=True, provider_ids=(provider.provider_id,), discover_models=False),
+        catalog=ProviderCatalog((provider,)),
+        environ={},
+        credential_broker=InMemoryCredentialBroker(),
+    )
+
+    assert result.routes == ()
+    assert result.skipped == (
+        {"provider_id": provider.provider_id, "reason": "terms_not_verified"},
+    )
+
+
 def test_mesh_config_rejects_paid_or_unbounded_settings():
     try:
         ProviderMeshConfig.from_mapping(
@@ -164,3 +179,19 @@ def test_mesh_config_reads_full_free_enrollment_flag():
     )
 
     assert config.auto_enroll_free is True
+
+
+def test_mesh_accepts_gemini_openai_compatible_adapter_with_authorized_secret():
+    provider = replace(
+        _provider("gemini-test", auth_type="bearer", secret_refs=("GEMINI_API_KEY",)),
+        adapter="google_gemini",
+    )
+    result = activate_provider_mesh(
+        ProviderMeshConfig(enabled=True, provider_ids=(provider.provider_id,), discover_models=False),
+        catalog=ProviderCatalog((provider,)),
+        environ={"GEMINI_API_KEY": "authorized-gemini-secret"},
+        credential_broker=InMemoryCredentialBroker(),
+    )
+
+    assert result.activated == ("gemini-test",)
+    assert result.routes[0].provider_id == "gemini-test"

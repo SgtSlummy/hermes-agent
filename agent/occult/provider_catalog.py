@@ -124,6 +124,16 @@ class CatalogProvider:
             if self.auth_type == "bearer"
             else "human_required"
         )
+        if not self.allowed_by_free_policy:
+            activation = "blocked_by_free_policy"
+        elif self.terms_permit_tarot is not True:
+            activation = "terms_pending"
+        elif self.adapter not in {"openai_compatible", "google_gemini"}:
+            activation = "adapter_pending"
+        elif self.auth_type not in {"anonymous", "keyless", "bearer"}:
+            activation = "authorization_flow_pending"
+        else:
+            activation = "awaiting_authorized_credential"
         return {
             "provider_id": self.provider_id,
             "name": self.name,
@@ -151,11 +161,7 @@ class CatalogProvider:
             "enrollment_mode": enrollment_mode,
             "requires_human_authorization": enrollment_mode == "human_required",
             "active_route_count": 0,
-            "activation": (
-                "awaiting_authorized_credential"
-                if self.allowed_by_free_policy
-                else "blocked_by_free_policy"
-            ),
+            "activation": activation,
         }
 
 
@@ -257,7 +263,10 @@ class ProviderCatalog:
                         else None
                     ),
                     allow_paid_models=bool(raw.get("allowPaidModels", False)),
-                    terms_permit_tarot=bool(raw.get("termsPermitTarot", False)),
+                    # Only an explicit JSON boolean true is a verified terms
+                    # decision.  Values such as "unknown" must remain
+                    # unverified and fail the runtime admission gate.
+                    terms_permit_tarot=raw.get("termsPermitTarot") is True,
                     allowed_data_classifications=tuple(
                         sorted(set(item.strip() for item in allowed_data))
                     ),
