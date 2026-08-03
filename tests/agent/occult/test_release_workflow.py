@@ -89,6 +89,7 @@ def test_occult_production_workflow_preserves_release_invariants():
         "--format requirements-txt",
         "occult-requirements.lock",
         "EXPECTED_WHEEL_NAME=\"$(jq -er '.release_artifacts.hermes_wheel.name' \"$CANARY\")\"",
+        "verify_canary_artifact_name",
         "council_windows_x64",
         "gh release download",
         "--latest=false",

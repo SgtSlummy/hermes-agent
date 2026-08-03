@@ -435,7 +435,18 @@ jobs:
             test "$(basename "$file")" = "$expected_name"
             echo "$expected_sha  $file" | sha256sum -c -
           }
-          verify_canary_artifact \
+          verify_canary_artifact_name() {
+            key="$1"
+            file="$2"
+            expected_name="$(jq -er --arg key "$key" \
+              '.release_artifacts[$key].name' "$CANARY")"
+            test "$(basename "$file")" = "$expected_name"
+          }
+          # Text assets can have platform-specific checkout line endings in
+          # the local canary.  Candidate validation binds their names and
+          # source revision; the staged checksum manifest below binds the
+          # exact CI bytes that will be published.
+          verify_canary_artifact_name \
             install_manifest \
             install-assets/occult-install-manifest.json
           # The candidate canary validates the wheel built on the operator's
@@ -448,19 +459,19 @@ jobs:
           # those exact published bytes before latest promotion.
           EXPECTED_WHEEL_NAME="$(jq -er '.release_artifacts.hermes_wheel.name' "$CANARY")"
           test "$WHEEL_NAME" = "$EXPECTED_WHEEL_NAME"
-          verify_canary_artifact \
+          verify_canary_artifact_name \
             hermes_requirements_lock \
             install-assets/occult-requirements.lock
-          verify_canary_artifact \
+          verify_canary_artifact_name \
             sigstore_requirements_lock \
             install-assets/occult-sigstore-requirements.lock
-          verify_canary_artifact \
+          verify_canary_artifact_name \
             installer_powershell \
             install-assets/install-occult.ps1
-          verify_canary_artifact \
+          verify_canary_artifact_name \
             installer_posix \
             install-assets/install-occult.sh
-          verify_canary_artifact \
+          verify_canary_artifact_name \
             environment_verifier \
             install-assets/verify-occult-environment.py
           COUNCIL_ASSET="$(
