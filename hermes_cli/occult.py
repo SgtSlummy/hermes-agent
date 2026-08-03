@@ -168,9 +168,13 @@ def initialize_occult(
         raise OccultCLIError("Tarot Router runtime did not enable")
 
     provider_mesh = occult.get("provider_mesh")
+    runtime_router = getattr(http.service, "router", None)
+    runtime_routes = (
+        runtime_router.routes() if runtime_router is not None else ()
+    )
     mesh_routes = tuple(
         route
-        for route in http.service.router.routes()
+        for route in runtime_routes
         if route.free and route.card_id != STARTER_CARD_ID
     )
     mesh_enabled = isinstance(provider_mesh, dict) and bool(
