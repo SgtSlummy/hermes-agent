@@ -25,6 +25,9 @@ def test_bundled_catalog_is_secret_free_and_exposes_free_policy():
     assert openai["activation"] == "blocked_by_free_policy"
     gemini = next(item for item in catalog.public() if item["provider_id"] == "gemini")
     assert gemini["activation"] == "awaiting_authorized_credential"
+    kilo = next(item for item in catalog.public() if item["provider_id"] == "kilo")
+    assert kilo["enrollment_mode"] == "keyless"
+    assert kilo["activation"] == "keyless_pending_validation"
     cloudflare = next(
         item for item in catalog.public() if item["provider_id"] == "cloudflare-workers-ai"
     )

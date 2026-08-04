@@ -132,6 +132,8 @@ class CatalogProvider:
             activation = "adapter_pending"
         elif self.auth_type not in {"anonymous", "keyless", "bearer"}:
             activation = "authorization_flow_pending"
+        elif self.auth_type in {"anonymous", "keyless"}:
+            activation = "keyless_pending_validation"
         else:
             activation = "awaiting_authorized_credential"
         return {
