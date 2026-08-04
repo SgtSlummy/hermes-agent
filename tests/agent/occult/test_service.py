@@ -8,6 +8,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from aiohttp.web import Application
 
 from agent.occult.contracts import DeckDescriptor, RoutingPolicy
+from agent.occult.card_registry import CardRegistry
 from agent.occult.decks import DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.idempotency import (
@@ -808,6 +809,67 @@ async def test_http_deck_admin_pairing_and_deck_invocation(tmp_path: Path):
         )
         assert invoked.status == 200
         assert seen
+
+
+@pytest.mark.asyncio
+async def test_http_card_and_provider_admin_registration_is_secret_free(tmp_path: Path):
+    service, token, _seen = _service()
+    service.card_registry = CardRegistry(tmp_path / "card-registry.json")
+    admin_key = "admin-" + ("r" * 40)
+    app = Application()
+    OccultHTTPAdapter(
+        service,
+        ReadingStore(tmp_path / "readings.db"),
+        admin_key_digest=OccultHTTPAdapter.digest_admin_key(admin_key),
+    ).register(app)
+    admin = {"X-Occult-Admin-Key": admin_key}
+    bearer = {"Authorization": f"Bearer {token}"}
+
+    async with TestClient(TestServer(app)) as client:
+        forbidden = await client.post(
+            "/v1/occult/admin/providers",
+            headers=bearer,
+            json={"provider_id": "bad", "name": "Bad", "api_key": "no"},
+        )
+        assert forbidden.status == 401
+        provider = await client.post(
+            "/v1/occult/admin/providers",
+            headers=admin,
+            json={
+                "provider_id": "local-test",
+                "name": "Local Test",
+                "auth_type": "keyless",
+                "base_url": "http://127.0.0.1:11434/v1",
+                "official_hosts": ["127.0.0.1"],
+                "free_access": "anonymous_free",
+                "zero_cost_model_ids": ["test-model"],
+            },
+        )
+        assert provider.status == 201
+        card = await client.post(
+            "/v1/occult/admin/cards",
+            headers=admin,
+            json={
+                "card_id": "minor.pentacles.page.local-test",
+                "name": "Local Test Page",
+                "provider_id": "local-test",
+                "model_id": "test-model",
+            },
+        )
+        assert card.status == 201
+        cards = await client.get("/v1/occult/cards", headers=bearer)
+        providers = await client.get("/v1/occult/providers", headers=bearer)
+        cards_payload = await cards.json()
+        providers_payload = await providers.json()
+
+    added_card = next(
+        item for item in cards_payload["data"]
+        if item["card_id"] == "minor.pentacles.page.local-test"
+    )
+    assert added_card["status"] == "pending_review"
+    provider_items = providers_payload["providers"]
+    assert provider_items[-1]["provider_id"] == "local-test"
+    assert "api_key" not in repr(provider_items)
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,8 @@ param(
     [string]$Version = "1.0.9",
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "Occult"),
     [switch]$InitializeLocal,
+    [switch]$EnableKeylessMesh,
+    [switch]$EnableFreeMesh,
     [switch]$SkipCouncil,
     [switch]$VerifyOnly,
     [string]$Model = "qwen2.5:3b"
@@ -455,6 +457,12 @@ if ($normalizedVersion -notmatch '^\d+\.\d+\.\d+$') {
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     Fail "--model cannot be empty"
+}
+if ($EnableKeylessMesh -and -not $InitializeLocal) {
+    Fail "-EnableKeylessMesh requires -InitializeLocal so provider enrollment is explicit"
+}
+if ($EnableFreeMesh -and -not $InitializeLocal) {
+    Fail "-EnableFreeMesh requires -InitializeLocal so provider enrollment is explicit"
 }
 
 $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
@@ -938,9 +946,18 @@ try {
                     -Arguments @("pull", $Model) `
                     -FailureMessage "Ollama could not pull $Model"
                 Write-Step "Explicitly initializing the local Occult profile"
+                $initArguments = @("occult", "init", "--model", $Model)
+                if ($EnableKeylessMesh) {
+                    $initArguments += "--enable-keyless-mesh"
+                    Write-Step "Enrolling reviewed keyless/free provider routes without credentials"
+                }
+                if ($EnableFreeMesh) {
+                    $initArguments += "--enable-free-mesh"
+                    Write-Step "Enrolling every reviewed free route; existing credentials stay protected and missing authorization remains pending"
+                }
                 Invoke-Checked `
                     -Executable $hermesExecutable `
-                    -Arguments @("occult", "init", "--model", $Model) `
+                    -Arguments $initArguments `
                     -FailureMessage "hermes occult init failed"
                 $state = Get-OccultState `
                     -Python $existingVenvPython `
@@ -1090,9 +1107,18 @@ try {
             -Arguments @("pull", $Model) `
             -FailureMessage "Ollama could not pull $Model"
         Write-Step "Explicitly initializing the local Occult profile"
+        $initArguments = @("occult", "init", "--model", $Model)
+        if ($EnableKeylessMesh) {
+            $initArguments += "--enable-keyless-mesh"
+            Write-Step "Enrolling reviewed keyless/free provider routes without credentials"
+        }
+        if ($EnableFreeMesh) {
+            $initArguments += "--enable-free-mesh"
+            Write-Step "Enrolling every reviewed free route; existing credentials stay protected and missing authorization remains pending"
+        }
         Invoke-Checked `
             -Executable $hermesStagedExecutable `
-            -Arguments @("occult", "init", "--model", $Model) `
+            -Arguments $initArguments `
             -FailureMessage "hermes occult init failed"
     }
 
@@ -1199,7 +1225,13 @@ try {
     }
     if ($initialized) {
         if ($InitializeLocal) {
-            Write-Step "Local initialization completed explicitly with $Model"
+            if ($EnableFreeMesh) {
+                Write-Step "Local initialization and full free-provider enrollment completed explicitly with $Model"
+            } elseif ($EnableKeylessMesh) {
+                Write-Step "Local initialization and keyless/free provider enrollment completed explicitly with $Model"
+            } else {
+                Write-Step "Local initialization completed explicitly with $Model"
+            }
         } else {
             $stateLabel = if ($enabled) { "enabled" } else { "disabled" }
             Write-Step "Existing Occult initialization was preserved and remains $stateLabel"

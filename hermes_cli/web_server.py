@@ -667,6 +667,16 @@ def _occult_dashboard_request(
     return _request(method, path, payload)
 
 
+def _occult_dashboard_admin_request(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    from hermes_cli.occult import _admin_request
+
+    return _admin_request(method, path, payload)
+
+
 def _validated_occult_reading_id(reading_id: str) -> str:
     value = reading_id.strip()
     if not _OCCULT_READING_ID_PATTERN.fullmatch(value):
@@ -704,6 +714,26 @@ async def _run_occult_dashboard_request(
         ) from None
 
 
+async def _run_occult_dashboard_admin_request(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    try:
+        return await asyncio.to_thread(
+            _occult_dashboard_admin_request,
+            method,
+            path,
+            payload,
+        )
+    except Exception as exc:
+        _log.warning("Occult dashboard admin request failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="Occult administrator API request failed",
+        ) from None
+
+
 @app.get("/api/occult/status")
 async def get_occult_dashboard_status():
     enabled = _occult_dashboard_enabled()
@@ -718,17 +748,25 @@ async def get_occult_dashboard_status():
             "decks": [],
             "pairings": [],
             "providers": [],
+            "cards": [],
             "provider_summary": {},
+            "controls_available": False,
         }
 
     try:
-        agents, routes, decks, pairings, providers = await asyncio.gather(
+        responses = await asyncio.gather(
             _run_occult_dashboard_request("GET", "/v1/occult/major-arcana"),
             _run_occult_dashboard_request("GET", "/v1/occult/minor-arcana"),
             _run_occult_dashboard_request("GET", "/v1/occult/decks"),
             _run_occult_dashboard_request("GET", "/v1/occult/pairings"),
             _run_occult_dashboard_request("GET", "/v1/occult/providers"),
+            _run_occult_dashboard_request("GET", "/v1/occult/cards"),
+            return_exceptions=True,
         )
+        if any(isinstance(item, HTTPException) for item in responses[:5]):
+            raise next(item for item in responses[:5] if isinstance(item, HTTPException))
+        agents, routes, decks, pairings, providers = responses[:5]
+        cards = responses[5] if not isinstance(responses[5], Exception) else {"data": []}
     except HTTPException:
         return {
             "enabled": True,
@@ -739,8 +777,10 @@ async def get_occult_dashboard_status():
             "decks": [],
             "pairings": [],
             "providers": [],
+            "cards": [],
             "provider_summary": {},
             "error": "Occult API is unavailable",
+            "controls_available": bool(os.getenv("OCCULT_ADMIN_KEY", "").strip()),
         }
 
     return {
@@ -753,7 +793,29 @@ async def get_occult_dashboard_status():
         "pairings": pairings.get("data", []),
         "provider_summary": providers.get("summary", {}),
         "providers": providers.get("providers", []),
+        "cards": cards.get("data", []),
+        "controls_available": bool(os.getenv("OCCULT_ADMIN_KEY", "").strip()),
     }
+
+
+@app.post("/api/occult/providers")
+async def register_occult_dashboard_provider(payload: dict[str, Any]):
+    _require_occult_dashboard_ready()
+    if not os.getenv("OCCULT_ADMIN_KEY", "").strip():
+        raise HTTPException(status_code=409, detail="Occult administrator key is not configured")
+    return await _run_occult_dashboard_admin_request(
+        "POST", "/v1/occult/admin/providers", payload
+    )
+
+
+@app.post("/api/occult/cards")
+async def register_occult_dashboard_card(payload: dict[str, Any]):
+    _require_occult_dashboard_ready()
+    if not os.getenv("OCCULT_ADMIN_KEY", "").strip():
+        raise HTTPException(status_code=409, detail="Occult administrator key is not configured")
+    return await _run_occult_dashboard_admin_request(
+        "POST", "/v1/occult/admin/cards", payload
+    )
 
 
 @app.get("/api/occult/readings/{reading_id}")
@@ -796,6 +858,7 @@ _ACTION_LOG_FILES: Dict[str, str] = {
     "gateway-stop": "gateway-stop.log",
     "gateway-restart": "gateway-restart.log",
     "hermes-update": "hermes-update.log",
+    "occult-enroll": "occult-enroll.log",
 }
 
 # ``name`` → most recently spawned Popen handle.  Used so ``status`` can
@@ -911,6 +974,19 @@ async def update_hermes():
         "pid": proc.pid,
         "name": "hermes-update",
     }
+
+
+@app.post("/api/occult/enroll")
+async def enroll_occult_providers():
+    """Run the explicit, secret-free free-provider enrollment pass."""
+    try:
+        proc = _spawn_hermes_action(
+            ["tarot", "enroll", "--enable-free-mesh"], "occult-enroll"
+        )
+    except Exception as exc:
+        _log.exception("Failed to spawn Occult enrollment")
+        raise HTTPException(status_code=500, detail=f"Failed to enroll providers: {exc}")
+    return {"ok": True, "pid": proc.pid, "name": "occult-enroll"}
 
 
 @app.get("/api/actions/{name}/status")

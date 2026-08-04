@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from agent.occult.contracts import OccultInvocation, RoutingPolicy, validate_invocation
+from agent.occult.card_registry import CardRegistry, CardRegistryError
 from agent.occult.decks import DeckError, DeckRegistry
 from agent.occult.idempotency import SQLiteInvocationResultStore
 from agent.occult.mythos import MythosRouter
@@ -37,6 +38,7 @@ class OccultService:
     deck_registry: DeckRegistry | None = None
     invocation_store: SQLiteInvocationResultStore | None = None
     provider_catalog: ProviderCatalog = field(default_factory=load_bundled_provider_catalog)
+    card_registry: CardRegistry | None = None
 
     def agents(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
         policy = self.token_authority.policy(plaintext_token)
@@ -51,6 +53,14 @@ class OccultService:
                 "version": agent.version,
                 "arcana_number": agent.arcana_number,
                 "capabilities": list(installed.package.manifest.capabilities),
+                "description": agent.description,
+                "soul": installed.package.behavior.upright,
+                "reversed_soul": installed.package.behavior.reversed,
+                "temperament": {
+                    name: axis.model_dump(mode="json")
+                    for name, axis in installed.package.manifest.temperament.items()
+                },
+                "maximum_risk_level": installed.package.manifest.permissions.maximum_risk_level,
             })
         return tuple(result)
 
@@ -66,6 +76,19 @@ class OccultService:
                 "free": route.free,
                 "privacy": route.privacy.value,
                 "trust_state": route.trust_state.value,
+                "suit": "pentacles" if route.local else "wands",
+                "rank": "ace" if route.local else "knight",
+                "description": (
+                    f"{route.model_id} through {route.provider_id}; "
+                    f"{'private local' if route.local else 'external'} inference."
+                ),
+                "soul": (
+                    "Private, zero-cost, locality-first inference route."
+                    if route.local
+                    else "Fast, zero-cost provider route selected only after health, policy, and quota checks."
+                ),
+                "status": "active",
+                "source": "runtime",
             }
             for route in self.router.routes()
             if not policy.allowed_card_ids or route.card_id in policy.allowed_card_ids
@@ -88,7 +111,48 @@ class OccultService:
                 else item["activation"]
             )
             catalog.append(item)
-        return {"summary": self.provider_catalog.summary(), "providers": catalog}
+        if self.card_registry is not None:
+            for provider in self.card_registry.providers():
+                if not any(item.get("provider_id") == provider.get("provider_id") for item in catalog):
+                    catalog.append(dict(provider))
+        summary = dict(self.provider_catalog.summary())
+        summary["operator_added"] = sum(
+            item.get("source_state") == "operator_added"
+            for item in catalog
+        )
+        return {"summary": summary, "providers": catalog}
+
+    def cards(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
+        """Return active and pending Minor Arcana cards without secrets."""
+
+        self.token_authority.policy(plaintext_token)
+        cards: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for route in self.router.routes():
+            item = next(
+                (candidate for candidate in self.routes(plaintext_token) if candidate["card_id"] == route.card_id),
+                None,
+            )
+            if item is not None:
+                cards.append(item)
+                seen.add(route.card_id)
+        if self.card_registry is not None:
+            for item in self.card_registry.cards():
+                card_id = item.get("card_id")
+                if isinstance(card_id, str) and card_id not in seen:
+                    cards.append(dict(item))
+                    seen.add(card_id)
+        return tuple(cards)
+
+    def register_provider(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if self.card_registry is None:
+            raise CardRegistryError("Occult card registry is not configured")
+        return self.card_registry.register_provider(payload)
+
+    def register_card(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if self.card_registry is None:
+            raise CardRegistryError("Occult card registry is not configured")
+        return self.card_registry.register_card(payload)
 
     def decks(self, plaintext_token: str) -> tuple[dict[str, Any], ...]:
         policy = self.token_authority.policy(plaintext_token)

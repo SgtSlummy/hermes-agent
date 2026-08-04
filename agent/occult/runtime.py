@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.occult.contracts import OCCULT_CONTRACT_VERSION, is_occult_enabled
+from agent.occult.card_registry import CardRegistry
 from agent.occult.decks import DeckRegistry
 from agent.occult.http import OccultHTTPAdapter
 from agent.occult.idempotency import SQLiteInvocationResultStore
@@ -39,6 +40,11 @@ from agent.occult.mythos import (
     RouterBusy,
 )
 from agent.occult.pairing import RuntimePolicy
+from agent.occult.provider_catalog import load_bundled_provider_catalog
+from agent.occult.provider_mesh import (
+    ProviderMeshConfig,
+    activate_provider_mesh,
+)
 from agent.occult.readings import (
     CouncilNodeRequest,
     CouncilNodeResult,
@@ -47,7 +53,11 @@ from agent.occult.readings import (
 )
 from agent.occult.service import OccultService
 from agent.occult.tarot_packages import SystemPackagePolicy, TarotPackageManager
-from agent.occult.virtual_tokens import SQLiteVirtualTokenStore, VirtualTokenAuthority
+from agent.occult.virtual_tokens import (
+    SQLiteVirtualTokenStore,
+    VirtualTokenAuthority,
+)
+from agent.occult.credential_broker import InMemoryCredentialBroker
 from agent.occult.virtual_tokens import VirtualTokenRateLimitError
 from hermes_constants import get_hermes_home
 
@@ -274,6 +284,8 @@ def _ollama_handler(
 def _reading_executor(
     service: OccultService,
     readings: ReadingStore,
+    *,
+    allow_external_routes: bool = False,
 ):
     """Adapt persisted Council nodes into authenticated Occult invocations."""
 
@@ -304,10 +316,10 @@ def _reading_executor(
                     "input": {"message": "\n\n".join(sections)},
                     "required_capabilities": ["text"],
                     "routing": {
-                        "mode": "local_only",
+                        "mode": "local_first" if allow_external_routes else "local_only",
                         "free_only": True,
-                        "local_only": True,
-                        "maximum_fallbacks": 0,
+                        "local_only": not allow_external_routes,
+                        "maximum_fallbacks": 2 if allow_external_routes else 0,
                         "maximum_cost_usd": 0,
                     },
                     "deck_id": STARTER_DECK_ID,
@@ -400,26 +412,29 @@ def _install_starter_deck(
     registry: DeckRegistry,
     *,
     model_card_id: str,
+    additional_card_ids: tuple[str, ...] = (),
+    allow_external_routes: bool = False,
 ) -> None:
     # This ID is runtime-owned. Reinstall its canonical descriptor on startup
     # so stale or administrator-modified registries cannot break readings.
+    card_ids = tuple(dict.fromkeys((model_card_id, *additional_card_ids)))
     registry.put(
         {
             "contract_version": OCCULT_CONTRACT_VERSION,
             "deck_id": STARTER_DECK_ID,
             "version": "1.0.0",
             "allowed_agent_ids": list(STARTER_AGENT_IDS),
-            "allowed_card_ids": [model_card_id],
+            "allowed_card_ids": list(card_ids),
             "routing": {
-                "mode": "local_only",
+                "mode": "local_first" if allow_external_routes else "local_only",
                 "free_only": True,
-                "local_only": True,
-                "maximum_fallbacks": 0,
+                "local_only": not allow_external_routes,
+                "maximum_fallbacks": 2 if allow_external_routes else 0,
                 "maximum_cost_usd": 0.0,
             },
         },
         available_agent_ids=STARTER_AGENT_IDS,
-        available_card_ids=(model_card_id,),
+        available_card_ids=card_ids,
     )
 
 
@@ -510,6 +525,8 @@ def build_occult_http(
     if not 1 <= maximum_readings <= 1_000_000:
         raise OccultRuntimeError("occult.maximum_readings must be 1-1000000")
 
+    env = os.environ if environ is None else environ
+    mesh_config = ProviderMeshConfig.from_mapping(occult.get("provider_mesh"))
     profile_home = home or get_hermes_home()
     root = profile_home / "occult"
     package_manager = TarotPackageManager(
@@ -527,8 +544,18 @@ def build_occult_http(
     _install_starter_agents(package_manager)
 
     adapter = LocalProviderAdapter(_ollama_handler(base_url, timeout_seconds))
+    credential_broker = InMemoryCredentialBroker()
+    adapters: dict[str, Any] = {adapter.adapter_id: adapter}
+    mesh = activate_provider_mesh(
+        mesh_config,
+        catalog=load_bundled_provider_catalog(),
+        environ=env,
+        credential_broker=credential_broker,
+    )
+    adapters.update(mesh.adapters)
     router = MythosRouter(
-        adapters={adapter.adapter_id: adapter},
+        adapters=adapters,
+        credential_broker=credential_broker,
         state_store=MythosStateStore(root / "mythos-state.json"),
         maximum_concurrent_requests=maximum_concurrency,
     )
@@ -548,11 +575,21 @@ def build_occult_http(
     )
     router.discover(route)
     router.review(route.card_id, approve=True)
+    for mesh_route in mesh.routes:
+        router.discover(mesh_route)
+        router.review(mesh_route.card_id, approve=True)
 
     token_store = SQLiteVirtualTokenStore(root / "virtual_tokens.db")
     token_authority = VirtualTokenAuthority(store=token_store)
     deck_registry = DeckRegistry(root / "decks.json")
-    _install_starter_deck(deck_registry, model_card_id=route.card_id)
+    _install_starter_deck(
+        deck_registry,
+        model_card_id=route.card_id,
+        additional_card_ids=tuple(item.card_id for item in mesh.routes),
+        allow_external_routes=(
+            mesh_config.enabled and mesh_config.allow_external_routes
+        ),
+    )
     service = OccultService(
         package_manager=package_manager,
         router=router,
@@ -563,6 +600,9 @@ def build_occult_http(
             external_maximum_sensitivity="public",
             allowed_tools=frozenset(),
             maximum_risk_level=0,
+            allow_external_routes=(
+                mesh_config.enabled and mesh_config.allow_external_routes
+            ),
         ),
         deck_registry=deck_registry,
         invocation_store=SQLiteInvocationResultStore(
@@ -571,6 +611,7 @@ def build_occult_http(
             identity_retention_seconds=invocation_identity_retention,
             maximum_entries=maximum_invocation_entries,
         ),
+        card_registry=CardRegistry(root / "card-registry.json"),
     )
     readings = ReadingStore(
         root / "readings.db",
@@ -583,7 +624,13 @@ def build_occult_http(
     return OccultHTTPAdapter(
         service=service,
         readings=readings,
-        reading_executor=_reading_executor(service, readings),
+        reading_executor=_reading_executor(
+            service,
+            readings,
+            allow_external_routes=(
+                mesh_config.enabled and mesh_config.allow_external_routes
+            ),
+        ),
         admin_key_digest=(
             OccultHTTPAdapter.digest_admin_key(admin_key) if admin_key else None
         ),

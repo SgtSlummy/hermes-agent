@@ -68,6 +68,7 @@ class RuntimePolicy:
     approval_required_tools: frozenset[str] = frozenset()
     tool_risk_levels: Mapping[str, int] = field(default_factory=dict)
     maximum_risk_level: int = 0
+    allow_external_routes: bool = False
 
     def __post_init__(self) -> None:
         if self.maximum_memory_sensitivity not in _SENSITIVITY_ORDER:
@@ -186,6 +187,7 @@ class PairingSession:
             raise PairingError("agent does not support reversed orientation")
         if (
             not package.routing.allow_external
+            and not self.runtime_policy.allow_external_routes
             and route.privacy is not PrivacyClass.LOCAL
         ):
             raise PairingError("agent package does not allow external routes")

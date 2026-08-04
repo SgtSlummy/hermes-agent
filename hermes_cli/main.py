@@ -10305,9 +10305,32 @@ def main():
         "--model",
         help="Installed Ollama model (defaults to the first discovered model)",
     )
+    occult_init.add_argument(
+        "--enable-keyless-mesh",
+        action="store_true",
+        help="Enroll reviewed keyless free-provider routes without storing credentials",
+    )
+    occult_init.add_argument(
+        "--enable-free-mesh",
+        action="store_true",
+        help=(
+            "Enroll every reviewed free route: keyless routes automatically and "
+            "already-authorized bearer routes when their protected secret exists"
+        ),
+    )
+    occult_enroll = occult_subparsers.add_parser(
+        "enroll", help="Enroll reviewed keyless and authorized free-provider routes"
+    )
+    occult_enroll.add_argument("--enable-keyless-mesh", action="store_true")
+    occult_enroll.add_argument(
+        "--enable-free-mesh",
+        action="store_true",
+        help="Also activate already-authorized bearer routes from protected secrets",
+    )
     occult_subparsers.add_parser("status", help="Show active agents and routes")
     occult_subparsers.add_parser("agents", help="List permitted Major Arcana")
     occult_subparsers.add_parser("routes", help="List permitted Minor Arcana")
+    occult_subparsers.add_parser("cards", help="List active and pending Minor Arcana cards")
     occult_subparsers.add_parser(
         "providers", help="List the secret-free provider catalog and free-policy state"
     )

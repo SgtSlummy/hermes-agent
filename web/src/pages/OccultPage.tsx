@@ -3,12 +3,15 @@ import {
   useEffect,
   useLayoutEffect,
   useState,
+  type FormEvent,
 } from "react";
 import {
   BookOpen,
+  Clipboard,
   Layers3,
   Power,
   Play,
+  Plus,
   RefreshCw,
   Route,
   ShieldCheck,
@@ -20,7 +23,9 @@ import { Button } from "@nous-research/ui/ui/components/button";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { api } from "@/lib/api";
 import type {
+  OccultCardRegistration,
   OccultDashboardStatus,
+  OccultProviderRegistration,
   OccultReadingStatus,
   ActionStatusResponse,
   StatusResponse,
@@ -48,7 +53,9 @@ const EMPTY_STATUS: OccultDashboardStatus = {
   decks: [],
   pairings: [],
   providers: [],
+  cards: [],
   provider_summary: {},
+  controls_available: false,
 };
 
 function statusTone(connected: boolean): string {
@@ -81,7 +88,7 @@ function gatewayTone(status: StatusResponse | null): string {
 export default function OccultPage() {
   const [status, setStatus] = useState<OccultDashboardStatus>(EMPTY_STATUS);
   const [gatewayStatus, setGatewayStatus] = useState<StatusResponse | null>(null);
-  const [gatewayAction, setGatewayAction] = useState<"start" | "stop" | "restart" | null>(null);
+  const [gatewayAction, setGatewayAction] = useState<"start" | "stop" | "restart" | "enroll" | null>(null);
   const [gatewayActionStatus, setGatewayActionStatus] = useState<ActionStatusResponse | null>(null);
   const [gatewayBusy, setGatewayBusy] = useState(false);
   const [stopGatewayOpen, setStopGatewayOpen] = useState(false);
@@ -92,6 +99,27 @@ export default function OccultPage() {
   const [reading, setReading] = useState<OccultReadingStatus | null>(null);
   const [readingBusy, setReadingBusy] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [registryBusy, setRegistryBusy] = useState(false);
+  const [providerFilter, setProviderFilter] = useState("");
+  const [providerDraft, setProviderDraft] = useState<OccultProviderRegistration>({
+    provider_id: "",
+    name: "",
+    auth_type: "keyless",
+    adapter: "openai_compatible",
+    free_access: "anonymous_free",
+    capabilities: ["chat"],
+    official_hosts: [],
+    zero_cost_model_ids: [],
+  });
+  const [cardDraft, setCardDraft] = useState<OccultCardRegistration>({
+    card_id: "",
+    name: "",
+    suit: "pentacles",
+    rank: "page",
+    capabilities: ["text"],
+    local: true,
+    free: true,
+  });
   const { toast, showToast } = useToast();
   const { setEnd } = usePageHeader();
 
@@ -141,7 +169,7 @@ export default function OccultPage() {
 
   useEffect(() => {
     if (!gatewayAction) return;
-    const actionName = `gateway-${gatewayAction}`;
+    const actionName = gatewayAction === "enroll" ? "occult-enroll" : `gateway-${gatewayAction}`;
     let active = true;
     const poll = async () => {
       try {
@@ -235,13 +263,96 @@ export default function OccultPage() {
     }
   };
 
+  const copyEnrollmentCommand = async () => {
+    const command = "hermes tarot enroll --enable-free-mesh";
+    try {
+      await navigator.clipboard.writeText(command);
+      showToast("Enrollment command copied.", "success");
+    } catch {
+      showToast(command, "success");
+    }
+  };
+
+  const visibleProviders = status.providers.filter((provider) => {
+    const query = providerFilter.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      provider.provider_id,
+      provider.name,
+      provider.activation,
+      provider.enrollment_mode,
+      ...(provider.zero_cost_model_ids ?? []),
+    ].some((value) => String(value ?? "").toLowerCase().includes(query));
+  });
+
+  const runEnrollment = async () => {
+    if (gatewayBusy) return;
+    setGatewayBusy(true);
+    setGatewayActionStatus(null);
+    try {
+      const result = await api.enrollOccultProviders();
+      setGatewayAction("enroll");
+      showToast(`Provider enrollment requested (process ${result.pid}).`, "success");
+    } catch (caught) {
+      setGatewayBusy(false);
+      showToast(caught instanceof Error ? caught.message : String(caught), "error");
+    }
+  };
+
+  const submitProvider = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRegistryBusy(true);
+    try {
+      await api.registerOccultProvider(providerDraft);
+      showToast("Provider card added in pending state.", "success");
+      setProviderDraft({
+        provider_id: "",
+        name: "",
+        auth_type: "keyless",
+        adapter: "openai_compatible",
+        free_access: "anonymous_free",
+        capabilities: ["chat"],
+        official_hosts: [],
+        zero_cost_model_ids: [],
+      });
+      await loadStatus();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : String(caught), "error");
+    } finally {
+      setRegistryBusy(false);
+    }
+  };
+
+  const submitCard = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRegistryBusy(true);
+    try {
+      await api.registerOccultCard(cardDraft);
+      showToast("Minor Arcana card added in pending state.", "success");
+      setCardDraft({
+        card_id: "",
+        name: "",
+        suit: "pentacles",
+        rank: "page",
+        capabilities: ["text"],
+        local: true,
+        free: true,
+      });
+      await loadStatus();
+    } catch (caught) {
+      showToast(caught instanceof Error ? caught.message : String(caught), "error");
+    } finally {
+      setRegistryBusy(false);
+    }
+  };
+
   const summaryCards: Array<{
     label: string;
     count: number;
     icon: typeof Users;
   }> = [
     { label: "Major Arcana", count: status.agents.length, icon: Users },
-    { label: "Minor Arcana", count: status.routes.length, icon: Route },
+    { label: "Minor Arcana", count: status.cards?.length ?? status.routes.length, icon: Route },
     {
       label: "Providers",
       count: status.provider_summary.cataloged ?? status.providers.length,
@@ -250,6 +361,11 @@ export default function OccultPage() {
     { label: "Decks", count: status.decks.length, icon: Layers3 },
     { label: "Pairings", count: status.pairings.length, icon: ShieldCheck },
   ];
+
+  const activationCounts = status.providers.reduce<Record<string, number>>((counts, provider) => {
+    counts[provider.activation] = (counts[provider.activation] ?? 0) + 1;
+    return counts;
+  }, {});
 
   if (loading && !status.connected) {
     return (
@@ -494,6 +610,19 @@ export default function OccultPage() {
                           </span>
                         )}
                       </div>
+                      {agent.description && (
+                        <p className="mt-2 text-xs text-muted-foreground">{agent.description}</p>
+                      )}
+                      {agent.soul && (
+                        <p className="mt-2 border-l-2 border-primary/40 pl-2 text-xs italic text-muted-foreground">
+                          Soul: {agent.soul}
+                        </p>
+                      )}
+                      {agent.reversed_soul && (
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          Reversed: {agent.reversed_soul}
+                        </p>
+                      )}
                     </div>
                   ))
                 )}
@@ -502,28 +631,38 @@ export default function OccultPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Minor Arcana routes</CardTitle>
+                <CardTitle>Minor Arcana cards</CardTitle>
                 <CardDescription>
-                  Live routes are shown beside the full secret-free provider catalog.
+                  Live and operator-added cards are shown with their public description and soul.
                 </CardDescription>
               </CardHeader>
               <CardContent className="max-h-[25rem] space-y-2 overflow-auto">
-                {status.routes.length === 0 ? (
+                {(status.cards?.length ?? status.routes.length) === 0 ? (
                   <p className="text-sm text-muted-foreground">No routes available.</p>
                 ) : (
-                  status.routes.map((route) => (
+                  (status.cards ?? status.routes).map((route) => (
                     <div key={route.card_id} className="border border-border p-3">
-                      <div className="break-all font-courier text-xs">{route.card_id}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="break-all font-courier text-xs">{route.card_id}</div>
+                        {(route.suit || route.rank) && (
+                          <span className="shrink-0 border border-border px-1.5 py-0.5 font-courier text-[10px] uppercase">
+                            {[route.suit, route.rank].filter(Boolean).join(" ")}
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] uppercase tracking-wider">
                         {route.local && <span className="border border-border px-1.5 py-0.5">Local</span>}
                         {route.free && <span className="border border-success/30 px-1.5 py-0.5 text-success">Free</span>}
                         {route.trust_state && <span className="border border-border px-1.5 py-0.5">{route.trust_state}</span>}
+                        {route.status && <span className="border border-border px-1.5 py-0.5">{route.status}</span>}
                       </div>
                       {(route.provider_id || route.model_id) && (
                         <div className="mt-2 text-xs text-muted-foreground">
                           {[route.provider_id, route.model_id].filter(Boolean).join(" / ")}
                         </div>
                       )}
+                      {route.description && <p className="mt-2 text-xs text-muted-foreground">{route.description}</p>}
+                      {route.soul && <p className="mt-1 border-l-2 border-primary/40 pl-2 text-xs italic text-muted-foreground">Soul: {route.soul}</p>}
                     </div>
                   ))
                 )}
@@ -533,32 +672,140 @@ export default function OccultPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Provider catalog</CardTitle>
-              <CardDescription>
-                {status.provider_summary.allowed_free ?? 0} providers are allowed by
-                the free-only policy; routes activate only after an authorized
-                credential, adapter, quota, and health check pass.
-              </CardDescription>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <CardTitle>Provider catalog</CardTitle>
+                  <CardDescription>
+                    {status.provider_summary.allowed_free ?? 0} providers are allowed by
+                    the free-only policy; routes activate only after an authorized
+                    credential, adapter, quota, and health check pass.
+                  </CardDescription>
+                </div>
+                <Button outlined size="sm" onClick={() => void runEnrollment()} disabled={gatewayBusy}>
+                  <Play className="mr-2 h-3.5 w-3.5" /> Enroll free routes
+                </Button>
+                <Button outlined size="sm" onClick={() => void copyEnrollmentCommand()}>
+                  <Clipboard className="mr-2 h-3.5 w-3.5" /> Copy enrollment command
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="border border-border p-3 text-xs">
-                <div className="font-courier uppercase tracking-wider text-muted-foreground">Cataloged</div>
-                <div className="mt-1 text-lg">{status.provider_summary.cataloged ?? status.providers.length}</div>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="border border-border p-3 text-xs">
+                  <div className="font-courier uppercase tracking-wider text-muted-foreground">Cataloged</div>
+                  <div className="mt-1 text-lg">{status.provider_summary.cataloged ?? status.providers.length}</div>
+                </div>
+                <div className="border border-success/30 p-3 text-xs text-success">
+                  <div className="font-courier uppercase tracking-wider">Free policy allowed</div>
+                  <div className="mt-1 text-lg">{status.provider_summary.allowed_free ?? 0}</div>
+                </div>
+                <div className="border border-border p-3 text-xs">
+                  <div className="font-courier uppercase tracking-wider text-muted-foreground">Live routes</div>
+                  <div className="mt-1 text-lg">{status.providers.reduce((sum, provider) => sum + provider.active_route_count, 0)}</div>
+                </div>
+                <div className="border border-border p-3 text-xs">
+                  <div className="font-courier uppercase tracking-wider text-muted-foreground">Awaiting authorization</div>
+                  <div className="mt-1 text-lg">{status.providers.filter((provider) => provider.activation === "awaiting_authorized_credential").length}</div>
+                </div>
+                <div className="border border-border p-3 text-xs">
+                  <div className="font-courier uppercase tracking-wider text-muted-foreground">Terms pending</div>
+                  <div className="mt-1 text-lg">{activationCounts.terms_pending ?? 0}</div>
+                </div>
+                <div className="border border-border p-3 text-xs">
+                  <div className="font-courier uppercase tracking-wider text-muted-foreground">Adapter pending</div>
+                  <div className="mt-1 text-lg">{activationCounts.adapter_pending ?? 0}</div>
+                </div>
               </div>
-              <div className="border border-success/30 p-3 text-xs text-success">
-                <div className="font-courier uppercase tracking-wider">Free policy allowed</div>
-                <div className="mt-1 text-lg">{status.provider_summary.allowed_free ?? 0}</div>
+              <Input
+                aria-label="Filter provider cards"
+                placeholder="Filter providers, models, or activation state"
+                value={providerFilter}
+                onChange={(event) => setProviderFilter(event.target.value)}
+              />
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleProviders.map((provider) => (
+                  <div key={provider.provider_id} className="border border-border p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">{provider.name}</div>
+                        <div className="mt-1 break-all font-courier text-[11px] text-muted-foreground">{provider.provider_id}</div>
+                      </div>
+                      <span className={`shrink-0 border px-1.5 py-0.5 text-[10px] uppercase ${provider.active_route_count ? "border-success/30 text-success" : "border-border text-muted-foreground"}`}>
+                        {provider.activation}
+                      </span>
+                    </div>
+                    {provider.description && <p className="mt-2 text-xs text-muted-foreground">{provider.description}</p>}
+                    {provider.soul && <p className="mt-2 border-l-2 border-primary/40 pl-2 text-xs italic text-muted-foreground">Soul: {provider.soul}</p>}
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] uppercase tracking-wider">
+                      <span className="border border-border px-1.5 py-0.5">{provider.enrollment_mode ?? provider.auth_type}</span>
+                      <span className="border border-border px-1.5 py-0.5">{provider.free_access}</span>
+                      {provider.zero_cost_model_ids?.slice(0, 2).map((model) => <span key={model} className="border border-border px-1.5 py-0.5">{model}</span>)}
+                    </div>
+                    {provider.requires_human_authorization && provider.auth_url && (
+                      <a className="mt-2 inline-block text-xs text-primary underline" href={provider.auth_url} target="_blank" rel="noreferrer">
+                        Official authorization
+                      </a>
+                    )}
+                  </div>
+                ))}
               </div>
-              <div className="border border-border p-3 text-xs">
-                <div className="font-courier uppercase tracking-wider text-muted-foreground">Live routes</div>
-                <div className="mt-1 text-lg">{status.providers.reduce((sum, provider) => sum + provider.active_route_count, 0)}</div>
-              </div>
-              <div className="border border-border p-3 text-xs">
-                <div className="font-courier uppercase tracking-wider text-muted-foreground">Awaiting authorization</div>
-                <div className="mt-1 text-lg">{status.providers.filter((provider) => provider.activation === "awaiting_authorized_credential").length}</div>
-              </div>
+              {visibleProviders.length === 0 && (
+                <p className="text-sm text-muted-foreground">No provider cards match this filter.</p>
+              )}
             </CardContent>
           </Card>
+
+          <section className="grid gap-4 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Add provider card</CardTitle>
+                <CardDescription>
+                  Add public metadata only. No key, account creation, or automatic quota bypass is accepted; the new provider remains pending validation.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="grid gap-2 sm:grid-cols-2" onSubmit={(event) => void submitProvider(event)}>
+                  <Input required placeholder="provider id" value={providerDraft.provider_id} onChange={(event) => setProviderDraft((current) => ({ ...current, provider_id: event.target.value }))} />
+                  <Input required placeholder="display name" value={providerDraft.name} onChange={(event) => setProviderDraft((current) => ({ ...current, name: event.target.value }))} />
+                  <Input placeholder="official host (optional)" value={providerDraft.official_hosts?.[0] ?? ""} onChange={(event) => setProviderDraft((current) => ({ ...current, official_hosts: event.target.value ? [event.target.value] : [] }))} />
+                  <Input placeholder="base URL (optional)" value={providerDraft.base_url ?? ""} onChange={(event) => setProviderDraft((current) => ({ ...current, base_url: event.target.value }))} />
+                  <Input placeholder="zero-cost model id" value={providerDraft.zero_cost_model_ids?.[0] ?? ""} onChange={(event) => setProviderDraft((current) => ({ ...current, zero_cost_model_ids: event.target.value ? [event.target.value] : [] }))} />
+                  <Input placeholder="description (optional)" value={providerDraft.description ?? ""} onChange={(event) => setProviderDraft((current) => ({ ...current, description: event.target.value }))} />
+                  <div className="sm:col-span-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">Controls: {status.controls_available ? "available" : "admin key unavailable"}</span>
+                    <Button type="submit" disabled={registryBusy || !status.controls_available}>
+                      <Plus className="mr-2 h-3.5 w-3.5" /> Add provider
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Add Minor Arcana card</CardTitle>
+                <CardDescription>
+                  Register a card description and soul for later review. It will not become routable until the provider, model, and policy gates pass.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="grid gap-2 sm:grid-cols-2" onSubmit={(event) => void submitCard(event)}>
+                  <Input required placeholder="card id" value={cardDraft.card_id} onChange={(event) => setCardDraft((current) => ({ ...current, card_id: event.target.value }))} />
+                  <Input required placeholder="card name" value={cardDraft.name} onChange={(event) => setCardDraft((current) => ({ ...current, name: event.target.value }))} />
+                  <Input placeholder="provider id (optional)" value={cardDraft.provider_id ?? ""} onChange={(event) => setCardDraft((current) => ({ ...current, provider_id: event.target.value }))} />
+                  <Input placeholder="model id (optional)" value={cardDraft.model_id ?? ""} onChange={(event) => setCardDraft((current) => ({ ...current, model_id: event.target.value }))} />
+                  <Input placeholder="description (optional)" value={cardDraft.description ?? ""} onChange={(event) => setCardDraft((current) => ({ ...current, description: event.target.value }))} />
+                  <Input placeholder="soul (optional)" value={cardDraft.soul ?? ""} onChange={(event) => setCardDraft((current) => ({ ...current, soul: event.target.value }))} />
+                  <div className="sm:col-span-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">Status: pending review</span>
+                    <Button type="submit" disabled={registryBusy || !status.controls_available}>
+                      <Plus className="mr-2 h-3.5 w-3.5" /> Add card
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </section>
 
           <section className="grid gap-4 xl:grid-cols-2">
             <Card>

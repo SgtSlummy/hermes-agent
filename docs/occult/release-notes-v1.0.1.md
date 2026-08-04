@@ -12,7 +12,7 @@ schema `3`.
 - Exact Sigstore workflow-identity verification plus SHA-256 verification
   before application files are installed.
 - Explicit `--version`, `--install-root`, `--initialize-local`,
-  `--skip-council`, and `--verify-only` options.
+  `--enable-keyless-mesh`, `--skip-council`, and `--verify-only` options.
 - A signed minimal wheel/install-asset set alongside the complete SBOM,
   provenance, Nix, OCI, dashboard, TUI, and documentation bundle.
 - One authoritative public quickstart for installation, Ollama initialization,
@@ -25,6 +25,9 @@ schema `3`.
 Occult remains disabled after installation. Local initialization happens only
 when explicitly requested. The starter route is local-only, free-only, and
 capped at zero dollars. No cloud provider credential is required or acquired.
+When explicitly combined with local initialization, `--enable-keyless-mesh`
+enrolls reviewed keyless/free catalog routes without creating accounts or
+handling provider credentials. Credentialed providers remain pending.
 
 ## Install
 

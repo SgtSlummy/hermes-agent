@@ -10,6 +10,8 @@ set -eu
 version="1.0.9"
 install_root="${XDG_DATA_HOME:-$HOME/.local/share}/occult"
 initialize_local=0
+enable_keyless_mesh=0
+enable_free_mesh=0
 skip_council=0
 verify_only=0
 model="qwen2.5:3b"
@@ -21,6 +23,9 @@ Usage: install-occult.sh [options]
   --version VERSION       Tarot Router GitHub release (default: 1.0.9)
   --install-root PATH     Per-user installation root
   --initialize-local      Explicitly pull the approved Ollama model and enable Occult
+  --enable-keyless-mesh   During local initialization, enroll reviewed keyless/free routes
+  --enable-free-mesh      During local initialization, enroll all reviewed free routes;
+                          use existing protected credentials when present
   --skip-council          Verify and install Hermes without Agents Council
   --verify-only           Verify signed assets without installing
   --model MODEL           Ollama model used with --initialize-local
@@ -42,6 +47,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --initialize-local)
       initialize_local=1
+      shift
+      ;;
+    --enable-keyless-mesh)
+      enable_keyless_mesh=1
+      shift
+      ;;
+    --enable-free-mesh)
+      enable_free_mesh=1
       shift
       ;;
     --skip-council)
@@ -73,6 +86,13 @@ fail() {
   echo "Occult installation stopped safely: $*" >&2
   exit 1
 }
+
+if [ "$enable_keyless_mesh" -eq 1 ] && [ "$initialize_local" -eq 0 ]; then
+  fail "--enable-keyless-mesh requires --initialize-local so provider enrollment is explicit"
+fi
+if [ "$enable_free_mesh" -eq 1 ] && [ "$initialize_local" -eq 0 ]; then
+  fail "--enable-free-mesh requires --initialize-local so provider enrollment is explicit"
+fi
 
 step() {
   printf '[Occult] %s\n' "$*"
@@ -770,8 +790,18 @@ if [ -n "$existing_metadata" ]; then
       step "Pulling the explicitly requested local model $model"
       ollama pull "$model" || fail "Ollama could not pull $model"
       step "Explicitly initializing the local Occult profile"
-      "$hermes_executable" occult init --model "$model" ||
-        fail "hermes occult init failed"
+      if [ "$enable_keyless_mesh" -eq 1 ]; then
+        step "Enrolling reviewed keyless/free provider routes without credentials"
+        "$hermes_executable" occult init --model "$model" --enable-keyless-mesh ||
+          fail "hermes occult init failed"
+      elif [ "$enable_free_mesh" -eq 1 ]; then
+        step "Enrolling every reviewed free route; existing credentials stay protected and missing authorization remains pending"
+        "$hermes_executable" occult init --model "$model" --enable-free-mesh ||
+          fail "hermes occult init failed"
+      else
+        "$hermes_executable" occult init --model "$model" ||
+          fail "hermes occult init failed"
+      fi
       state=$(read_occult_state "$existing_venv_python") ||
         fail "could not inspect the preserved Occult initialization state"
       set -- $state
@@ -896,8 +926,18 @@ if [ "$initialize_local" -eq 1 ]; then
   step "Pulling the explicitly requested local model $model"
   ollama pull "$model" || fail "Ollama could not pull $model"
   step "Explicitly initializing the local Occult profile"
-  "$hermes_staged" occult init --model "$model" ||
-    fail "hermes occult init failed"
+  if [ "$enable_keyless_mesh" -eq 1 ]; then
+    step "Enrolling reviewed keyless/free provider routes without credentials"
+    "$hermes_staged" occult init --model "$model" --enable-keyless-mesh ||
+      fail "hermes occult init failed"
+  elif [ "$enable_free_mesh" -eq 1 ]; then
+    step "Enrolling every reviewed free route; existing credentials stay protected and missing authorization remains pending"
+    "$hermes_staged" occult init --model "$model" --enable-free-mesh ||
+      fail "hermes occult init failed"
+  else
+    "$hermes_staged" occult init --model "$model" ||
+      fail "hermes occult init failed"
+  fi
 fi
 
 state=$(
@@ -1008,7 +1048,13 @@ if [ -n "$council_version_output" ]; then
   printf 'Agents Council %s\n' "$council_version_output"
 fi
 if [ "$initialize_local" -eq 1 ]; then
-  step "Local initialization completed explicitly with $model"
+  if [ "$enable_free_mesh" -eq 1 ]; then
+    step "Local initialization and full free-provider enrollment completed explicitly with $model"
+  elif [ "$enable_keyless_mesh" -eq 1 ]; then
+    step "Local initialization and keyless/free provider enrollment completed explicitly with $model"
+  else
+    step "Local initialization completed explicitly with $model"
+  fi
 elif [ "$initialized" = true ]; then
   step "Existing Occult initialization was preserved and remains $([ "$enabled" = true ] && printf enabled || printf disabled)"
 else

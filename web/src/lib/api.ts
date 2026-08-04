@@ -65,6 +65,18 @@ export const api = {
   getStatus: () => fetchJSON<StatusResponse>("/api/status"),
   getOccultStatus: () =>
     fetchJSON<OccultDashboardStatus>("/api/occult/status"),
+  registerOccultProvider: (body: OccultProviderRegistration) =>
+    fetchJSON<OccultProvider>("/api/occult/providers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  registerOccultCard: (body: OccultCardRegistration) =>
+    fetchJSON<OccultCard>("/api/occult/cards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   getOccultReading: (readingId: string) =>
     fetchJSON<OccultReadingStatus>(
       `/api/occult/readings/${encodeURIComponent(readingId)}`,
@@ -286,6 +298,8 @@ export const api = {
     fetchJSON<ActionResponse>("/api/gateway/stop", { method: "POST" }),
   restartGateway: () =>
     fetchJSON<ActionResponse>("/api/gateway/restart", { method: "POST" }),
+  enrollOccultProviders: () =>
+    fetchJSON<ActionResponse>("/api/occult/enroll", { method: "POST" }),
   updateHermes: () =>
     fetchJSON<ActionResponse>("/api/hermes/update", { method: "POST" }),
   getActionStatus: (name: string, lines = 200) =>
@@ -405,6 +419,11 @@ export interface OccultAgent {
   version?: string;
   arcana_number?: number;
   capabilities?: string[];
+  description?: string;
+  soul?: string;
+  reversed_soul?: string | null;
+  temperament?: Record<string, { default: number; minimum: number; maximum: number }>;
+  maximum_risk_level?: number;
 }
 
 export interface OccultRoute {
@@ -416,6 +435,12 @@ export interface OccultRoute {
   free?: boolean;
   privacy?: string;
   trust_state?: string;
+  suit?: string;
+  rank?: string;
+  description?: string;
+  soul?: string;
+  status?: string;
+  source?: string;
 }
 
 export interface OccultDeck {
@@ -445,6 +470,64 @@ export interface OccultProvider {
   auth_type: string;
   official_hosts: string[];
   capabilities: string[];
+  description?: string;
+  soul?: string;
+  base_url?: string | null;
+  zero_cost_model_ids?: string[];
+  default_free_model?: string | null;
+  terms_permit_tarot?: boolean;
+  allowed_data_classifications?: string[];
+  auth_url?: string | null;
+  source_state?: string;
+  enrollment_mode?: string;
+  requires_human_authorization?: boolean;
+}
+
+export interface OccultCard {
+  card_id: string;
+  name?: string;
+  provider_id?: string | null;
+  model_id?: string | null;
+  suit?: string;
+  rank?: string;
+  description?: string;
+  soul?: string;
+  capabilities?: string[];
+  local?: boolean;
+  free?: boolean;
+  status?: string;
+  trust_state?: string;
+  activation?: string;
+  source?: string;
+}
+
+export interface OccultProviderRegistration {
+  provider_id: string;
+  name: string;
+  description?: string;
+  soul?: string;
+  adapter?: string;
+  auth_type?: string;
+  base_url?: string;
+  official_hosts?: string[];
+  free_access?: string;
+  capabilities?: string[];
+  zero_cost_model_ids?: string[];
+  default_free_model?: string;
+}
+
+export interface OccultCardRegistration {
+  card_id: string;
+  name: string;
+  description?: string;
+  soul?: string;
+  suit?: string;
+  rank?: string;
+  provider_id?: string;
+  model_id?: string;
+  capabilities?: string[];
+  local?: boolean;
+  free?: boolean;
 }
 
 export interface OccultProviderSummary {
@@ -467,7 +550,9 @@ export interface OccultDashboardStatus {
   decks: OccultDeck[];
   pairings: OccultPairing[];
   providers: OccultProvider[];
+  cards?: OccultCard[];
   provider_summary: OccultProviderSummary;
+  controls_available?: boolean;
   error?: string;
 }
 

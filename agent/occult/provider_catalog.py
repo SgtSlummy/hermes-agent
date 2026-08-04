@@ -92,8 +92,21 @@ class CatalogProvider:
     auth_type: str
     official_hosts: tuple[str, ...]
     base_url: str | None
+    chat_path: str | None
+    models_path: str | None
+    secret_refs: tuple[str, ...]
     capabilities: tuple[str, ...]
+    zero_cost_model_ids: tuple[str, ...]
+    default_free_model: str | None
+    allow_paid_models: bool
+    terms_permit_tarot: bool
+    allowed_data_classifications: tuple[str, ...]
+    enabled: bool
     source_state: str
+    description: str = ""
+    soul: str = ""
+    auth_url: str | None = None
+    notes: str = ""
 
     @property
     def allowed_by_free_policy(self) -> bool:
@@ -104,9 +117,35 @@ class CatalogProvider:
         )
 
     def public_contract(self) -> dict[str, Any]:
+        enrollment_mode = (
+            "keyless"
+            if self.auth_type in {"anonymous", "keyless"}
+            else "preauthorized"
+            if self.auth_type == "bearer"
+            else "human_required"
+        )
+        if not self.allowed_by_free_policy:
+            activation = "blocked_by_free_policy"
+        elif self.terms_permit_tarot is not True:
+            activation = "terms_pending"
+        elif self.adapter not in {"openai_compatible", "google_gemini"}:
+            activation = "adapter_pending"
+        elif self.auth_type not in {"anonymous", "keyless", "bearer"}:
+            activation = "authorization_flow_pending"
+        elif self.auth_type in {"anonymous", "keyless"}:
+            activation = "keyless_pending_validation"
+        else:
+            activation = "awaiting_authorized_credential"
         return {
             "provider_id": self.provider_id,
             "name": self.name,
+            "description": self.description or self.notes or f"{self.name} provider route.",
+            "soul": self.soul
+            or (
+                "Keyless free inference route; it can be enrolled without a credential when the endpoint is reachable."
+                if enrollment_mode == "keyless"
+                else "Authorized provider route; the router keeps credentials outside the agent and waits for a valid authorization."
+            ),
             "free_access": self.free_access,
             "requires_card": self.requires_card,
             "allowed_by_free_policy": self.allowed_by_free_policy,
@@ -115,13 +154,16 @@ class CatalogProvider:
             "official_hosts": list(self.official_hosts),
             "base_url": self.base_url,
             "capabilities": list(self.capabilities),
+            "zero_cost_model_ids": list(self.zero_cost_model_ids),
+            "default_free_model": self.default_free_model,
+            "terms_permit_tarot": self.terms_permit_tarot,
+            "allowed_data_classifications": list(self.allowed_data_classifications),
+            "auth_url": self.auth_url,
             "source_state": self.source_state,
+            "enrollment_mode": enrollment_mode,
+            "requires_human_authorization": enrollment_mode == "human_required",
             "active_route_count": 0,
-            "activation": (
-                "awaiting_authorized_credential"
-                if self.allowed_by_free_policy
-                else "blocked_by_free_policy"
-            ),
+            "activation": activation,
         }
 
 
@@ -166,6 +208,39 @@ class ProviderCatalog:
             base_url = api.get("baseUrl") if isinstance(api, Mapping) else None
             if base_url is not None and not isinstance(base_url, str):
                 raise ProviderCatalogError(f"invalid base URL for {provider_id}")
+            chat_path = api.get("chatPath") if isinstance(api, Mapping) else None
+            models_path = api.get("modelsPath") if isinstance(api, Mapping) else None
+            if chat_path is not None and not isinstance(chat_path, str):
+                raise ProviderCatalogError(f"invalid chat path for {provider_id}")
+            if models_path is not None and not isinstance(models_path, str):
+                raise ProviderCatalogError(f"invalid models path for {provider_id}")
+            secret_refs = raw.get("secretRefs", ())
+            if not isinstance(secret_refs, list) or not all(
+                isinstance(item, str)
+                and re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", item)
+                for item in secret_refs
+            ):
+                raise ProviderCatalogError(f"invalid secret references for {provider_id}")
+            zero_cost_model_ids = raw.get("zeroCostModelIds", ())
+            if not isinstance(zero_cost_model_ids, list) or not all(
+                isinstance(item, str) and item.strip()
+                for item in zero_cost_model_ids
+            ):
+                raise ProviderCatalogError(
+                    f"invalid zero-cost model ids for {provider_id}"
+                )
+            default_free_model = raw.get("defaultFreeModel")
+            if default_free_model is not None and not isinstance(default_free_model, str):
+                raise ProviderCatalogError(
+                    f"invalid default free model for {provider_id}"
+                )
+            allowed_data = raw.get("allowedDataClassifications", ())
+            if not isinstance(allowed_data, list) or not all(
+                isinstance(item, str) and item.strip() for item in allowed_data
+            ):
+                raise ProviderCatalogError(
+                    f"invalid data classifications for {provider_id}"
+                )
             providers.append(
                 CatalogProvider(
                     provider_id=provider_id,
@@ -176,8 +251,38 @@ class ProviderCatalog:
                     auth_type=str(raw.get("authType", "unknown")),
                     official_hosts=tuple(hosts),
                     base_url=base_url,
+                    chat_path=chat_path,
+                    models_path=models_path,
+                    secret_refs=tuple(secret_refs),
                     capabilities=tuple(sorted(set(capabilities))),
+                    zero_cost_model_ids=tuple(
+                        dict.fromkeys(item.strip() for item in zero_cost_model_ids)
+                    ),
+                    default_free_model=(
+                        default_free_model.strip()
+                        if isinstance(default_free_model, str)
+                        and default_free_model.strip()
+                        else None
+                    ),
+                    allow_paid_models=bool(raw.get("allowPaidModels", False)),
+                    # Only an explicit JSON boolean true is a verified terms
+                    # decision.  Values such as "unknown" must remain
+                    # unverified and fail the runtime admission gate.
+                    terms_permit_tarot=raw.get("termsPermitTarot") is True,
+                    allowed_data_classifications=tuple(
+                        sorted(set(item.strip() for item in allowed_data))
+                    ),
+                    enabled=bool(raw.get("enabled", False)),
                     source_state=str(raw.get("state", "unknown")),
+                    description=str(raw.get("description", "")).strip(),
+                    soul=str(raw.get("soul", "")).strip(),
+                    auth_url=(
+                        str((raw.get("urls") or {}).get("authentication", "")).strip()
+                        or None
+                        if isinstance(raw.get("urls"), Mapping)
+                        else None
+                    ),
+                    notes=str(raw.get("notes", "")).strip(),
                 )
             )
         return cls(tuple(sorted(providers, key=lambda item: item.provider_id)))
